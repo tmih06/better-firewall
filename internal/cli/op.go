@@ -15,6 +15,8 @@ type ParsedRuleOp struct {
 	Num int
 	// Routed marks the `route` prefix (rule.Direction == "routed").
 	Routed bool
+	// IPType is "v4", "v6", or "both" — inferred from address families.
+	IPType string
 }
 
 // OpKind enumerates rule operations.
