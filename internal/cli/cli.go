@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"bfirewall/internal/backend"
+	nftbe "bfirewall/internal/backend/nft"
 	"bfirewall/internal/store"
 )
 
@@ -32,6 +33,21 @@ type Env struct {
 	DryRun bool
 	Force  bool
 	JSON   bool
+}
+
+// newBackend is the backend constructor; tests may replace it.
+var newBackend = nftbe.New
+
+// backend lazily initializes e.Backend.
+func (e *Env) backend() (backend.Backend, error) {
+	if e.Backend == nil {
+		b, err := newBackend()
+		if err != nil {
+			return nil, err
+		}
+		e.Backend = b
+	}
+	return e.Backend, nil
 }
 
 // Errorf prints "ERROR: ..." to stderr and returns exit code 1.
