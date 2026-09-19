@@ -1,0 +1,17 @@
+[Unit]
+Description=bfirewall - ufw-compatible nftables firewall
+Documentation=man:bfw(8)
+DefaultDependencies=no
+After=local-fs.target
+Before=network-pre.target
+Wants=network-pre.target
+ConditionPathExists=/etc/bfirewall/bfw.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/bfw boot-load
+ExecStop=/usr/sbin/bfw boot-unload
+
+[Install]
+WantedBy=multi-user.target

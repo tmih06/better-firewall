@@ -1,0 +1,6 @@
+[Unit]
+Description=bfirewall expired-rule sweep
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/bfw sweep
