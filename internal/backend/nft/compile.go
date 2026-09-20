@@ -631,21 +631,33 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 	if v6 {
 		name += "6" // dual v4/v6 rules share r.ID; qualify the set name
 	}
-	set := &nftables.Set{
-		Table:         c.table,
-		Name:          name,
-		ID:            c.newSetID(),
-		KeyType:       nftables.MustConcatSetType(addrType, nftables.TypeInetService),
-		Concatenation: true,
-		Dynamic:       true,
-		HasTimeout:    true,
-		Timeout:       30 * time.Second,
-		// size 0 makes the kernel refuse the first element add
-		// (atomic_add_unless nelems vs size) → the meter never fires and
-		// the rule fails open. nft defaults meter sets to 65535.
-		Size: 65535,
+	// Reuse an existing dynset of the same name: a proto-any limit rule
+	// expands to tcp+udp variants that share r.ID, and emitting the set
+	// twice would double it in render/diff (the kernel dedups by name).
+	var set *nftables.Set
+	for _, s := range c.sets {
+		if s.Name == name {
+			set = s
+			break
+		}
 	}
-	c.sets = append(c.sets, set)
+	if set == nil {
+		set = &nftables.Set{
+			Table:         c.table,
+			Name:          name,
+			ID:            c.newSetID(),
+			KeyType:       nftables.MustConcatSetType(addrType, nftables.TypeInetService),
+			Concatenation: true,
+			Dynamic:       true,
+			HasTimeout:    true,
+			Timeout:       30 * time.Second,
+			// size 0 makes the kernel refuse the first element add
+			// (atomic_add_unless nelems vs size) → the meter never fires and
+			// the rule fails open. nft defaults meter sets to 65535.
+			Size: 65535,
+		}
+		c.sets = append(c.sets, set)
+	}
 
 	// Key registers: saddr then dport, contiguous in the kernel's reg32
 	// space. v4: NFT_REG32_00 (data[4]) + NFT_REG32_01 (data[5]).
