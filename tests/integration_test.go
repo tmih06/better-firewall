@@ -58,13 +58,15 @@ func nft(t *testing.T, args ...string) string {
 }
 
 func TestEnableStatusDisable(t *testing.T) {
-	so, _, code := run(t, "allow", "22/tcp")
-	if code != 0 || !strings.Contains(so, "Rule added") {
-		t.Fatalf("allow: code=%d out=%q", code, so)
-	}
-	so, _, code = run(t, "--force", "enable")
+	// Enable first so the add is live → "Rule added" (ufw prints
+	// "Rules updated" only when the firewall is off).
+	so, _, code := run(t, "--force", "enable")
 	if code != 0 || !strings.Contains(so, "Firewall is active and enabled on system startup") {
 		t.Fatalf("enable: code=%d out=%q", code, so)
+	}
+	so, _, code = run(t, "allow", "22/tcp")
+	if code != 0 || !strings.Contains(so, "Rule added") {
+		t.Fatalf("allow: code=%d out=%q", code, so)
 	}
 	table := nft(t, "list", "table", "inet", "bfirewall")
 	if !strings.Contains(table, "chain input") || !strings.Contains(table, "bfw-user-input") {
