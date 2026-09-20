@@ -544,9 +544,12 @@ func isLogTok(s string) bool {
 // when the token resolved to one ("" otherwise).
 func shortToken(r *rule.Rule, tok string, remove bool) (toService string, err error) {
 	if appprof.ValidName(tok) {
-		// /etc/services wins over app profiles on name collision.
+		// /etc/services wins over app profiles on name collision. ufw sets
+		// dapp unconditionally and the frontend reports the profile lookup
+		// failure — use its message, not "Bad port".
 		if _, _, serr := services.Proto(tok); serr != nil {
-			err := setApp(r, "dst", tok, remove, fmt.Sprintf("Bad port '%s'", tok))
+			err := setApp(r, "dst", tok, remove,
+				fmt.Sprintf("Could not find a profile matching '%s'", tok))
 			return "", err
 		}
 	}
