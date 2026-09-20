@@ -299,7 +299,7 @@ func TestRenderTextDeterministic(t *testing.T) {
 	for _, want := range []string{
 		"table inet bfirewall {",
 		"chain input {",
-		"type filter hook input priority filter; policy drop;",
+		"type filter hook input priority 0; policy drop;",
 		"set bfw_set_badguys {",
 		"set bfw_limit_r3 {",
 		"table ip bfirewall-nat {",

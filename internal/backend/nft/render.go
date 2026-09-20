@@ -77,6 +77,10 @@ func renderNATTable(b *strings.Builder, c *compiled, t *nftables.Table) {
 func renderSet(b *strings.Builder, c *compiled, s *nftables.Set) {
 	fmt.Fprintf(b, "\tset %s {\n", s.Name)
 	fmt.Fprintf(b, "\t\ttype %s\n", renderSetType(s.KeyType))
+	// nft prints `size N` (before flags) for sets with an explicit size.
+	if s.Size != 0 {
+		fmt.Fprintf(b, "\t\tsize %d\n", s.Size)
+	}
 	var flags []string
 	if s.Interval {
 		flags = append(flags, "interval")
@@ -107,9 +111,8 @@ func renderChain(b *strings.Builder, c *compiled, ch *nftables.Chain) {
 		if ch.Priority != nil {
 			prio = int(*ch.Priority)
 		}
-		// nft prints symbolic priority names (filter/dstnat/srcnat);
-		// render the same so `diff` against `nft -nn list` matches.
-		fmt.Fprintf(b, "\t\ttype %s hook %s priority %s;", ch.Type, hook, prioName(prio))
+		// `nft -nn` prints numeric priority; match it for diff parity.
+		fmt.Fprintf(b, "\t\ttype %s hook %s priority %d;", ch.Type, hook, prio)
 		if ch.Policy != nil {
 			pol := "accept"
 			if *ch.Policy == nftables.ChainPolicyDrop {
@@ -233,7 +236,9 @@ func prefixLen(start, endEx []byte) (int, bool) {
 		}
 		span[i] = byte(d)
 	}
-	// span must be a power of two: exactly one bit set
+	// span must be a power of two: exactly one bit set. The set bit sits at
+	// left-position i*8+b; a /p prefix has its lowest span bit at p-1, so
+	// p = i*8+b+1.
 	bits := 0
 	seen := false
 	for i := 0; i < n; i++ {
@@ -243,7 +248,7 @@ func prefixLen(start, endEx []byte) (int, bool) {
 					return 0, false
 				}
 				seen = true
-				bits = n*8 - (i*8 + b)
+				bits = i*8 + b + 1
 			}
 		}
 	}
@@ -759,23 +764,3 @@ func renderNAT(regs map[uint32]pend, x *expr.NAT) string {
 	return fmt.Sprintf("snat to %s%s", addr, port)
 }
 
-// prioName maps a numeric chain priority to nft's symbolic name so rendered
-// output matches `nft -nn list` (which prints names, not numbers).
-func prioName(p int) string {
-	switch p {
-	case -300:
-		return "raw"
-	case -200:
-		return "mangle"
-	case -100:
-		return "dstnat"
-	case 0:
-		return "filter"
-	case 100:
-		return "srcnat"
-	case 300:
-		return "out"
-	default:
-		return strconv.Itoa(p)
-	}
-}

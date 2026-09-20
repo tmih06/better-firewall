@@ -697,21 +697,166 @@ var (
 )
 
 // normalizeNft strips volatile nft output (counters, handles, whitespace)
-// so stored and live rulesets compare semantically. The bare `counter`
-// token in rendered rules is also stripped — the kernel always prints
-// `counter packets N bytes N`, which the first regex removes entirely.
+// and canonicalizes the symbolic-vs-numeric divergence between RenderText
+// and `nft -nn`: the kernel folds `meta nfproto`/`meta l4proto` into the
+// protocol match and prints numeric ct-states/icmp-types, so both sides are
+// reduced to the kernel's folded numeric form.
 func normalizeNft(s string) []string {
 	var out []string
 	for _, line := range strings.Split(s, "\n") {
 		line = nftCounterRe.ReplaceAllString(line, "")
 		line = nftHandleRe.ReplaceAllString(line, "")
 		line = nftBareCtrRe.ReplaceAllString(line, "")
+		line = canonNftLine(line)
 		line = strings.Join(strings.Fields(line), " ")
 		if line != "" {
 			out = append(out, line)
 		}
 	}
+	// Set blocks are unordered in the kernel; collect them all, sort by
+	// name, and emit them back in the positions set blocks occupied.
+	return sortSetBlocks(out)
+}
+
+// sortSetBlocks gathers every `set X { … }` block, sorts them by the set
+// header line, and writes them back into the slots set blocks occupied —
+// so creation-order differences between stored and kernel don't diff.
+func sortSetBlocks(lines []string) []string {
+	var blocks [][]string
+	var slots []int // index in `lines` where each block starts
+	for i := 0; i < len(lines); i++ {
+		if strings.HasPrefix(lines[i], "set ") {
+			var block []string
+			slots = append(slots, i)
+			for i < len(lines) && !strings.HasPrefix(lines[i], "}") {
+				block = append(block, lines[i])
+				i++
+			}
+			if i < len(lines) {
+				block = append(block, lines[i])
+			}
+			blocks = append(blocks, block)
+		}
+	}
+	if len(blocks) == 0 {
+		return lines
+	}
+	sort.Slice(blocks, func(i, j int) bool { return blocks[i][0] < blocks[j][0] })
+	// Rebuild: walk lines, substituting sorted blocks at each slot.
+	slotSet := map[int]bool{}
+	for _, s := range slots {
+		slotSet[s] = true
+	}
+	var out []string
+	bi := 0
+	for i := 0; i < len(lines); i++ {
+		if slotSet[i] {
+			out = append(out, blocks[bi]...)
+			bi++
+			// skip to just past this block's closing brace
+			for i < len(lines) && !strings.HasPrefix(lines[i], "}") {
+				i++
+			}
+			continue
+		}
+		out = append(out, lines[i])
+	}
 	return out
+}
+
+// canonNftLine reduces one nft rule line to the kernel's folded numeric
+// form: drops `meta nfproto`/`meta l4proto` qualifiers (the kernel folds
+// them into the proto match) and maps symbolic names to numbers.
+func canonNftLine(line string) string {
+	f := strings.Fields(line)
+	var out []string
+	for i := 0; i < len(f); i++ {
+		// Drop "meta nfproto <f>" and "meta l4proto <p>" — the kernel folds
+		// both into the following protocol/address match.
+		if f[i] == "meta" && i+2 < len(f) && (f[i+1] == "nfproto" || f[i+1] == "l4proto") {
+			i += 2
+			continue
+		}
+		// The kernel appends "burst N packets" to meter limits; RenderText
+		// omits the default burst. Drop it from the kernel side.
+		if f[i] == "burst" && i+2 < len(f) && f[i+2] == "packets" {
+			i += 2
+			continue
+		}
+		// "fib daddr type X" — kernel prints the addrtype number.
+		if i > 0 && f[i-1] == "type" && i > 2 && f[i-3] == "fib" {
+			out = append(out, mapFibType(f[i]))
+			continue
+		}
+		// symbolic names with different numbers — key on the proto token.
+		if i > 0 && f[i-1] == "state" {
+			out = append(out, mapNftValue(f[i]))
+			continue
+		}
+		if i > 1 && f[i-1] == "type" {
+			out = append(out, mapIcmpType(f[i-2], f[i]))
+			continue
+		}
+		out = append(out, f[i])
+	}
+	return strings.Join(out, " ")
+}
+
+// mapNftValue maps a symbolic value token (ct-state list, icmp type) to the
+// numeric form `nft -nn` prints.
+func mapNftValue(t string) string {
+	if n, ok := nftSymToNum[t]; ok {
+		return n
+	}
+	// comma-separated ct-state list: map each element.
+	if strings.Contains(t, ",") {
+		parts := strings.Split(t, ",")
+		for i, p := range parts {
+			if n, ok := nftSymToNum[p]; ok {
+				parts[i] = n
+			}
+		}
+		return strings.Join(parts, ",")
+	}
+	return t
+}
+
+// mapIcmpType maps a symbolic icmp/icmpv6 type name to its number, keyed on
+// the preceding proto token ("icmp" or "icmpv6").
+func mapIcmpType(proto, name string) string {
+	if proto == "icmpv6" {
+		if n, ok := icmpv6Types[name]; ok {
+			return n
+		}
+		return name
+	}
+	if n, ok := icmpv4Types[name]; ok {
+		return n
+	}
+	return name
+}
+
+var icmpv4Types = map[string]string{
+	"echo-reply": "0", "destination-unreachable": "3", "echo-request": "8",
+	"time-exceeded": "11", "parameter-problem": "12",
+}
+
+var icmpv6Types = map[string]string{
+	"destination-unreachable": "1", "packet-too-big": "2", "time-exceeded": "3",
+	"parameter-problem": "4", "echo-request": "128", "echo-reply": "129",
+	"router-solicitation": "133", "router-advertisement": "134",
+	"neighbour-solicitation": "135", "neighbour-advertisement": "136",
+	"nd-router-solicit": "133", "nd-router-advert": "134",
+	"nd-neighbor-solicit": "135", "nd-neighbor-advert": "136",
+	"ind-neighbor-solicit": "141", "ind-neighbor-advert": "142",
+	"mld-listener-query": "130", "mld-listener-report": "131",
+	"mld-listener-done": "132", "mld2-listener-report": "143",
+}
+
+// nftSymToNum maps symbolic ct-state tokens to the numeric form `nft -nn`
+// prints.
+var nftSymToNum = map[string]string{
+	"invalid": "0x1", "established": "0x2", "related": "0x4", "new": "0x8",
 }
 
 // unifiedDiff renders a unified diff of a vs b with 3 lines of context.
@@ -915,6 +1060,7 @@ func (e *Env) cmdPanic(args []string) int {
 			// `panic off` restores them. Applies even when disabled:
 			// panic is an emergency measure.
 			pst := *st
+			pst.Panic = true // bare drop-all chains; also bypasses etc overrides
 			pst.Policies = store.Policies{Input: "deny", Output: "deny", Forward: "deny"}
 			etc, err := e.Store.EtcDefaults()
 			if err != nil {
@@ -1157,4 +1303,23 @@ func dropSetRefs(rules []rule.Rule, name string) []rule.Rule {
 		out = append(out, r)
 	}
 	return out
+}
+
+// mapFibType maps a fib addrtype name to the number `nft -nn` prints.
+func mapFibType(t string) string {
+	switch t {
+	case "unspec":
+		return "0"
+	case "unicast":
+		return "1"
+	case "local":
+		return "2"
+	case "broadcast":
+		return "3"
+	case "anycast":
+		return "4"
+	case "multicast":
+		return "5"
+	}
+	return t
 }

@@ -115,20 +115,23 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 		pol = store.Policies{Input: "deny", Output: "deny", Forward: "deny"}
 	}
 	// /etc/default/bfirewall DEFAULT_*_POLICY keys override stored policies
-	// (ufw reads them from /etc/default/ufw at apply time).
-	for k, dst := range map[string]*string{
-		"DEFAULT_INPUT_POLICY":   &pol.Input,
-		"DEFAULT_OUTPUT_POLICY":  &pol.Output,
-		"DEFAULT_FORWARD_POLICY": &pol.Forward,
-	} {
-		if v, ok := etc[k]; ok {
-			switch strings.ToLower(v) {
-			case "accept", "allow":
-				*dst = "allow"
-			case "drop", "deny":
-				*dst = "deny"
-			case "reject":
-				*dst = "reject"
+	// (ufw reads them from /etc/default/ufw at apply time) — but never
+	// override panic's forced deny-all.
+	if !st.Panic {
+		for k, dst := range map[string]*string{
+			"DEFAULT_INPUT_POLICY":   &pol.Input,
+			"DEFAULT_OUTPUT_POLICY":  &pol.Output,
+			"DEFAULT_FORWARD_POLICY": &pol.Forward,
+		} {
+			if v, ok := etc[k]; ok {
+				switch strings.ToLower(v) {
+				case "accept", "allow":
+					*dst = "allow"
+				case "drop", "deny":
+					*dst = "deny"
+				case "reject":
+					*dst = "reject"
+				}
 			}
 		}
 	}
@@ -807,13 +810,18 @@ func (c *compiled) compileNAT(st *store.State) error {
 	pre := map[*nftables.Table]*nftables.Chain{}
 	post := map[*nftables.Table]*nftables.Chain{}
 	for _, t := range c.natTables {
+		// NAT base chains carry an explicit accept policy (nft prints
+		// `policy accept`); set it so render/diff match the kernel.
+		accept := nftables.ChainPolicyAccept
 		pre[t] = &nftables.Chain{
 			Name: "prerouting", Table: t, Type: nftables.ChainTypeNAT,
 			Hooknum: nftables.ChainHookPrerouting, Priority: nftables.ChainPriorityNATDest,
+			Policy: &accept,
 		}
 		post[t] = &nftables.Chain{
 			Name: "postrouting", Table: t, Type: nftables.ChainTypeNAT,
 			Hooknum: nftables.ChainHookPostrouting, Priority: nftables.ChainPriorityNATSource,
+			Policy: &accept,
 		}
 		c.chains = append(c.chains, pre[t], post[t])
 	}
