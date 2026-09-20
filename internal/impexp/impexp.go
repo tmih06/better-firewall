@@ -523,7 +523,20 @@ func applyUfwDefaults(st *store.State, etcFile string) []string {
 		st.IPv6 = strings.EqualFold(v, "yes")
 	}
 	if v, ok := kv["DEFAULT_APPLICATION_POLICY"]; ok {
-		st.AppPolicy = strings.ToLower(v)
+		// ufw stores iptables targets (ACCEPT/DROP/REJECT/SKIP); map to
+		// the bfirewall policy words (allow/deny/reject/skip).
+		switch strings.ToLower(v) {
+		case "accept", "allow":
+			st.AppPolicy = "allow"
+		case "drop", "deny":
+			st.AppPolicy = "deny"
+		case "reject":
+			st.AppPolicy = "reject"
+		case "skip":
+			st.AppPolicy = "skip"
+		default:
+			warnings = append(warnings, fmt.Sprintf("%s: unknown application policy %q", etcFile, v))
+		}
 	}
 	return warnings
 }

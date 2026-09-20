@@ -161,13 +161,61 @@ func (r *Rule) Match(o *Rule) MatchCode {
 }
 
 // AppTuple groups rules expanded from one app-profile application; ufw
-// keeps these groups unsplittable on insert.
+// keeps these groups unsplittable on insert. Mirrors ufw get_app_tuple:
+// the app name is substituted by the port when that side has no app, and
+// addresses are family-canonical ("0.0.0.0/0" vs "::/0") so a dual rule's
+// v4 and v6 halves never share a tuple.
 func (r *Rule) AppTuple() string {
 	if r.Dapp == "" && r.Sapp == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s",
-		r.Dapp, r.Dst.IP, r.Sapp, r.Src.IP, r.Direction, r.IfaceIn, r.IfaceOut)
+	dst := canonWild(r.Dst.IP, r.v6)
+	src := canonWild(r.Src.IP, r.v6)
+	dside := r.Dapp
+	if dside == "" {
+		dside = portListStr(r.Dst.Ports)
+	}
+	sside := r.Sapp
+	if sside == "" {
+		sside = portListStr(r.Src.Ports)
+	}
+	tupl := fmt.Sprintf("%s %s %s %s", dside, dst, sside, src)
+	if r.IfaceIn == "" && r.IfaceOut == "" {
+		tupl += " " + r.Direction
+	} else {
+		if r.IfaceIn != "" {
+			tupl += " in_" + r.IfaceIn
+		}
+		if r.IfaceOut != "" {
+			tupl += " out_" + r.IfaceOut
+		}
+	}
+	return tupl
+}
+
+// canonWild maps a stored endpoint to the family-canonical wildcard so
+// tuples differ across families even when both store "any".
+func canonWild(ip string, v6 bool) string {
+	if ip == "any" || ip == "" {
+		if v6 {
+			return "::/0"
+		}
+		return "0.0.0.0/0"
+	}
+	return ip
+}
+
+// portListStr renders a port list the way ufw's dport/sport strings look
+// ("any", "80", "80,443", "8080:8090").
+func portListStr(ports []PortRange) string {
+	if len(ports) == 0 {
+		return "any"
+	}
+	var ps []string
+	for _, p := range ports {
+		ps = append(ps, p.String())
+	}
+	return strings.Join(ps, ",")
 }
 
 // Normalize canonicalizes addresses and port lists in place, returning true
@@ -204,9 +252,12 @@ func normalizeAddr(a *AddrSpec) bool {
 	orig := a.IP
 	ip, ipnet, err := net.ParseCIDR(a.IP)
 	if err != nil {
-		// bare IP
-		if net.ParseIP(a.IP) != nil {
-			return false
+		// Bare IP: canonicalize via inet_ntop round-trip (ufw
+		// normalize_address always does this — collapses 2001:0DB8::1
+		// to 2001:db8::1 so delete matches).
+		if p := net.ParseIP(a.IP); p != nil {
+			a.IP = p.String()
+			return a.IP != orig
 		}
 		return false // leave for validator
 	}

@@ -122,6 +122,20 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 	}
 	now := time.Now().Unix()
 
+	// Panic mode: bare drop-policy base chains, nothing else. No user
+	// rules, no established-accept, no NAT — panic must drop ALL traffic.
+	if st.Panic {
+		for _, d := range directions {
+			cp := nftables.ChainPolicyDrop
+			c.chains = append(c.chains, &nftables.Chain{
+				Name: d.base, Table: c.table, Hooknum: d.hook,
+				Priority: nftables.ChainPriorityFilter,
+				Type:     nftables.ChainTypeFilter, Policy: &cp,
+			})
+		}
+		return c, nil
+	}
+
 	// ---- base chains -----------------------------------------------------
 	policies := map[string]string{"in": pol.Input, "out": pol.Output, "routed": pol.Forward}
 	for _, d := range directions {

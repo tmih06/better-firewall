@@ -11,6 +11,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -80,16 +81,19 @@ func isDirTok(s string) bool {
 func parseRuleArgs(args []string) (*ParsedRuleOp, error) {
 	argv := append([]string(nil), args...)
 
-	// Optional leading 'rule' keyword.
-	if len(argv) > 0 && strings.ToLower(argv[0]) == "rule" {
-		argv = argv[1:]
-	}
-
+	// ufw UFWCommandRouteRule.parse: 'route' is stripped first and the
+	// remainder re-parsed as a rule (so 'route rule …' works). Mirror
+	// that: strip 'route', then the optional 'rule' keyword.
 	routed := false
 	deferredDir, deferredIface := "", ""
 	if len(argv) > 0 && strings.ToLower(argv[0]) == "route" {
 		routed = true
 		argv = argv[1:]
+	}
+	if len(argv) > 0 && strings.ToLower(argv[0]) == "rule" {
+		argv = argv[1:]
+	}
+	if routed {
 
 		// 'ufw delete NUM' is the correct usage, not 'ufw route delete NUM'.
 		for i, a := range argv {
@@ -113,9 +117,14 @@ func parseRuleArgs(args []string) (*ParsedRuleOp, error) {
 				strip = "in"
 			}
 			i := indexTok(argv, strip)
-			if i+2 < len(argv) {
+			if i >= 0 && i+2 < len(argv) {
 				deferredDir, deferredIface = strip, argv[i+2]
 				argv = append(argv[:i:i], argv[i+3:]...)
+			} else {
+				// "in on"/"out on" only inside a comment or app name —
+				// no real interface clause. ufw: argv.index() ValueError
+				// → Invalid syntax.
+				return nil, ErrSyntax
 			}
 		case !inOn && !outOn && !appInOutRe.MatchString(s) &&
 			(strings.Contains(s, " in ") || strings.Contains(s, " out ")):
@@ -155,9 +164,16 @@ func parseRuleArgs(args []string) (*ParsedRuleOp, error) {
 				return nil, ErrSyntax
 			}
 			insertPosStr = argv[1]
-			// Position 0 appends and -1 prepends, which is confusing.
-			if n, err := strconv.Atoi(insertPosStr); err == nil && n <= 0 {
-				return nil, fmt.Errorf("Cannot insert rule at position '%d'", n)
+			// ufw set_position: unanchored ^[0-9]+ on the string, then
+			// int(). "00"→0 (append); negatives/non-numeric → invalid.
+			if !insertNumRe.MatchString(insertPosStr) {
+				return nil, fmt.Errorf("Insert position '%s' is not a valid position", insertPosStr)
+			}
+			if n, err := strconv.Atoi(insertPosStr); err == nil {
+				insertPos = n
+			} else {
+				// Overflow: keep a huge sentinel so position checks reject.
+				insertPos = int(^uint(0) >> 1)
 			}
 			argv = argv[2:]
 			action = argv[0]
@@ -289,13 +305,8 @@ func parseRuleArgs(args []string) (*ParsedRuleOp, error) {
 	r.Src.IP = "any"
 	r.Dst.IP = "any"
 
-	// Validate the insert position now that the operation is known good.
-	if insertPosStr != "" {
-		if !insertNumRe.MatchString(insertPosStr) {
-			return nil, fmt.Errorf("Insert position '%s' is not a valid position", insertPosStr)
-		}
-		insertPos, _ = strconv.Atoi(insertPosStr)
-	}
+	// insertPos was already validated and parsed in the dispatch above;
+	// the regex gate there is authoritative. Nothing more to do here.
 
 	ipType := ""
 	switch {
@@ -736,6 +747,10 @@ func parseAddr(tok string) (ip, set, typ string, err error) {
 func validAddress(a string) bool {
 	host, mask, hasMask := strings.Cut(a, "/")
 	if strings.Contains(host, ":") {
+		// ufw valid_address6 rejects '%' (zone IDs) and addrs >43 chars.
+		if strings.Contains(host, "%") || len(host) > 43 {
+			return false
+		}
 		if net.ParseIP(host) == nil {
 			return false
 		}
@@ -838,7 +853,10 @@ func parseExpiry(s string) (int64, error) {
 	if m == nil {
 		return 0, fmt.Errorf("Invalid expires value '%s'", s)
 	}
-	n, _ := strconv.ParseInt(m[1], 10, 64)
+	n, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("Invalid expires value '%s'", s)
+	}
 	var mult int64
 	switch m[2] {
 	case "m":
@@ -849,6 +867,9 @@ func parseExpiry(s string) (int64, error) {
 		mult = 86400
 	default:
 		mult = 1
+	}
+	if n > math.MaxInt64/mult {
+		return 0, fmt.Errorf("Invalid expires value '%s'", s)
 	}
 	return n * mult, nil
 }

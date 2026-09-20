@@ -272,6 +272,7 @@ func updateAppRule(st *store.State, profiles []*appprof.Profile, name string) (s
 			continue
 		}
 		for _, nr := range newRules {
+			nr.ID = rule.NewID() // fresh ID per member (per-rule toggle)
 			nr.Normalize()
 			up4, up6 = appendRule(up4, up6, nr)
 		}
@@ -321,37 +322,53 @@ func expandAppTemplate(tmpl *rule.Rule, profiles []*appprof.Profile) []*rule.Rul
 	return appRulesFromSpecs(tmpl, dspecs, sspecs)
 }
 
-// appRulesFromSpecs builds the cross-product rule list for a template.
+// appRulesFromSpecs mirrors ufw backend.get_app_rules_from_template: one
+// rule per dapp item; when both endpoints are profiles, cross-product
+// (with the same-profile special case pairing item i↔i). The sapp item's
+// proto wins; the dapp item's proto applies only when sapp's is "any".
 // Empty spec list = endpoint untouched (ports already on tmpl or "any").
 func appRulesFromSpecs(tmpl *rule.Rule, dspecs, sspecs []appprof.PortSpec) []*rule.Rule {
-	if len(dspecs) == 0 {
-		dspecs = []appprof.PortSpec{{Ports: "", Proto: "any"}}
-	}
-	if len(sspecs) == 0 {
-		sspecs = []appprof.PortSpec{{Ports: "", Proto: "any"}}
-	}
 	var out []*rule.Rule
-	for _, ds := range dspecs {
+	sameProfile := tmpl.Dapp != "" && tmpl.Dapp == tmpl.Sapp
+
+	mk := func(ds, ss appprof.PortSpec) *rule.Rule {
+		nr := tmpl.Clone()
+		if ds.Ports != "" {
+			nr.Dst.Ports = specPorts(ds)
+		}
+		if ss.Ports != "" {
+			nr.Src.Ports = specPorts(ss)
+		}
+		// sapp proto wins; inherit dapp's only when sapp's is "any".
+		switch {
+		case ss.Proto != "any":
+			nr.Proto = ss.Proto
+		case ds.Proto != "any":
+			nr.Proto = ds.Proto
+		default:
+			nr.Proto = "any"
+		}
+		return nr
+	}
+
+	if len(dspecs) > 0 && len(sspecs) > 0 {
+		for _, ds := range dspecs {
+			if sameProfile {
+				// Same profile both sides: pair item i with item i.
+				out = append(out, mk(ds, ds))
+				continue
+			}
+			for _, ss := range sspecs {
+				out = append(out, mk(ds, ss))
+			}
+		}
+	} else if len(dspecs) > 0 {
+		for _, ds := range dspecs {
+			out = append(out, mk(ds, appprof.PortSpec{Proto: "any"}))
+		}
+	} else if len(sspecs) > 0 {
 		for _, ss := range sspecs {
-			if ds.Proto != "any" && ss.Proto != "any" && ds.Proto != ss.Proto {
-				continue // proto mismatch — ufw skips the pair
-			}
-			nr := tmpl.Clone()
-			if ds.Ports != "" {
-				nr.Dst.Ports = specPorts(ds)
-			}
-			if ss.Ports != "" {
-				nr.Src.Ports = specPorts(ss)
-			}
-			switch {
-			case ds.Proto != "any":
-				nr.Proto = ds.Proto
-			case ss.Proto != "any":
-				nr.Proto = ss.Proto
-			default:
-				nr.Proto = "any"
-			}
-			out = append(out, nr)
+			out = append(out, mk(appprof.PortSpec{Proto: "any"}, ss))
 		}
 	}
 	return out

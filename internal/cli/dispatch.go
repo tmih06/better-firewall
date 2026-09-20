@@ -42,7 +42,12 @@ func (e *Env) dispatch(args []string) int {
 	case "logs":
 		return e.cmdLogs(args[1:])
 	case "rule":
-		return e.cmdRule(args[1:])
+		// 'rule enable|disable NUM' is the bfw toggle extension; any other
+		// 'rule …' is the ufw optional keyword → fall through to rule ops.
+		if len(args) > 1 && (args[1] == "enable" || args[1] == "disable") {
+			return e.cmdRule(args[1:])
+		}
+		return e.cmdRuleOp(args)
 	case "boot-load":
 		return e.cmdBootLoad(args[1:])
 	case "boot-unload":

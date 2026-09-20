@@ -164,7 +164,9 @@ func TestProtoRestrictions(t *testing.T) {
 }
 
 func TestErrors(t *testing.T) {
-	parseErr(t, "insert", "0", "deny", "80/tcp")
+	// ufw accepts "insert 0" as append (position 0); only non-numeric or
+	// negative positions error. "insert -1" is rejected by the regex.
+	parseErr(t, "insert", "-1", "deny", "80/tcp")
 	parseErr(t, "allow", "badportname123")
 	parseErr(t, "allow", "80:80/tcp")
 	parseErr(t, "allow", "proto", "tcp", "to", "any", "port", "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16")

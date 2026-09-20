@@ -88,7 +88,26 @@ func (e *Env) deleteByNumber(n int) int {
 	}
 	defer unlock()
 
-	if v6 {
+	// App rules: delete every member of the tuple in this family, like
+	// ufw's get_app_rules_from_system expansion (frontend.delete_rule).
+	if r.Dapp != "" || r.Sapp != "" {
+		tupl := r.AppTuple()
+		list := st.Rules4
+		if v6 {
+			list = st.Rules6
+		}
+		var kept []rule.Rule
+		for i := range list {
+			if list[i].AppTuple() != tupl {
+				kept = append(kept, list[i])
+			}
+		}
+		if v6 {
+			st.Rules6 = kept
+		} else {
+			st.Rules4 = kept
+		}
+	} else if v6 {
 		st.Rules6 = append(st.Rules6[:idx], st.Rules6[idx+1:]...)
 	} else {
 		st.Rules4 = append(st.Rules4[:idx], st.Rules4[idx+1:]...)
@@ -107,9 +126,15 @@ func (e *Env) runRuleOp(op *ParsedRuleOp) int {
 	// App rules expand to one rule per profile port item (ufw stores
 	// separate rules per `|` item, sharing the app tuple). Deletes keep
 	// the single parsed rule — applyHalf expands it against stored rules.
+	// For positional inserts ufw reverses the group so it lands in order.
 	rules := []*rule.Rule{op.Rule}
-	if op.Kind == OpAdd && (op.Rule.Dapp != "" || op.Rule.Sapp != "") {
+	if op.Kind != OpDelete && (op.Rule.Dapp != "" || op.Rule.Sapp != "") {
 		if expanded := expandAppRules(op.Rule); len(expanded) > 0 {
+			if op.Kind == OpInsert || op.Kind == OpPrepend {
+				for i, j := 0, len(expanded)-1; i < j; i, j = i+1, j-1 {
+					expanded[i], expanded[j] = expanded[j], expanded[i]
+				}
+			}
 			rules = expanded
 		}
 	}
