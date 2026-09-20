@@ -481,16 +481,17 @@ func cmpValue(p pend, data []byte) string {
 		return strconv.Quote(strings.TrimRight(string(data), "\x00"))
 	case "ct state":
 		// ct state matches encode as bitwise mask + cmp neq 0; the state
-		// bits live in the mask, not the cmp data.
+		// bits live in the mask, not the cmp data. Host-order register →
+		// native-endian decode.
 		if len(p.mask) == 4 {
-			return ctStateName(binaryutil.BigEndian.Uint32(p.mask))
+			return ctStateName(binaryutil.NativeEndian.Uint32(p.mask))
 		}
 		if len(data) == 4 {
-			return ctStateName(binaryutil.BigEndian.Uint32(data))
+			return ctStateName(binaryutil.NativeEndian.Uint32(data))
 		}
 	case "fib daddr type":
 		if len(data) == 4 {
-			return addrTypeName(binaryutil.BigEndian.Uint32(data))
+			return addrTypeName(binaryutil.NativeEndian.Uint32(data))
 		}
 	case "icmp type":
 		if len(data) == 1 {

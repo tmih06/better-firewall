@@ -521,9 +521,13 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 	if v6 {
 		addrType = nftables.TypeIP6Addr
 	}
+	name := "bfw_limit_" + r.ID
+	if v6 {
+		name += "6" // dual v4/v6 rules share r.ID; qualify the set name
+	}
 	set := &nftables.Set{
 		Table:         c.table,
-		Name:          "bfw_limit_" + r.ID,
+		Name:          name,
 		ID:            c.newSetID(),
 		KeyType:       nftables.MustConcatSetType(addrType, nftables.TypeInetService),
 		Concatenation: true,
@@ -998,22 +1002,27 @@ func rhType(t byte) []expr.Any {
 
 // ctState matches any of the given state bits (nft's `ct state { ... }`
 // encoding: load, mask, neq 0).
+// ctState matches when the conntrack state has any of `bits` set. The ct
+// state register is host-order, so the bitwise mask is native-endian
+// (big-endian here would read as bits 25/26 — the ENOBUFS-era bug).
 func ctState(bits uint32) []expr.Any {
 	return []expr.Any{
 		&expr.Ct{Key: expr.CtKeySTATE, Register: 1},
 		&expr.Bitwise{
 			SourceRegister: 1, DestRegister: 1, Len: 4,
-			Mask: binaryutil.BigEndian.PutUint32(bits),
-			Xor:  binaryutil.BigEndian.PutUint32(0),
+			Mask: binaryutil.NativeEndian.PutUint32(bits),
+			Xor:  binaryutil.NativeEndian.PutUint32(0),
 		},
-		&expr.Cmp{Op: expr.CmpOpNeq, Register: 1, Data: binaryutil.BigEndian.PutUint32(0)},
+		&expr.Cmp{Op: expr.CmpOpNeq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(0)},
 	}
 }
 
+// fibAddrType matches the destination address type (local/broadcast/…).
+// The fib result register is host-order → native-endian compare.
 func fibAddrType(rtn uint32) []expr.Any {
 	return []expr.Any{
 		&expr.Fib{Register: 1, ResultADDRTYPE: true, FlagDADDR: true},
-		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.BigEndian.PutUint32(rtn)},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(rtn)},
 	}
 }
 

@@ -104,9 +104,15 @@ func (e *Env) runRuleOp(op *ParsedRuleOp) int {
 	}
 	markFamilies(st)
 
-	// The parser already resolved app profiles and expanded their ports
-	// into the rule; a parsed op is always a single rule.
+	// App rules expand to one rule per profile port item (ufw stores
+	// separate rules per `|` item, sharing the app tuple). Deletes keep
+	// the single parsed rule — applyHalf expands it against stored rules.
 	rules := []*rule.Rule{op.Rule}
+	if op.Kind == OpAdd && (op.Rule.Dapp != "" || op.Rule.Sapp != "") {
+		if expanded := expandAppRules(op.Rule); len(expanded) > 0 {
+			rules = expanded
+		}
+	}
 
 	numV4 := dedupedCount(st.Rules4)
 	numV6 := dedupedCount(st.Rules6)
@@ -560,4 +566,33 @@ func profilePorts(p *appprof.Profile) []rule.PortRange {
 		}
 	}
 	return ranges
+}
+
+// expandAppRules regenerates the per-item rule list for an app-rule add:
+// the parser flattened the profile's ports onto the rule, so rebuild from
+// the profile's Expand() items (one rule per dapp item, cross-product with
+// sapp items). Returns nil when the profile is gone — caller keeps the
+// single parsed rule.
+func expandAppRules(nr *rule.Rule) []*rule.Rule {
+	profiles := loadProfiles()
+	var dspecs, sspecs []appprof.PortSpec
+	if nr.Dapp != "" {
+		p := appprof.Find(profiles, nr.Dapp)
+		if p == nil {
+			return nil
+		}
+		dspecs = p.Expand()
+	}
+	if nr.Sapp != "" {
+		p := appprof.Find(profiles, nr.Sapp)
+		if p == nil {
+			return nil
+		}
+		sspecs = p.Expand()
+	}
+	out := appRulesFromSpecs(nr, dspecs, sspecs)
+	for _, r := range out {
+		r.ID = rule.NewID()
+	}
+	return out
 }

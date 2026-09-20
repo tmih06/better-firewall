@@ -4,9 +4,11 @@ package nft
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 
 	"github.com/google/nftables"
+	"github.com/mdlayher/netlink"
 
 	"bfirewall/internal/store"
 )
@@ -20,7 +22,14 @@ func (b *be) Apply(st *store.State, etc map[string]string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := nftables.New()
+	conn, err := nftables.New(nftables.WithSockOptions(func(c *netlink.Conn) error {
+		// Large batches (full ruleset replace) can overflow the default
+		// netlink receive buffer while reading ACKs → ENOBUFS. Bump it.
+		if err := c.SetReadBuffer(8 * 1024 * 1024); err != nil {
+			return err
+		}
+		return c.SetWriteBuffer(8 * 1024 * 1024)
+	}))
 	if err != nil {
 		return fmt.Errorf("netlink: %w", err)
 	}
@@ -47,6 +56,12 @@ func (b *be) Apply(st *store.State, etc map[string]string) error {
 	for _, t := range c.natTables {
 		conn.AddTable(t)
 	}
+	if os.Getenv("BFW_DEBUG_DUMP") != "" {
+		return b.debugDump(c)
+	}
+	if os.Getenv("BFW_DEBUG_APPLY") != "" {
+		return b.debugApply(conn, c)
+	}
 	for _, ch := range c.chains {
 		conn.AddChain(ch)
 	}
@@ -61,6 +76,32 @@ func (b *be) Apply(st *store.State, etc map[string]string) error {
 	if err := conn.Flush(); err != nil {
 		return fmt.Errorf("apply ruleset: %w", err)
 	}
+	return nil
+}
+
+// debugApply flushes the batch in two stages to isolate which object
+// fails: (1) tables+chains+sets, (2) rules incrementally. Enabled by
+// BFW_DEBUG_APPLY=1.
+func (b *be) debugApply(conn *nftables.Conn, c *compiled) error {
+	for _, ch := range c.chains {
+		conn.AddChain(ch)
+	}
+	for _, s := range c.sets {
+		if err := conn.AddSet(s, c.elems[s]); err != nil {
+			return fmt.Errorf("set %s: %w", s.Name, err)
+		}
+	}
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("stage tables+chains+sets: %w", err)
+	}
+	fmt.Printf("stage1 OK: %d chains %d sets\n", len(c.chains), len(c.sets))
+	for i, r := range c.rules {
+		conn.AddRule(r)
+		if err := conn.Flush(); err != nil {
+			return fmt.Errorf("stage rule[%d] chain=%s: %w", i, r.Chain.Name, err)
+		}
+	}
+	fmt.Printf("stage2 OK: %d rules\n", len(c.rules))
 	return nil
 }
 
@@ -115,5 +156,30 @@ func (b *be) ApplyFragments(path string) error {
 	if out, err := exec.Command("nft", "-f", path).CombinedOutput(); err != nil {
 		return fmt.Errorf("fragment %s failed apply: %v: %s", path, err, out)
 	}
+	return nil
+}
+
+// debugDump prints every object in the batch (names + flags) without
+// sending it. Enabled by BFW_DEBUG_DUMP=1.
+func (b *be) debugDump(c *compiled) error {
+	fmt.Printf("table: %s family=%d\n", c.table.Name, c.table.Family)
+	for _, t := range c.natTables {
+		fmt.Printf("nat table: %s family=%d\n", t.Name, t.Family)
+	}
+	seen := map[string]int{}
+	for _, ch := range c.chains {
+		k := ch.Name
+		seen[k]++
+		mark := ""
+		if seen[k] > 1 {
+			mark = "  <<DUP>>"
+		}
+		fmt.Printf("chain %q base=%v%s\n", ch.Name, ch.Hooknum != nil, mark)
+	}
+	for _, s := range c.sets {
+		fmt.Printf("set %q anon=%v const=%v dyn=%v concat=%v id=%d elems=%d\n",
+			s.Name, s.Anonymous, s.Constant, s.Dynamic, s.Concatenation, s.ID, len(c.elems[s]))
+	}
+	fmt.Printf("rules: %d\n", len(c.rules))
 	return nil
 }
