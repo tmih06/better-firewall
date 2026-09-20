@@ -162,7 +162,7 @@ func (s *Store) LoadConf() (*Conf, error) {
 		}
 		switch strings.TrimSpace(kv[0]) {
 		case "ENABLED":
-			c.Enabled = strings.TrimSpace(kv[1]) == "yes"
+			c.Enabled = strings.EqualFold(strings.TrimSpace(kv[1]), "yes")
 		case "LOGLEVEL":
 			c.LogLevel = strings.TrimSpace(kv[1])
 		}

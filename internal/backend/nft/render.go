@@ -107,7 +107,9 @@ func renderChain(b *strings.Builder, c *compiled, ch *nftables.Chain) {
 		if ch.Priority != nil {
 			prio = int(*ch.Priority)
 		}
-		fmt.Fprintf(b, "\t\ttype %s hook %s priority %d;", ch.Type, hook, prio)
+		// nft prints symbolic priority names (filter/dstnat/srcnat);
+		// render the same so `diff` against `nft -nn list` matches.
+		fmt.Fprintf(b, "\t\ttype %s hook %s priority %s;", ch.Type, hook, prioName(prio))
 		if ch.Policy != nil {
 			pol := "accept"
 			if *ch.Policy == nftables.ChainPolicyDrop {
@@ -752,4 +754,25 @@ func renderNAT(regs map[uint32]pend, x *expr.NAT) string {
 		return fmt.Sprintf("dnat to %s%s", addr, port)
 	}
 	return fmt.Sprintf("snat to %s%s", addr, port)
+}
+
+// prioName maps a numeric chain priority to nft's symbolic name so rendered
+// output matches `nft -nn list` (which prints names, not numbers).
+func prioName(p int) string {
+	switch p {
+	case -300:
+		return "raw"
+	case -200:
+		return "mangle"
+	case -100:
+		return "dstnat"
+	case 0:
+		return "filter"
+	case 100:
+		return "srcnat"
+	case 300:
+		return "out"
+	default:
+		return strconv.Itoa(p)
+	}
 }

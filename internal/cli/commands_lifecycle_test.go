@@ -81,7 +81,7 @@ func TestEnableAlreadyLoaded(t *testing.T) {
 	if rc := e.cmdEnable(nil); rc != 0 {
 		t.Fatalf("rc = %d, want 0", rc)
 	}
-	if got := out.String(); got != "Firewall already started, use 'force-reload'\n" {
+	if got := out.String(); got != "Firewall already started, use 'reload'\n" {
 		t.Fatalf("stdout = %q", got)
 	}
 	if fb.applies != 0 {
@@ -274,17 +274,17 @@ func TestReset(t *testing.T) {
 }
 
 func TestDefaultPolicy(t *testing.T) {
-	// Missing direction → Invalid direction ''.
-	e, _, _, errOut := lifecycleEnv(t, "")
-	if rc := e.cmdDefault([]string{"allow"}); rc != 1 {
-		t.Fatalf("rc = %d, want 1", rc)
+	// Missing direction defaults to incoming (ufw UFWCommandDefault.parse).
+	e, _, out, _ := lifecycleEnv(t, "")
+	if rc := e.cmdDefault([]string{"allow"}); rc != 0 {
+		t.Fatalf("rc = %d, want 0", rc)
 	}
-	if got := errOut.String(); got != "ERROR: Invalid direction ''\n" {
-		t.Fatalf("stderr = %q", got)
+	if !strings.Contains(out.String(), "incoming") {
+		t.Fatalf("stdout = %q", out.String())
 	}
 
 	// Invalid policy → help, exit 1.
-	e, _, out, _ := lifecycleEnv(t, "")
+	e, _, out, _ = lifecycleEnv(t, "")
 	if rc := e.cmdDefault([]string{"bogus", "incoming"}); rc != 1 {
 		t.Fatalf("rc = %d, want 1", rc)
 	}

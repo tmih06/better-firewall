@@ -501,6 +501,9 @@ func parseRuleArgs(args []string) (*ParsedRuleOp, error) {
 	stampProto(r.Dst.Ports, r.Proto)
 
 	if routed {
+		// ufw keeps direction (in/out) alongside forward=True; preserve it
+		// in RouteDir so status can show "(out)" and match() stays symmetric.
+		r.RouteDir = r.Direction
 		r.Direction = rule.DirRouted
 		if deferredIface != "" {
 			if err := setIface(r, deferredDir, deferredIface); err != nil {
@@ -509,14 +512,15 @@ func parseRuleArgs(args []string) (*ParsedRuleOp, error) {
 		}
 	}
 
-	r.Normalize()
+	normalized := r.Normalize()
 
 	op := &ParsedRuleOp{
-		Kind:   OpAdd,
-		Action: action,
-		Rule:   r,
-		Routed: routed,
-		IPType: ipType,
+		Kind:       OpAdd,
+		Action:     action,
+		Rule:       r,
+		Routed:     routed,
+		IPType:     ipType,
+		Normalized: normalized,
 	}
 	switch {
 	case remove:

@@ -79,12 +79,14 @@ func portStr(ports []rule.PortRange) string {
 	return strings.Join(parts, ",")
 }
 
+// portsEqual compares port lists the way ufw does: by rendered string,
+// ignoring per-item protocol (ufw compares r.dport == r.sport strings).
 func portsEqual(a, b []rule.PortRange) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
-		if a[i] != b[i] {
+		if a[i].Lo != b[i].Lo || a[i].Hi != b[i].Hi {
 			return false
 		}
 	}
@@ -329,11 +331,14 @@ func RuleLine(r *rule.Rule, verbose, numbered bool) (to, action, from, attribs s
 	}
 
 	var attrs []string
-	if r.Log != "" || r.Direction == rule.DirOut {
+	// ufw shows "(out)" for routed rules whose direction is out; RouteDir
+	// preserves the in/out that Direction=routed would otherwise hide.
+	outDir := r.Direction == rule.DirOut || (r.Forward() && r.RouteDir == rule.DirOut)
+	if r.Log != "" || outDir {
 		if r.Log != "" {
 			attrs = append(attrs, r.Log)
 		}
-		if numbered && r.Direction == rule.DirOut {
+		if numbered && outDir {
 			attrs = append(attrs, "out")
 		}
 	}
@@ -443,6 +448,11 @@ func StatusLines(st *store.State, numbered, verbose bool) []string {
 		if strRte != "" {
 			b.WriteString(strRte)
 		}
+	}
+
+	// ufw appends this hint when IPv6 is configured off.
+	if !st.IPv6 {
+		b.WriteString("\n\nIPv6 is not enabled")
 	}
 
 	return strings.Split(b.String(), "\n")

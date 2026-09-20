@@ -1088,18 +1088,32 @@ func natRuleV6(nr *store.NATRule) bool {
 		if s == "" || s == "any" {
 			continue
 		}
-		host, _, _ := strings.Cut(s, ":")
-		if ip, _, err := net.ParseCIDR(s); err == nil {
-			if ip.To4() == nil {
-				return true
-			}
-			continue
-		}
-		if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+		if ip := natHostIP(s); ip != nil && ip.To4() == nil {
 			return true
 		}
 	}
 	return false
+}
+
+// natHostIP extracts the IP from a NAT field that may be a bare IP, a CIDR,
+// a v4 host:port, or a [v6]:port. Returns nil when unparseable.
+func natHostIP(s string) net.IP {
+	if ip, _, err := net.ParseCIDR(s); err == nil {
+		return ip
+	}
+	if ip := net.ParseIP(s); ip != nil {
+		return ip // bare v4 or v6
+	}
+	// host:port — strip a bracketed v6 host or split on the last colon.
+	if strings.HasPrefix(s, "[") {
+		if h, _, ok := strings.Cut(s[1:], "]"); ok {
+			return net.ParseIP(h)
+		}
+	}
+	if i := strings.LastIndex(s, ":"); i > 0 {
+		return net.ParseIP(s[:i])
+	}
+	return nil
 }
 
 func natFamily(v6 bool) uint32 {

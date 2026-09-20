@@ -12,6 +12,8 @@ import (
 func (e *Env) cmdStatus(args []string) int {
 	verbose := false
 	numbered := false
+	// ufw registers `status verbose` and `status numbered` as separate
+	// commands; combining them is a syntax error.
 	for _, a := range args {
 		switch a {
 		case "verbose":
@@ -22,6 +24,10 @@ func (e *Env) cmdStatus(args []string) int {
 			e.Msg("%s", HelpText(e.Prog))
 			return 1
 		}
+	}
+	if verbose && numbered {
+		e.Msg("%s", HelpText(e.Prog))
+		return 1
 	}
 
 	if e.DryRun {

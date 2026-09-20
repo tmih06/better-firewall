@@ -128,10 +128,12 @@ func LockFile(path string) (*os.File, error) {
 	return f, nil
 }
 
-// IPForwardEnabled reads the kernel forwarding sysctls.
+// IPForwardEnabled reads the kernel forwarding sysctls. ufw ORs
+// ip_forward, conf/default/forwarding, and conf/all/forwarding for v6.
 func IPForwardEnabled() (v4, v6 bool) {
 	v4 = readSysctlFlag("/proc/sys/net/ipv4/ip_forward")
-	v6 = readSysctlFlag("/proc/sys/net/ipv6/conf/all/forwarding")
+	v6 = readSysctlFlag("/proc/sys/net/ipv6/conf/all/forwarding") ||
+		readSysctlFlag("/proc/sys/net/ipv6/conf/default/forwarding")
 	return v4, v6
 }
 

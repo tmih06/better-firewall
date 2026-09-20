@@ -17,6 +17,9 @@ type ParsedRuleOp struct {
 	Routed bool
 	// IPType is "v4", "v6", or "both" — inferred from address families.
 	IPType string
+	// Normalized is true when parsing's Normalize() changed the rule (ufw
+	// warns "Rule changed after normalization" in that case).
+	Normalized bool
 }
 
 // OpKind enumerates rule operations.

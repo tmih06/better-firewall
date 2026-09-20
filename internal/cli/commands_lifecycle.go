@@ -232,7 +232,14 @@ func (e *Env) cmdEnable(args []string) int {
 		return e.Errorf("%v", err)
 	}
 	if loaded {
-		e.Msg("Firewall already started, use 'force-reload'")
+		// ufw prints this but still writes ENABLED=yes so a running-but-
+		// disabled firewall regains boot persistence. Match that.
+		if !e.DryRun {
+			if rc := e.persistEnabled(true); rc != 0 {
+				return rc
+			}
+		}
+		e.Msg("Firewall already started, use 'reload'")
 		return 0
 	}
 
@@ -404,7 +411,8 @@ func (e *Env) cmdDefault(args []string) int {
 		e.Msg("%s", HelpText(e.Prog))
 		return 1
 	}
-	dir := ""
+	// ufw UFWCommandDefault.parse defaults direction to "incoming".
+	dir := "incoming"
 	if len(args) > 1 {
 		dir = strings.ToLower(args[1])
 	}
@@ -417,7 +425,6 @@ func (e *Env) cmdDefault(args []string) int {
 	case "routed", "forward":
 		dir, chain = "routed", "FORWARD"
 	default:
-		// ufw requires the direction; missing → "Invalid direction ''".
 		return e.Errorf("Invalid direction '%s'", dir)
 	}
 	if len(args) > 2 {

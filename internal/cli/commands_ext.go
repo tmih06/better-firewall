@@ -111,6 +111,13 @@ func (e *Env) setCreate(args []string) int {
 	if findSet(st, name) != nil {
 		return e.Errorf("Set '%s' already exists", name)
 	}
+	// The compiler derives the v6 set as bfw_set_<name>6, so `name` collides
+	// with an existing set `o` when name+"6"==o or name==o+"6".
+	for _, o := range st.Sets {
+		if name+"6" == o.Name || name == o.Name+"6" {
+			return e.Errorf("Set '%s' collides with '%s' (v6 twin naming)", name, o.Name)
+		}
+	}
 	st.Sets = append(st.Sets, store.IPSet{Name: name, Family: "inet"})
 	return e.commitState(st, fmt.Sprintf("Set '%s' created", name))
 }
@@ -377,6 +384,10 @@ func (e *Env) natAdd(args []string) int {
 		if i+1 >= len(args) || args[i] != "to-destination" {
 			e.Msg("%s", HelpText(e.Prog))
 			return 1
+		}
+		// Validate now so a bad value can't wedge every later apply.
+		if !validToDest(args[i+1]) {
+			return e.Errorf("Bad to-destination '%s'", args[i+1])
 		}
 		nr.ToDest = args[i+1]
 		i += 2
@@ -666,15 +677,19 @@ func (e *Env) cmdCheck(args []string) int {
 var (
 	nftCounterRe = regexp.MustCompile(`counter packets \d+ bytes \d+`)
 	nftHandleRe  = regexp.MustCompile(`# handle \d+`)
+	nftBareCtrRe = regexp.MustCompile(`\bcounter\b`)
 )
 
 // normalizeNft strips volatile nft output (counters, handles, whitespace)
-// so stored and live rulesets compare semantically.
+// so stored and live rulesets compare semantically. The bare `counter`
+// token in rendered rules is also stripped — the kernel always prints
+// `counter packets N bytes N`, which the first regex removes entirely.
 func normalizeNft(s string) []string {
 	var out []string
 	for _, line := range strings.Split(s, "\n") {
 		line = nftCounterRe.ReplaceAllString(line, "")
 		line = nftHandleRe.ReplaceAllString(line, "")
+		line = nftBareCtrRe.ReplaceAllString(line, "")
 		line = strings.Join(strings.Fields(line), " ")
 		if line != "" {
 			out = append(out, line)
@@ -818,7 +833,16 @@ func (e *Env) cmdDiff(args []string) int {
 		return e.Errorf("%v", err)
 	}
 	// Read-only shell-out; a missing table or nft binary diffs against empty.
-	have, _ := exec.Command("nft", "-nn", "list", "table", "inet", nftbe.TableName).Output()
+	// Include the NAT tables so NAT rules don't show as spurious diffs.
+	var have []byte
+	for _, spec := range [][2]string{
+		{"inet", nftbe.TableName},
+		{"ip", nftbe.NATTableName},
+		{"ip6", nftbe.NATTableName},
+	} {
+		out, _ := exec.Command("nft", "-nn", "list", "table", spec[0], spec[1]).Output()
+		have = append(have, out...)
+	}
 	a := normalizeNft(want)
 	b := normalizeNft(string(have))
 	if len(a) == len(b) {
@@ -1070,4 +1094,33 @@ func (e *Env) cmdLogs(args []string) int {
 		return e.Errorf("%v", err)
 	}
 	return 0
+}
+
+// validToDest validates a dnat to-destination: bare IP, [v6]:port, or
+// v4 host:port. Rejects anything the compiler can't express.
+func validToDest(s string) bool {
+	if net.ParseIP(s) != nil {
+		return true // bare v4 or v6
+	}
+	if strings.HasPrefix(s, "[") {
+		h, rest, ok := strings.Cut(s[1:], "]")
+		if !ok || net.ParseIP(h) == nil {
+			return false
+		}
+		if rest == "" {
+			return true
+		}
+		if !strings.HasPrefix(rest, ":") {
+			return false
+		}
+		p, err := strconv.Atoi(rest[1:])
+		return err == nil && p >= 1 && p <= 65535
+	}
+	// v4 host:port
+	h, p, ok := strings.Cut(s, ":")
+	if !ok || net.ParseIP(h) == nil || net.ParseIP(h).To4() == nil {
+		return false
+	}
+	pn, err := strconv.Atoi(p)
+	return err == nil && pn >= 1 && pn <= 65535
 }

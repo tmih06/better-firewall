@@ -8,6 +8,7 @@ package cli
 import (
 	"errors"
 	"strconv"
+	"os"
 	"strings"
 	"time"
 
@@ -160,7 +161,7 @@ func (e *Env) runRuleOp(op *ParsedRuleOp) int {
 			return e.Errorf("Invalid position '%d'", pos)
 		}
 
-		if !warned && nr.Normalize() {
+		if !warned && op.Normalized {
 			e.Warnf("Rule changed after normalization")
 			warned = true
 		}
@@ -174,9 +175,12 @@ func (e *Env) runRuleOp(op *ParsedRuleOp) int {
 			}
 			res = e.applyHalf(st, nr, p, false, op.Kind)
 		case "v6":
-			if !st.IPv6 {
-				return e.Errorf("IPv6 support not enabled")
-			}
+		if !st.IPv6 {
+			return e.Errorf("IPv6 support not enabled")
+		}
+		if !ipv6Available() {
+			return e.Errorf("IPv6 support not enabled") // kernel lacks ipv6
+		}
 			p, err2 := v6Position(pos, count, numV4, numV6)
 			if err2 != "" {
 				return e.Errorf("%s%d'", err2, pos)
@@ -443,6 +447,11 @@ func outcomeString(oc ruleOutcome, v6, live bool) string {
 	case outSkipInsert:
 		return "Skipping inserting existing rule" + suffix
 	case outNotFound:
+		// ufw gates the not-found message on `not self.dryrun`; a dry-run
+		// delete of a missing rule still reports "Rules updated".
+		if !live {
+			return "Rules updated" + suffix
+		}
 		return "Could not delete non-existent rule" + suffix
 	}
 	if !live {
@@ -620,4 +629,10 @@ func expandAppRules(nr *rule.Rule) []*rule.Rule {
 		r.ID = rule.NewID()
 	}
 	return out
+}
+
+// ipv6Available reports whether the kernel has IPv6 (ufw's use_ipv6 check).
+func ipv6Available() bool {
+	_, err := os.Stat("/proc/sys/net/ipv6")
+	return err == nil
 }
