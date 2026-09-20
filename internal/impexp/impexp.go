@@ -140,9 +140,14 @@ func mergeRules(dst *[]rule.Rule, src []rule.Rule) int {
 			case rule.MatchExact:
 				merged = true
 			case rule.MatchComment, rule.MatchAction:
+				// In-place replace keeps the stored rule's ID and bfw
+				// extensions (disabled/expires) that the import lacks.
 				id := (*dst)[j].ID
+				dis, exp := (*dst)[j].Disabled, (*dst)[j].ExpiresAt
 				(*dst)[j] = *nr
 				(*dst)[j].ID = id
+				(*dst)[j].Disabled = dis
+				(*dst)[j].ExpiresAt = exp
 				added++
 				merged = true
 			}

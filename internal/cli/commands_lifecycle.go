@@ -62,16 +62,19 @@ func dirWritable(dir string) bool {
 }
 
 // runInitHook executes <dir>/<name>.init <arg> when present and executable
-// (ufw before.init/after.init parity). Failures warn, never abort.
-func (e *Env) runInitHook(name, arg string) {
+// (ufw before.init/after.init parity). Returns false on failure so the
+// caller can abort — ufw fails the enable when before.init fails.
+func (e *Env) runInitHook(name, arg string) bool {
 	p := e.Store.InitPath(name)
 	fi, err := os.Stat(p)
 	if err != nil || fi.IsDir() || fi.Mode()&0111 == 0 {
-		return
+		return true
 	}
 	if err := hookRunCmd(p, arg); err != nil {
 		e.Warnf("'%s %s' exited with error", p, arg)
+		return false
 	}
+	return true
 }
 
 // applyRuleset performs the enable-time apply sequence (ufw-init start):
@@ -102,7 +105,9 @@ func (e *Env) applyRuleset(st *store.State, etc map[string]string) int {
 		return 0
 	}
 
-	e.runInitHook("before", "start")
+	if !e.runInitHook("before", "start") {
+		return e.Errorf("before.init failed; aborting enable")
+	}
 
 	if err := b.Apply(st, etc); err != nil {
 		return e.Errorf("%v", err)
@@ -137,6 +142,39 @@ func (e *Env) applyRuleset(st *store.State, etc map[string]string) int {
 	}
 
 	e.runInitHook("after", "start")
+	return 0
+}
+
+// reloadRuleset applies only the ruleset + fragments — no init hooks,
+// sysctl, or modprobe. ufw rule mutations go through _reload_user_rules;
+// the heavy init path runs once at enable/start, not per mutation.
+func (e *Env) reloadRuleset(st *store.State, etc map[string]string) int {
+	b, err := e.backend()
+	if err != nil {
+		return e.Errorf("%v", err)
+	}
+	if e.DryRun {
+		txt, err := nftbe.RenderText(st, etc)
+		if err != nil {
+			return e.Errorf("%v", err)
+		}
+		e.Msg("%s", strings.TrimRight(txt, "\n"))
+		return 0
+	}
+	if err := b.Apply(st, etc); err != nil {
+		return e.Errorf("%v", err)
+	}
+	for _, name := range []string{"before", "before6", "after", "after6"} {
+		p := e.Store.FragmentPath(name)
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		if err := b.ApplyFragments(p); err != nil {
+			e.Warnf("applying '%s' failed: %v", p, err)
+			b.Flush()
+			return e.Errorf("Failed to apply firewall fragments")
+		}
+	}
 	return 0
 }
 

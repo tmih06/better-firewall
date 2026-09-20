@@ -114,6 +114,24 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 	if st.Panic {
 		pol = store.Policies{Input: "deny", Output: "deny", Forward: "deny"}
 	}
+	// /etc/default/bfirewall DEFAULT_*_POLICY keys override stored policies
+	// (ufw reads them from /etc/default/ufw at apply time).
+	for k, dst := range map[string]*string{
+		"DEFAULT_INPUT_POLICY":   &pol.Input,
+		"DEFAULT_OUTPUT_POLICY":  &pol.Output,
+		"DEFAULT_FORWARD_POLICY": &pol.Forward,
+	} {
+		if v, ok := etc[k]; ok {
+			switch strings.ToLower(v) {
+			case "accept", "allow":
+				*dst = "allow"
+			case "drop", "deny":
+				*dst = "deny"
+			case "reject":
+				*dst = "reject"
+			}
+		}
+	}
 	ipv6 := st.IPv6
 	if v, ok := etc["IPV6"]; ok {
 		ipv6 = strings.EqualFold(v, "yes")

@@ -493,17 +493,21 @@ func (e *Env) commitState(st *store.State, precomputed ...string) int {
 		}
 		return e.applyRuleset(st, etc)
 	}
-	if err := e.Store.Save(st); err != nil {
-		return e.Errorf("%s", err)
-	}
+	// Apply before saving when live: a compile/apply error must not leave
+	// rules.json ahead of the kernel (that wedges every later mutation).
 	if e.live() {
 		etc, err := e.Store.EtcDefaults()
 		if err != nil {
 			return e.Errorf("%s", err)
 		}
-		if code := e.applyRuleset(st, etc); code != 0 {
+		// Mutations reload only the ruleset; init hooks/sysctl/modprobe run
+		// once at enable, not per rule change (ufw _reload_user_rules).
+		if code := e.reloadRuleset(st, etc); code != 0 {
 			return code
 		}
+	}
+	if err := e.Store.Save(st); err != nil {
+		return e.Errorf("%s", err)
 	}
 	e.Msg("%s", strings.Join(precomputed, "\n"))
 	return 0

@@ -290,7 +290,11 @@ func (e *Env) setDestroy(args []string) int {
 		if !e.Force {
 			return e.Errorf("Set '%s' is referenced by %d rule(s) (use --force to destroy anyway)", name, n)
 		}
-		e.Warnf("destroying set '%s' still referenced by %d rule(s)", name, n)
+		// A destroyed set leaves dangling Lookup refs that fail every later
+		// apply. Strip the references so the ruleset stays loadable.
+		e.Warnf("destroying set '%s'; removing %d referencing rule(s)", name, n)
+		st.Rules4 = dropSetRefs(st.Rules4, name)
+		st.Rules6 = dropSetRefs(st.Rules6, name)
 	}
 	for i := range st.Sets {
 		if st.Sets[i].Name == name {
@@ -621,8 +625,10 @@ func (e *Env) cmdCheck(args []string) int {
 		warned = true
 	}
 
-	// (a) ssh lockout risk
-	if hookUnderSSH() && st.Policies.Input == "deny" {
+	// (a) ssh lockout risk: deny OR reject incoming policy, or panic mode
+	// (effective deny-all), with no ssh allow → lockout.
+	lockout := st.Policies.Input == "deny" || st.Policies.Input == "reject" || st.Panic
+	if hookUnderSSH() && lockout {
 		allowed := false
 		for _, r := range combined(st) {
 			if sshAllowsPort(r, now) {
@@ -631,7 +637,17 @@ func (e *Env) cmdCheck(args []string) int {
 			}
 		}
 		if !allowed {
-			warn("ssh lockout risk: incoming policy is 'deny' and no rule allows ssh (port 22/tcp)")
+			warn("ssh lockout risk: incoming policy is '%s' and no rule allows ssh (port 22/tcp)", st.Policies.Input)
+		}
+	}
+
+	// (a2) enabled but not loaded: the most basic drift.
+	conf, _ := e.Store.LoadConf()
+	if conf != nil && conf.Enabled {
+		if b, err := e.backend(); err == nil {
+			if loaded, _ := b.Loaded(); !loaded {
+				warn("firewall is enabled but not loaded in the kernel")
+			}
 		}
 	}
 
@@ -1010,17 +1026,23 @@ func (e *Env) cmdRule(args []string) int {
 	if !ok {
 		return e.Errorf("Could not find rule")
 	}
-	var id string
+	// App rules expand to one member per port item, each with a fresh ID;
+	// toggling by ID hits only one member. Match the whole app tuple like
+	// ufw's get_app_rules_from_system expansion.
+	target := st.Rules4[idx]
 	if v6 {
-		id = st.Rules6[idx].ID
-	} else {
-		id = st.Rules4[idx].ID
+		target = st.Rules6[idx]
 	}
+	tuple := target.AppTuple()
+	isApp := target.Dapp != "" || target.Sapp != ""
 	disabled := args[0] == "disable"
 	for _, lp := range []*[]rule.Rule{&st.Rules4, &st.Rules6} {
 		for i := range *lp {
-			if (*lp)[i].ID == id {
-				(*lp)[i].Disabled = disabled
+			r := &(*lp)[i]
+			if isApp && r.AppTuple() == tuple {
+				r.Disabled = disabled
+			} else if !isApp && r.ID == target.ID {
+				r.Disabled = disabled
 			}
 		}
 	}
@@ -1123,4 +1145,16 @@ func validToDest(s string) bool {
 	}
 	pn, err := strconv.Atoi(p)
 	return err == nil && pn >= 1 && pn <= 65535
+}
+
+// dropSetRefs removes rules whose src or dst references the named set.
+func dropSetRefs(rules []rule.Rule, name string) []rule.Rule {
+	out := rules[:0]
+	for _, r := range rules {
+		if r.Src.Set == name || r.Dst.Set == name {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
 }
