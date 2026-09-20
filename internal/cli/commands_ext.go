@@ -393,6 +393,16 @@ func (e *Env) natAdd(args []string) int {
 		if !validToDest(args[i+1]) {
 			return e.Errorf("Bad to-destination '%s'", args[i+1])
 		}
+		// The `to` address and to-destination must share a family — mixing
+		// v4 dst with a v6 target compiles to a nonsensical ip6 match.
+		if dstIP := net.ParseIP(nr.Dst); dstIP != nil {
+			if tdHost, _ := splitToDestCLI(args[i+1]); tdHost != "" {
+				if tdIP := net.ParseIP(tdHost); tdIP != nil &&
+					(dstIP.To4() == nil) != (tdIP.To4() == nil) {
+					return e.Errorf("to-destination family mismatch with 'to %s'", nr.Dst)
+				}
+			}
+		}
 		nr.ToDest = args[i+1]
 		i += 2
 		if i != len(args) {
@@ -1322,4 +1332,24 @@ func mapFibType(t string) string {
 		return "5"
 	}
 	return t
+}
+
+// splitToDestCLI splits a to-destination into host and optional port for
+// CLI-side family validation (mirrors the backend's splitToDest).
+func splitToDestCLI(s string) (host, port string) {
+	if strings.HasPrefix(s, "[") {
+		if h, rest, ok := strings.Cut(s[1:], "]"); ok {
+			if strings.HasPrefix(rest, ":") {
+				return h, rest[1:]
+			}
+			return h, ""
+		}
+	}
+	if strings.Count(s, ":") > 1 {
+		return s, "" // bare v6
+	}
+	if h, p, ok := strings.Cut(s, ":"); ok {
+		return h, p
+	}
+	return s, ""
 }

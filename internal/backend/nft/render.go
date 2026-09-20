@@ -758,6 +758,10 @@ func renderNAT(regs map[uint32]pend, x *expr.NAT) string {
 			port = ":" + strconv.Itoa(int(binaryutil.BigEndian.Uint16(p.imm)))
 		}
 	}
+	// nft brackets a v6 address when a port follows: dnat to [::1]:8080.
+	if port != "" && strings.Contains(addr, ":") {
+		addr = "[" + addr + "]"
+	}
 	if x.Type == expr.NATTypeDestNAT {
 		return fmt.Sprintf("dnat to %s%s", addr, port)
 	}

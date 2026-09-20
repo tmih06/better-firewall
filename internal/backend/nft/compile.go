@@ -1057,6 +1057,14 @@ func addrMatch(which, cidr string, v6 bool) []expr.Any {
 		ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)}
 	}
 	addr := canonIP(ipnet.IP.Mask(ipnet.Mask))
+	// Family mismatch (v4 addr in a v6 rule or vice versa) would emit a
+	// wrong-length payload load — fail closed instead of a garbage match.
+	if (len(addr) == 16) != v6 {
+		return []expr.Any{
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0}},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{1}},
+		}
+	}
 	load := &expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: off, Len: uint32(len(addr))}
 	ones, bits := ipnet.Mask.Size()
 	if ones == bits {
