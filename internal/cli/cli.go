@@ -79,6 +79,7 @@ func (e *Env) Prompt(format string, args ...any) bool {
 func Run(prog, version string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	env := &Env{Prog: prog, Version: version, Stdin: stdin, Stdout: stdout, Stderr: stderr}
 	env.Store = store.Default()
+	_ = env.Store.EnsureDefaults() // materialize bundled profiles+config; best-effort
 
 	var rest []string
 	for i := 0; i < len(args); i++ {

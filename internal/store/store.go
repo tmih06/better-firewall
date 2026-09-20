@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"bfirewall/internal/defaults"
 	"bfirewall/internal/rule"
 )
 
@@ -236,4 +237,25 @@ func (s *Store) WriteEtcDefault(key, value string) error {
 		lines = append(lines, fmt.Sprintf("%s=\"%s\"", key, value))
 	}
 	return os.WriteFile(s.EtcFile, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+// EnsureDefaults materializes embedded default files (app profiles,
+// sysctl.conf, /etc/default/bfirewall) into the store, skipping existing
+// files. Best-effort: permission errors are returned for the caller to
+// warn about, never fatal.
+func (s *Store) EnsureDefaults() error {
+	created, err := defaults.Materialize(s.Dir)
+	if err != nil {
+		return err
+	}
+	// /etc/default/bfirewall lives outside Dir.
+	if _, err := os.Stat(s.EtcFile); os.IsNotExist(err) {
+		if data, derr := defaults.Read("bfirewall.default"); derr == nil {
+			if mkerr := os.MkdirAll(filepath.Dir(s.EtcFile), 0755); mkerr == nil {
+				_ = os.WriteFile(s.EtcFile, data, 0644)
+			}
+		}
+	}
+	_ = created
+	return nil
 }
