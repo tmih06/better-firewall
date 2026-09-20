@@ -16,8 +16,10 @@
 package nft
 
 import (
+	"bytes"
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -166,8 +168,11 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 			c.addRule(d.base, join(nfproto(true), ex(counter(), verdict(expr.VerdictDrop)))...)
 		}
 
-		// ufw-init-functions jump order.
-		for _, suffix := range []string{"before-logging-", "before-", "after-", "after-logging-", "reject-", "track-"} {
+		// ufw-init-functions jump order. The user jump lives in the base
+		// chain (not inside bfw-before-*) so before.rules fragments appended
+		// later still run before user rules, and a fragment `flush chain`
+		// can't delete the user jump.
+		for _, suffix := range []string{"before-logging-", "before-", "user-", "after-", "after-logging-", "reject-", "track-"} {
 			c.addRule(d.base, counter(), jump("bfw-"+suffix+d.base))
 		}
 	}
@@ -185,16 +190,10 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 	for _, name := range []string{chNotLocal, chLogDeny, chLogAllow, chUserLimit, chUserLimitA, chUserEgress} {
 		c.chain(name)
 	}
-
-
 	// ---- before-* chains: ufw before.rules + before6.rules defaults ------
 	c.compileBefore()
-
-	// user chains are jumped from the end of before-* (ufw hooks user rules
-	// into ufw-before-* after loading user.rules).
-	for _, d := range directions {
-		c.addRule("bfw-before-"+d.base, counter(), jump("bfw-user-"+d.base))
-	}
+	// ---- after-* chains: ufw after.rules + after6.rules defaults --------
+	c.compileAfter()
 	// bfw extension: dedicated egress chain after user-output.
 	c.addRule("bfw-before-output", counter(), jump(chUserEgress))
 
@@ -218,7 +217,11 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 	}
 	c.addRule(chUserLimitA, counter(), verdict(expr.VerdictAccept))
 	if level != "off" {
-		c.addRule(chUserLimit, limit3(), logExpr("[BFW LIMIT BLOCK] "))
+		// ufw_user_limit_log is --limit 3/minute with iptables' default
+		// burst 5 (not the shared burst-10 limit3).
+		c.addRule(chUserLimit,
+			&expr.Limit{Type: expr.LimitTypePkts, Rate: 3, Unit: expr.LimitTimeMinute, Burst: 5},
+			logExpr("[BFW LIMIT BLOCK] "))
 	}
 	c.addRule(chUserLimit, counter(), rejectExpr())
 
@@ -360,6 +363,35 @@ func (c *compiled) compileBefore() {
 		ex(counter(), verdict(expr.VerdictAccept)))...)
 }
 
+// compileAfter emits ufw's after.rules/after6.rules defaults: noisy
+// broadcast/NetBIOS/DHCP traffic is jumped to skip-to-policy so it takes
+// the policy verdict without logging (suppresses log spam).
+func (c *compiled) compileAfter() {
+	in := "bfw-after-input"
+	skip := "bfw-skip-to-policy-input"
+
+	// v4: broadcast dest, NetBIOS/SMB, DHCP server+client ports.
+	c.addRule(in, join(nfproto(false), fibAddrType(unix.RTN_BROADCAST),
+		ex(counter(), jump(skip)))...)
+	for _, p := range []uint16{137, 138} {
+		c.addRule(in, join(nfproto(false), l4proto(unix.IPPROTO_UDP), portEq("dport", p),
+			ex(counter(), jump(skip)))...)
+	}
+	for _, p := range []uint16{139, 445} {
+		c.addRule(in, join(nfproto(false), l4proto(unix.IPPROTO_TCP), portEq("dport", p),
+			ex(counter(), jump(skip)))...)
+	}
+	c.addRule(in, join(nfproto(false), l4proto(unix.IPPROTO_UDP),
+		portEq("sport", 67), portEq("dport", 68),
+		ex(counter(), jump(skip)))...)
+
+	// v6: DHCPv6 server+client ports (after6.rules).
+	for _, p := range []uint16{546, 547} {
+		c.addRule(in, join(nfproto(true), l4proto(unix.IPPROTO_UDP), portEq("dport", p),
+			ex(counter(), jump(skip)))...)
+	}
+}
+
 // compileLoggingChains emits the level-dependent contents of the logging
 // chains, mirroring backend_iptables.py _get_logging_rules.
 func (c *compiled) compileLoggingChains(level string, policies map[string]string) {
@@ -406,8 +438,9 @@ func (c *compiled) compileLoggingChains(level string, policies map[string]string
 		if ch == chLogDeny {
 			prefix = "[BFW BLOCK] "
 			if level == "low" {
-				// INVALID silently skipped below medium.
-				c.addRule(ch, join(ctState(expr.CtStateBitINVALID),
+				// ufw rate-limits the INVALID RETURN (limit_args appended):
+				// beyond 3/min INVALIDs fall through to the BLOCK log.
+				c.addRule(ch, join(ctState(expr.CtStateBitINVALID), limitExpr(),
 					ex(counter(), verdict(expr.VerdictReturn)))...)
 			} else {
 				ex := ctState(expr.CtStateBitINVALID)
@@ -454,6 +487,7 @@ func (c *compiled) compileNamedSets(st *store.State) error {
 			KeyType: nftables.TypeIP6Addr, Interval: true,
 		}
 		c.sets = append(c.sets, v4, v6)
+		var iv4, iv6 [][2][]byte // [start, endExclusive)
 		for _, e := range s.Elements {
 			ip, ipnet, err := net.ParseCIDR(e)
 			if err != nil {
@@ -469,16 +503,47 @@ func (c *compiled) compileNamedSets(st *store.State) error {
 			}
 			start := canonIP(ipnet.IP.Mask(ipnet.Mask))
 			end := addOne(canonIP(lastAddr(ipnet)))
-			set := v4
 			if len(start) == 16 {
-				set = v6
+				iv6 = append(iv6, [2][]byte{start, end})
+			} else {
+				iv4 = append(iv4, [2][]byte{start, end})
 			}
-			c.elems[set] = append(c.elems[set],
-				nftables.SetElement{Key: start},
-				nftables.SetElement{Key: end, IntervalEnd: true})
+		}
+		// Overlapping intervals make the kernel reject the whole batch
+		// (__nft_rbtree_insert ENOTEMPTY); merge like nft does.
+		for set, ivs := range map[*nftables.Set][][2][]byte{v4: iv4, v6: iv6} {
+			for _, iv := range mergeIntervals(ivs) {
+				c.elems[set] = append(c.elems[set],
+					nftables.SetElement{Key: iv[0]},
+					nftables.SetElement{Key: iv[1], IntervalEnd: true})
+			}
 		}
 	}
 	return nil
+}
+
+// mergeIntervals sorts and coalesces overlapping/adjacent [start,end)
+// intervals so the kernel accepts them in one batch.
+func mergeIntervals(ivs [][2][]byte) [][2][]byte {
+	if len(ivs) == 0 {
+		return nil
+	}
+	sort.Slice(ivs, func(i, j int) bool {
+		return bytes.Compare(ivs[i][0], ivs[j][0]) < 0
+	})
+	out := [][2][]byte{ivs[0]}
+	for _, iv := range ivs[1:] {
+		last := &out[len(out)-1]
+		// iv.start <= last.end → overlap or adjacency: extend end.
+		if bytes.Compare(iv[0], last[1]) <= 0 {
+			if bytes.Compare(iv[1], last[1]) > 0 {
+				last[1] = iv[1]
+			}
+			continue
+		}
+		out = append(out, iv)
+	}
+	return out
 }
 
 // compileRule emits the nft rules for one model rule into the appropriate
@@ -498,14 +563,20 @@ func (c *compiled) compileRule(r *rule.Rule, v6 bool, now int64) error {
 		}
 		if r.Log != rule.LogNone {
 			// logged rules jump the user-logging chain first (ufw parity):
-			// the chain holds [limit? log prefix, return] per rule.
+			// the chain holds [limit? log prefix, return] per rule. The
+			// RETURN must carry the same match — an unconditional return
+			// would shadow every later logged rule in the chain.
 			lm := append([]expr.Any{}, match...)
 			if r.Log == rule.LogNew {
 				lm = append(lm, ctState(expr.CtStateBitNEW)...)
 			}
 			lm = append(lm, limit3(), logExpr(logPrefix(r.Action)))
 			c.addRule(logChain, lm...)
-			c.addRule(logChain, counter(), verdict(expr.VerdictReturn))
+			rm := append([]expr.Any{}, match...)
+			if r.Log == rule.LogNew {
+				rm = append(rm, ctState(expr.CtStateBitNEW)...)
+			}
+			c.addRule(logChain, append(rm, counter(), verdict(expr.VerdictReturn))...)
 			c.addRule(userChain, append(append([]expr.Any{}, match...), counter(), jump(logChain))...)
 		}
 		switch r.Action {
@@ -548,6 +619,10 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 		Dynamic:       true,
 		HasTimeout:    true,
 		Timeout:       30 * time.Second,
+		// size 0 makes the kernel refuse the first element add
+		// (atomic_add_unless nelems vs size) → the meter never fires and
+		// the rule fails open. nft defaults meter sets to 65535.
+		Size: 65535,
 	}
 	c.sets = append(c.sets, set)
 
@@ -762,7 +837,7 @@ func (c *compiled) compileNAT(st *store.State) error {
 			ex = append(ex, &expr.Masq{})
 			c.rules = append(c.rules, &nftables.Rule{Table: t, Chain: post[t], Exprs: ex})
 		case "dnat":
-			host, portStr, _ := strings.Cut(nr.ToDest, ":")
+			host, portStr := splitToDest(nr.ToDest)
 			ip := net.ParseIP(host)
 			if ip == nil {
 				return fmt.Errorf("nat rule %d: bad to-destination %q", i, nr.ToDest)
@@ -881,6 +956,22 @@ func iif(name string) []expr.Any { return ifaceMatch(expr.MetaKeyIIFNAME, name) 
 func oif(name string) []expr.Any { return ifaceMatch(expr.MetaKeyOIFNAME, name) }
 
 func ifaceMatch(key expr.MetaKey, name string) []expr.Any {
+	// Trailing '+' is a prefix wildcard (iptables -i eth+ / nft iifname
+	// "eth*"): match only the prefix bytes via a bitwise mask.
+	if strings.HasSuffix(name, "+") {
+		prefix := name[:len(name)-1]
+		b := make([]byte, 16)
+		copy(b, prefix)
+		mask := make([]byte, 16)
+		for i := range prefix {
+			mask[i] = 0xff
+		}
+		return []expr.Any{
+			&expr.Meta{Key: key, Register: 1},
+			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 16, Mask: mask, Xor: make([]byte, 16)},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: b},
+		}
+	}
 	b := make([]byte, 16)
 	copy(b, name)
 	return []expr.Any{
@@ -914,7 +1005,12 @@ func addrMatch(which, cidr string, v6 bool) []expr.Any {
 	if err != nil {
 		ip = net.ParseIP(cidr)
 		if ip == nil {
-			return nil
+			// Fail closed: two contradictory cmps on reg 1 can never both
+			// hold, so the rule matches nothing rather than everything.
+			return []expr.Any{
+				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0}},
+				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{1}},
+			}
 		}
 		bits := 128
 		if ip.To4() != nil {
@@ -948,8 +1044,14 @@ func canonIP(ip net.IP) []byte {
 func lastAddr(ipnet *net.IPNet) net.IP {
 	ip := canonIP(ipnet.IP.Mask(ipnet.Mask))
 	mask := ipnet.Mask
+	// canonIP may shrink a v4-mapped-v6 IP to 4 bytes while the mask stays
+	// 16; take the mask's last len(ip) bytes so lengths always match.
 	if len(mask) != len(ip) {
-		mask = canonIP(net.IP(mask))
+		if len(mask) > len(ip) {
+			mask = mask[len(mask)-len(ip):]
+		} else {
+			mask = canonIP(net.IP(mask))
+		}
 	}
 	out := make(net.IP, len(ip))
 	for i := range ip {
@@ -1000,8 +1102,10 @@ func icmpType(t byte) []expr.Any {
 }
 
 func hopLimit(hl byte) []expr.Any {
+	// IPv6 Hop Limit is byte 7 of the header (nft encodes `ip6 hoplimit`
+	// as @nh,56,8). Offset 1 is Traffic Class/Flow Label — never matches.
 	return []expr.Any{
-		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 1, Len: 1},
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 7, Len: 1},
 		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{hl}},
 	}
 }
@@ -1121,4 +1225,25 @@ func natFamily(v6 bool) uint32 {
 		return unix.NFPROTO_IPV6
 	}
 	return unix.NFPROTO_IPV4
+}
+
+// splitToDest splits a to-destination into host and optional port.
+// Handles bare IP, v4 host:port, and [v6]:port.
+func splitToDest(s string) (host, port string) {
+	if strings.HasPrefix(s, "[") {
+		if h, rest, ok := strings.Cut(s[1:], "]"); ok {
+			if strings.HasPrefix(rest, ":") {
+				return h, rest[1:]
+			}
+			return h, ""
+		}
+	}
+	// Bare v6 (multiple colons, no brackets) has no port.
+	if strings.Count(s, ":") > 1 {
+		return s, ""
+	}
+	if h, p, ok := strings.Cut(s, ":"); ok {
+		return h, p
+	}
+	return s, ""
 }

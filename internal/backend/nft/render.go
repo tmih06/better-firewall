@@ -198,9 +198,12 @@ func renderRangeElem(s *nftables.Set, start, endEx []byte) string {
 	}
 	if s.KeyType == nftables.TypeInetService && len(start) == 2 && len(endEx) == 2 {
 		lo := binaryutil.BigEndian.Uint16(start)
-		hi := uint32(binaryutil.BigEndian.Uint16(endEx)) - 1
-		if hi == 0xffff+1-1 && endEx[0] == 0 && endEx[1] == 0 {
-			hi = 0xffff // wrapped end marker
+		// End marker {0,0} means the interval ran to 65535 (wrapped).
+		var hi uint32
+		if endEx[0] == 0 && endEx[1] == 0 {
+			hi = 0xffff
+		} else {
+			hi = uint32(binaryutil.BigEndian.Uint16(endEx)) - 1
 		}
 		if uint32(lo) == hi {
 			return strconv.Itoa(int(lo))
@@ -384,7 +387,7 @@ func payloadText(p *expr.Payload, lastL4 byte) string {
 				return "ip6 daddr"
 			}
 		}
-		if p.Len == 1 && p.Offset == 1 {
+		if p.Len == 1 && p.Offset == 7 {
 			return "ip6 hoplimit"
 		}
 		return fmt.Sprintf("@nh,%d,%d", p.Offset*8, p.Len*8)

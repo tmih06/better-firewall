@@ -107,14 +107,16 @@ func TestCompileStructure(t *testing.T) {
 		}
 	}
 
-	// base chain jump order: before-logging, before, after, after-logging, reject, track
+	// base chain jump order: before-logging, before, user, after,
+	// after-logging, reject, track (user jump moved to base chain so
+	// before.rules fragments run before user rules).
 	in := rulesIn(c, "input")
-	if len(in) != 6 {
-		t.Fatalf("input base chain has %d rules, want 6 jumps", len(in))
+	if len(in) != 7 {
+		t.Fatalf("input base chain has %d rules, want 7 jumps", len(in))
 	}
 	wantJumps := []string{
-		"bfw-before-logging-input", "bfw-before-input", "bfw-after-input",
-		"bfw-after-logging-input", "bfw-reject-input", "bfw-track-input",
+		"bfw-before-logging-input", "bfw-before-input", "bfw-user-input",
+		"bfw-after-input", "bfw-after-logging-input", "bfw-reject-input", "bfw-track-input",
 	}
 	for i, w := range wantJumps {
 		v, ok := in[i].Exprs[len(in[i].Exprs)-1].(*expr.Verdict)
