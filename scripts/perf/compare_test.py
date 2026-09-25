@@ -21,6 +21,7 @@ if PERF_DIR not in sys.path:
 
 import compare
 import measure_resources
+import merge_shards
 
 
 def make_valid_k6_dict(
@@ -203,6 +204,109 @@ class TestResourceSamples(unittest.TestCase):
         self.assertEqual(summary["benchmark_resources"]["server"]["sample_count"], 2)
 
 
+class TestShardMerge(unittest.TestCase):
+    def test_merges_cardinality_shards_with_per_card_baselines(self):
+        with tempfile.TemporaryDirectory() as directory:
+            shards_dir = os.path.join(directory, "shards")
+            output_dir = os.path.join(directory, "merged")
+            os.makedirs(shards_dir)
+            for cardinality, baseline_rate in ((10, 3000.0), (100, 2000.0)):
+                shard_dir = os.path.join(shards_dir, f"card-{cardinality}")
+                os.makedirs(shard_dir)
+                for engine, rate in (
+                    ("baseline", baseline_rate),
+                    ("bfw", baseline_rate - 100.0),
+                    ("ufw", baseline_rate - 200.0),
+                ):
+                    rules = cardinality
+                    summary_name = f"{engine}_{rules}_keepalive_r1.json"
+                    with open(os.path.join(shard_dir, summary_name), "w", encoding="utf-8") as output:
+                        json.dump(make_valid_k6_dict(rate=rate), output)
+
+                timing = {
+                    "rule_add_seconds": [0.1],
+                    "enable_seconds": [0.01],
+                    "total_seconds": [0.11],
+                    "rule_add_cpu_seconds": [0.02],
+                    "enable_cpu_seconds": [0.002],
+                    "rule_add_peak_rss_kib": [8192],
+                    "enable_peak_rss_kib": [8192],
+                }
+                apply_times = {"bfw": {str(cardinality): timing}, "ufw": {str(cardinality): timing}}
+                with open(os.path.join(shard_dir, "apply_times.json"), "w", encoding="utf-8") as output:
+                    json.dump(apply_times, output)
+                metadata = {
+                    "metadata": {
+                        "profiles": "keepalive",
+                        "cardinalities": str(cardinality),
+                        "repeats": "1",
+                        "kernel": "Linux test",
+                        "arch": "x86_64",
+                    },
+                    "controls": {
+                        "baseline_unfiltered": True,
+                        "positive_permitted": True,
+                        "negative_denied": True,
+                        "benchmark_rulesets_verified": 2,
+                    },
+                }
+                with open(os.path.join(shard_dir, "metadata.json"), "w", encoding="utf-8") as output:
+                    json.dump(metadata, output)
+
+            merge_shards.merge_shards(shards_dir, output_dir, [10, 100])
+            with self.assertRaisesRegex(ValueError, "expected cardinalities"):
+                merge_shards.merge_shards(
+                    shards_dir, os.path.join(directory, "incomplete"), [10, 100, 500]
+                )
+            with open(os.path.join(output_dir, "metadata.json"), "r", encoding="utf-8") as source:
+                merged_meta = json.load(source)
+            with open(os.path.join(output_dir, "apply_times.json"), "r", encoding="utf-8") as source:
+                merged_times = json.load(source)
+
+            self.assertEqual(merged_meta["metadata"]["cardinalities"], "10 100")
+            self.assertEqual(merged_meta["controls"]["benchmark_rulesets_verified"], 4)
+            self.assertEqual(set(merged_times["bfw"]), {"10", "100"})
+            merged_scenarios = compare.load_results_directory(output_dir)
+            baseline10 = compare.parse_k6_summary(os.path.join(output_dir, "baseline_10_keepalive_r1.json"))
+            baseline100 = compare.parse_k6_summary(os.path.join(output_dir, "baseline_100_keepalive_r1.json"))
+            self.assertEqual(baseline10["throughput_rps"], 3000.0)
+            self.assertEqual(baseline100["throughput_rps"], 2000.0)
+            violations = compare.validate_complete_matrix(
+                merged_scenarios,
+                merged_meta["metadata"],
+                merged_meta["controls"],
+                compare.load_apply_times(os.path.join(output_dir, "apply_times.json")),
+                True,
+            )
+            self.assertEqual(violations, [])
+            report_json = os.path.join(directory, "summary.json")
+            report_md = os.path.join(directory, "summary.md")
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    os.path.join(PERF_DIR, "compare.py"),
+                    "--results-dir",
+                    output_dir,
+                    "--apply-times",
+                    os.path.join(output_dir, "apply_times.json"),
+                    "--meta-file",
+                    os.path.join(output_dir, "metadata.json"),
+                    "--output-json",
+                    report_json,
+                    "--output-md",
+                    report_md,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertEqual(proc.returncode, 0, f"merged report failed: {proc.stderr}")
+            with open(report_json, "r", encoding="utf-8") as source:
+                report = json.load(source)
+            self.assertEqual(report["status"], "PASSED")
+            self.assertEqual(len(report["comparisons"]), 2)
+
+
 class TestCompareEngine(unittest.TestCase):
     def test_parse_valid_k6_summary(self):
         """Test parsing valid k6 metrics dictionary including extended fields."""
@@ -359,7 +463,7 @@ class TestCompareEngine(unittest.TestCase):
     def test_scenario_filename_rejects_arbitrary_json(self):
         """Stray JSON files must fail closed, not be silently skipped."""
         with tempfile.TemporaryDirectory() as d:
-            with open(os.path.join(d, "baseline_0_keepalive_r1.json"), "w", encoding="utf-8") as f:
+            with open(os.path.join(d, "baseline_10_keepalive_r1.json"), "w", encoding="utf-8") as f:
                 json.dump(make_valid_k6_dict(), f)
             with open(os.path.join(d, "warmup.json"), "w", encoding="utf-8") as f:
                 json.dump(make_valid_k6_dict(), f)
@@ -370,10 +474,10 @@ class TestCompareEngine(unittest.TestCase):
         """A cardinality present only under one profile must not leak into
         another profile's comparison rows."""
         scenarios = {
-            "baseline_0_keepalive": compare.aggregate_repeats(
+            "baseline_10_keepalive": compare.aggregate_repeats(
                 [compare.parse_k6_summary(make_valid_k6_dict(rate=3000.0))]
             ),
-            "baseline_0_churn": compare.aggregate_repeats(
+            "baseline_10_churn": compare.aggregate_repeats(
                 [compare.parse_k6_summary(make_valid_k6_dict(rate=900.0))]
             ),
             "bfw_10_keepalive": compare.aggregate_repeats(
@@ -409,7 +513,7 @@ class TestCompareEngine(unittest.TestCase):
     def test_division_by_zero_safety(self):
         """Test safe handling when metrics or apply times are zero or missing."""
         scenarios = {
-            "baseline_0_keepalive": {"throughput_rps": 0.0},
+            "baseline_10_keepalive": {"throughput_rps": 0.0},
             "bfw_10_keepalive": {
                 "throughput_rps": 1000.0,
                 "latency_p50_ms": 1.0,
@@ -467,7 +571,7 @@ class TestCompareEngine(unittest.TestCase):
     def test_threshold_evaluation_success(self):
         """Test evaluation when all constraints pass."""
         scenarios = {
-            "baseline_0_keepalive": {"error_rate": 0.0, "check_rate": 1.0, "latency_p95_ms": 2.5},
+            "baseline_10_keepalive": {"error_rate": 0.0, "check_rate": 1.0, "latency_p95_ms": 2.5},
             "bfw_10_keepalive": {"error_rate": 0.001, "check_rate": 1.0, "latency_p95_ms": 3.2},
             "ufw_10_keepalive": {"error_rate": 0.002, "check_rate": 0.999, "latency_p95_ms": 3.8},
         }
@@ -531,7 +635,7 @@ class TestCompareEngine(unittest.TestCase):
 
     def test_threshold_evaluation_controls_failure(self):
         """Test failure when security controls fail."""
-        scenarios = {"baseline_0_keepalive": {"error_rate": 0.0, "check_rate": 1.0, "latency_p95_ms": 1.0}}
+        scenarios = {"baseline_10_keepalive": {"error_rate": 0.0, "check_rate": 1.0, "latency_p95_ms": 1.0}}
         # Positive control failed (permitted traffic dropped)
         controls = {"baseline_unfiltered": True, "positive_permitted": False, "negative_denied": True}
         res = compare.evaluate_thresholds(scenarios, controls, 0.01, 500.0)
@@ -593,11 +697,11 @@ class TestCompareCLIAndReports(unittest.TestCase):
     def _write_scenario_set(self, profile: str, base_rate: float) -> None:
         """Write a full profile x cardinality x repeat fixture set."""
         for repeat in (1, 2, 3):
-            self._write_json(
-                os.path.join(self.results_dir, f"baseline_0_{profile}_r{repeat}.json"),
-                make_valid_k6_dict(rate=base_rate, p95=2.0, count=12000),
-            )
             for card in (10, 100, 500, 1000):
+                self._write_json(
+                    os.path.join(self.results_dir, f"baseline_{card}_{profile}_r{repeat}.json"),
+                    make_valid_k6_dict(rate=base_rate, p95=2.0, count=12000),
+                )
                 self._write_json(
                     os.path.join(self.results_dir, f"bfw_{card}_{profile}_r{repeat}.json"),
                     make_valid_k6_dict(rate=base_rate - 200 - card * 0.1, p95=2.2, p50=1.2, p99=4.5, count=11000),
@@ -678,7 +782,7 @@ class TestCompareCLIAndReports(unittest.TestCase):
         self.assertEqual(data["status"], "PASSED")
         # 3 profiles x 4 cardinalities = 12 comparison rows
         self.assertEqual(len(data["comparisons"]), 12)
-        self.assertIn("baseline_0_keepalive", data["scenarios"])
+        self.assertIn("baseline_10_keepalive", data["scenarios"])
         self.assertIn("bfw_10_mixed", data["scenarios"])
         self.assertIn("ufw_1000_churn", data["scenarios"])
         # 3 repeats aggregated per scenario
@@ -754,7 +858,7 @@ class TestCompareCLIAndReports(unittest.TestCase):
         """A comparison cannot pass when one firewall has fewer repeats."""
         for repeat in (1, 2):
             self._write_json(
-                os.path.join(self.results_dir, f"baseline_0_keepalive_r{repeat}.json"),
+                os.path.join(self.results_dir, f"baseline_10_keepalive_r{repeat}.json"),
                 make_valid_k6_dict(rate=3000.0),
             )
             self._write_json(
@@ -818,7 +922,7 @@ class TestCompareCLIAndReports(unittest.TestCase):
     def test_cli_fails_on_malformed_apply_times(self):
         """CLI must exit non-zero when apply_times.json is malformed."""
         self._write_json(
-            os.path.join(self.results_dir, "baseline_0_keepalive_r1.json"),
+            os.path.join(self.results_dir, "baseline_10_keepalive_r1.json"),
             make_valid_k6_dict(rate=3000.0),
         )
         apply_path = os.path.join(self.results_dir, "apply_times.json")

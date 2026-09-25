@@ -220,15 +220,20 @@ jobs:
           go test -count=1 -tags=integration ./tests/... ./internal/backend/nft/...
 
   # ------------------------------------------------------------ performance
-  # k6 traffic crosses an internal Docker bridge from a separate attacker
-  # container into the bfw/ufw server container. Reports are indicative, not
-  # hardware-guaranteed — see README §Development for variance caveats.
+  # Independent rule-cardinality shards run concurrently. Each shard keeps the
+  # full traffic-profile/repeat workload; the report job merges raw artifacts.
   performance:
+    name: performance (${{ matrix.cardinality }} rules)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     needs: build
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        cardinality: [10, 100, 500, 1000]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Download bfw artifact
@@ -237,11 +242,51 @@ jobs:
           name: bfw
           path: .
       - run: chmod +x bfw
-      - name: Run containerized k6 firewall comparison
+      - name: Run containerized k6 firewall comparison shard
         env:
           BFW_PERF_RUNNER_ENV: ${{ runner.environment }}
           K6_VERSION: ${{ env.K6_VERSION }}
+          PERF_CARDINALITIES: ${{ matrix.cardinality }}
         run: scripts/perf/run.sh
+      - name: Upload raw performance shard
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: better-firewall-performance-raw-${{ matrix.cardinality }}
+          path: artifacts/performance/raw/*.json
+          if-no-files-found: error
+          retention-days: 30
+
+  performance-report:
+    name: Consolidate performance report
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: performance
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download performance shards
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: better-firewall-performance-raw-*
+          path: artifacts/performance/shards
+      - name: Merge cardinality shards
+        run: >
+          python3 scripts/perf/merge_shards.py
+          --shards-dir artifacts/performance/shards
+          --output-dir artifacts/performance/raw
+          --expected-cardinalities 10 100 500 1000
+      - name: Generate consolidated comparison
+        run: |
+          python3 scripts/perf/compare.py \
+            --results-dir artifacts/performance/raw \
+            --apply-times artifacts/performance/raw/apply_times.json \
+            --meta-file artifacts/performance/raw/metadata.json \
+            --output-json artifacts/performance/summary.json \
+            --output-md artifacts/performance/summary.md \
+            --max-error-rate 0.01 \
+            --max-p95-latency-ms 500.0
       - name: Upload performance artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

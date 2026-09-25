@@ -6,7 +6,7 @@ calculates comparative performance ratios per traffic profile and rule
 cardinality, and outputs Markdown + JSON reports.
 
 Raw result filenames follow `{engine}_{rules}_{profile}_r{repeat}.json`
-(e.g. `bfw_500_keepalive_r1.json`); baseline runs use `baseline_0_<profile>`.
+(e.g. `bfw_500_keepalive_r1.json`); baseline runs use `baseline_<rules>_<profile>`.
 Any other *.json file in the results directory is rejected (fail-closed).
 """
 
@@ -434,9 +434,10 @@ def validate_complete_matrix(
             "Incomplete benchmark matrix: metadata must list unique profiles, positive rule counts, and repeats"
         ]
 
-    expected = {f"baseline_0_{profile}" for profile in profiles}
+    expected = set()
     for profile in profiles:
         for card in cardinalities:
+            expected.add(f"baseline_{card}_{profile}")
             expected.update(f"{engine}_{card}_{profile}" for engine in ENGINES)
 
     for key in sorted(expected - scenarios.keys()):
@@ -503,9 +504,6 @@ def compute_comparisons(scenarios: Dict[str, Any]) -> Dict[str, Any]:
     profile_rows: List[Dict[str, Any]] = []
 
     for profile in _ordered_profiles(scenarios):
-        baseline_key = f"baseline_0_{profile}"
-        baseline = scenarios.get(baseline_key)
-        baseline_rps = baseline["throughput_rps"] if baseline else 0.0
 
         cardinalities = sorted(
             {
@@ -518,6 +516,9 @@ def compute_comparisons(scenarios: Dict[str, Any]) -> Dict[str, Any]:
         profile_pool: Dict[str, Dict[str, float]] = {engine: {"requests": 0, "errors": 0, "throughputs": []} for engine in ENGINES}
 
         for card in cardinalities:
+            baseline_key = f"baseline_{card}_{profile}"
+            baseline = scenarios.get(baseline_key)
+            baseline_rps = baseline["throughput_rps"] if baseline else 0.0
             bfw = scenarios.get(f"bfw_{card}_{profile}")
             ufw = scenarios.get(f"ufw_{card}_{profile}")
 

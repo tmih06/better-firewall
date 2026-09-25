@@ -271,6 +271,11 @@ profiles: keep-alive requests, bounded fresh-connection churn (200 new
 connections/second by default), and a mixed 70/20/10 small/medium/large response
 workload ramping up to 50 virtual users.
 
+GitHub CI runs one cardinality per isolated runner in parallel, then merges all
+raw shards into one validated report; all profiles and three repeats are kept.
+Each cardinality's baseline is captured on its own runner before the firewall
+pair, preserving same-host baseline comparisons.
+
 The report includes per-profile throughput, latency percentiles, request,
 drop, check and error counts, transferred bytes, active virtual users,
 comparative ratios, and separate rule-configuration and firewall-enable

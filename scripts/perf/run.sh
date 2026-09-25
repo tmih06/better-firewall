@@ -268,18 +268,14 @@ execute_k6_run() {
 }
 
 # =============================================================================
-# EXECUTION MATRIX: profiles x rule scales x repeats, alternating engine order
-# Raw files: <engine>_<rules>_<profile>_r<repeat>.json (baseline uses 0 rules).
+# EXECUTION MATRIX: rule scales x profiles x repeats, alternating engine order
+# Raw files: <engine>_<rules>_<profile>_r{repeat}.json; baseline uses the same
+# cardinality as the bfw/ufw pair so each comparison shares its runner.
 # =============================================================================
 for ((repeat = 1; repeat <= PERF_REPEATS; repeat++)); do
     echo "===================================================================="
     echo "[perf] Starting benchmark repeat ${repeat}/${PERF_REPEATS}"
     echo "===================================================================="
-
-    for profile in "${PROFILES[@]}"; do
-        reset_firewalls
-        execute_k6_run baseline_0 "$profile" "$repeat"
-    done
 
     if (( repeat % 2 == 1 )); then
         FIRST_ENGINE=bfw
@@ -290,6 +286,10 @@ for ((repeat = 1; repeat <= PERF_REPEATS; repeat++)); do
     fi
 
     for cardinality in "${CARDINALITIES[@]}"; do
+        for profile in "${PROFILES[@]}"; do
+            reset_firewalls
+            execute_k6_run "baseline_${cardinality}" "$profile" "$repeat"
+        done
         for engine in "$FIRST_ENGINE" "$SECOND_ENGINE"; do
             echo "[perf] Repeat ${repeat}: applying ${engine} with ${cardinality} rules..."
             apply_timing="$(apply_rules "$engine" "$cardinality")"
