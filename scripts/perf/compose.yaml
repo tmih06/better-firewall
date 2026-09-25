@@ -1,0 +1,62 @@
+services:
+  server:
+    build:
+      context: ../..
+      dockerfile: scripts/perf/server.Dockerfile
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - benchmark
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import socket; s = socket.create_connection(('127.0.0.1', 8080), timeout=1); s.close()"
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 1s
+    init: true
+    stop_grace_period: 2s
+
+  attacker:
+    image: grafana/k6:${K6_VERSION:-2.3.0}
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - exec sleep 2147483647
+    user: "${PERF_UID:-12345}:${PERF_GID:-12345}"
+    environment:
+      HOME: /tmp
+    working_dir: /tmp
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      - benchmark
+    volumes:
+      - ./firewall.js:/scripts/firewall.js:ro
+      - ./probe.js:/scripts/probe.js:ro
+      - ../../artifacts/performance/raw:/results:rw
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    healthcheck:
+      test: [CMD, k6, version]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+networks:
+  benchmark:
+    internal: true

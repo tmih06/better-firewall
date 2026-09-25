@@ -1,11 +1,10 @@
 # bfirewall CI — runs on every push, every pull request, and on manual
 # dispatch (Actions → CI → Run workflow). Actions are pinned to commit SHAs.
 #
-# Privileged work (integration tests, k6 perf comparison) is confined to the
-# disposable hosted ubuntu-24.04 runner and goes through
-# scripts/ci/isolate.sh, which unshares net/mount/pid namespaces and
-# fail-closes outside CI. Do NOT reproduce the privileged jobs locally — see
-# README §Development.
+# Privileged integration tests go through scripts/ci/isolate.sh. The k6
+# performance job instead confines firewall changes and traffic to two
+# containers on an internal-only Docker network on a disposable hosted runner.
+# Do NOT reproduce either privileged job locally — see README §Development.
 name: CI
 
 on:
@@ -221,9 +220,9 @@ jobs:
           go test -count=1 -tags=integration ./tests/... ./internal/backend/nft/...
 
   # ------------------------------------------------------------ performance
-  # k6 throughput/latency comparison of bfw vs ufw inside the same isolated
-  # namespace wrapper. Results are indicative, not hardware-guaranteed — see
-  # README §Development for variance caveats.
+  # k6 traffic crosses an internal Docker bridge from a separate attacker
+  # container into the bfw/ufw server container. Reports are indicative, not
+  # hardware-guaranteed — see README §Development for variance caveats.
   performance:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -232,48 +231,17 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_STABLE }}
       - name: Download bfw artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: bfw
           path: .
       - run: chmod +x bfw
-      - uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
-        with:
-          k6-version: ${{ env.K6_VERSION }}
-      - name: Install ufw + net tooling (comparison baseline)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ufw iproute2 iptables nftables
-      - name: Pre-warm module cache (fallback build inside the namespace)
-        # run.sh only builds bfw if BFW_BIN is missing, but the isolated netns
-        # has no network — keep the module cache warm under a root-writable
-        # GOMODCACHE so a fallback `go build` can never hit the network.
+      - name: Run containerized k6 firewall comparison
         env:
-          GOCACHE: /tmp/bfw-gocache
-          GOPATH: /tmp/bfw-gopath
-          GOMODCACHE: /tmp/bfw-gopath/pkg/mod
-        run: |
-          mkdir -p "$GOCACHE" "$GOMODCACHE"
-          go mod download
-          chmod -R a+rwX /tmp/bfw-gopath
-      - name: Run k6 firewall comparison (isolated)
-        # sudo env forwards CI/GITHUB_ACTIONS so isolate.sh's guard passes
-        # without relying on sudoers env_keep policy; env restores PATH for
-        # the unshare'd child (go, k6, python3, nft, ufw), hands run.sh the
-        # bfw binary path, and points the go caches at the pre-warmed
-        # root-writable dirs.
-        env:
-          BFW_BIN: ./bfw
-          GOCACHE: /tmp/bfw-gocache
-          GOPATH: /tmp/bfw-gopath
-          GOMODCACHE: /tmp/bfw-gopath/pkg/mod
-        run: >
-          sudo env "PATH=$PATH" "HOME=$HOME" "CI=$CI"
-          "GITHUB_ACTIONS=$GITHUB_ACTIONS" "BFW_BIN=$BFW_BIN"
-          "GOCACHE=$GOCACHE" "GOPATH=$GOPATH" "GOMODCACHE=$GOMODCACHE"
-          scripts/ci/isolate.sh scripts/perf/run.sh
+          BFW_PERF_RUNNER_ENV: ${{ runner.environment }}
+          K6_VERSION: ${{ env.K6_VERSION }}
+        run: scripts/perf/run.sh
       - name: Upload performance artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

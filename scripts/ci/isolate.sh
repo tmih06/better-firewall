@@ -17,7 +17,7 @@ set -euo pipefail
 # a workstation or production host.
 if [ "${CI:-}" != "true" ] && [ "${GITHUB_ACTIONS:-}" != "true" ]; then
     echo "FATAL: scripts/ci/isolate.sh refused outside CI." >&2
-    echo "Privileged integration and performance jobs are supported only on the disposable hosted GitHub runner." >&2
+    echo "Privileged integration tests are supported only on the disposable hosted GitHub runner." >&2
     exit 1
 fi
 

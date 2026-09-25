@@ -287,6 +287,8 @@ class TestCompareCLIAndReports(unittest.TestCase):
                 "arch": "x86_64",
                 "bfw_version": "0.1.0",
                 "ufw_version": "0.36.2",
+                "k6_version": "2.3.0",
+                "isolation": "Internal-only Docker network; separate k6 attacker and firewall server containers",
             },
             "controls": {"positive_permitted": True, "negative_denied": True},
         }
@@ -335,6 +337,8 @@ class TestCompareCLIAndReports(unittest.TestCase):
         self.assertIn("Traversed Traffic Performance", md_content)
         self.assertIn("Comparative Ratios", md_content)
         self.assertIn("CLI Rule Apply Timing", md_content)
+        self.assertIn("Internal-only Docker network", md_content)
+        self.assertIn("k6 Version | 2.3.0", md_content)
 
     def test_cli_fails_on_corrupt_k6_json(self):
         """Test CLI explicitly fails (exit code 1) on missing metrics in json."""

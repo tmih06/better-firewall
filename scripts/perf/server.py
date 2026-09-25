@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 High-performance asynchronous HTTP server for firewall benchmarking.
-Runs inside the target network namespace, serving constant HTTP payloads
-with keep-alive support on primary (permitted) and secondary (denied) ports.
+Runs inside the defended server container, serving constant HTTP payloads
+on one permitted and one denied port for k6 reachability controls.
 """
 
 import argparse

@@ -236,10 +236,11 @@ surface is testable without root or a kernel.
 
 ### Privileged testing — read before running
 
-Never run the privileged integration tests or performance harness on this
-workstation or any production host. They require root and a real nftables
-backend; direct execution could change firewall state and interrupt network
-or SSH access. CI runs them only on a disposable GitHub-hosted runner through
+Never run privileged integration tests or the performance benchmark on this
+workstation or any production host. Both use real kernel firewall state;
+running them outside the isolated CI setup can disrupt networking or SSH.
+
+The `integration` job runs only on a disposable GitHub-hosted runner through
 `scripts/ci/isolate.sh`, which:
 
 - **fails closed outside CI**; no local override is provided;
@@ -251,29 +252,36 @@ or SSH access. CI runs them only on a disposable GitHub-hosted runner through
   read-only, and exports `BFW_ISOLATED=1` + `BFW_ORIGINAL_NET_NS` so tests
   prove they are not using the host network namespace.
 
+The `performance` job uses Docker Compose on that disposable runner. Its
+internal-only network connects a server container (bfw/ufw, `NET_ADMIN`) to
+a separate k6 attacker container (no `NET_ADMIN`). No ports are published to
+the host; CI removes both containers and their network after the run.
+
 `make test-integration` is CI-only. Never run `go test -tags=integration`
 directly as root, and never spoof the CI guard to run it locally. The standard
 `make test` and `make check` remain unprivileged.
 
 ### Performance comparison (k6)
 
-`scripts/perf/run.sh` (entry point; `scripts/perf/firewall.js` is the k6
-workload) benchmarks `bfw` vs `ufw` — rule apply timing plus real HTTP
-traffic through veth pairs — inside the same isolated namespaces. Reports
-land in `artifacts/performance/` (`summary.md`, `summary.json`, `raw/*.json`).
+`scripts/perf/run.sh` builds a server image containing the downloaded `bfw`
+artifact and starts it beside a separate k6 attacker container on an
+internal-only Docker network. The attacker probes both allowed and denied
+ports, then runs the `scripts/perf/firewall.js` workload against bfw and ufw
+at multiple rule counts. Reports land in `artifacts/performance/`
+(`summary.md`, `summary.json`, `raw/*.json`).
 
 Fairness/variance caveats: both firewalls see identical traffic, alternate
-execution order, and get warmup + repeated runs, but hosted-runner numbers
-are noisy (shared CPU, nested virt) — treat results as indicative of relative
-overhead, not as absolute throughput guarantees.
+execution order, and get warmup + repeated runs, but hosted-runner numbers are
+noisy (shared CPU and Docker bridge overhead). Treat results as indicative of
+relative overhead, not as absolute throughput guarantees.
 
 ### CI
 
 `.github/workflows/ci.yml` runs on **every push, every pull request, and
 manual dispatch** (`Actions → CI → Run workflow`). Actions are pinned to
-commit SHAs; all privileged work is confined to the disposable runner via
-`scripts/ci/isolate.sh`. Coverage intent (not a claim every behavior is
-proven):
+commit SHAs. Privileged work runs only on the disposable runner: integration
+uses `scripts/ci/isolate.sh`, performance uses an internal-only Docker network.
+Coverage intent (not a claim that every behavior is proven):
 
 | Repo area | CI job(s) |
 |---|---|
@@ -281,14 +289,15 @@ proven):
 | `etc/bfirewall/*`, `etc/default/*`, embedded defaults | `unit-test` (materialization, overrides, preservation) and `package` (staged configuration tree) |
 | `tests/`, nft backend (`internal/backend/nft` integration tests) | `integration` — isolated namespaces, `BFW_ISOLATED`-gated |
 | `packaging/*` systemd units, install layout | `package` — staged install + `systemd-analyze verify` + staged uninstall; systemctl stubbed |
-| bfw vs ufw performance | `performance` — k6, `needs: build`, uploads `artifacts/performance/` |
+| bfw vs ufw performance | `performance` — k6 attacker/server Docker containers; uploads performance artifacts |
 | `.github/workflows/*.yml`, `scripts/**/*.sh` | `lint` — actionlint + shellcheck |
 | Secrets in git history | `secrets` — gitleaks, full history (`fetch-depth: 0`, `--all`) |
 
 Local equivalents: `make check` = lint + vuln (tools pinned in the workflow;
 install hints in `scripts/ci/check.sh`), `make package` = the `package` job.
-The `integration` and `performance` jobs require root + namespaces and should
-not be approximated outside `isolate.sh`.
+The `integration` job requires root + namespaces through `isolate.sh`; the
+`performance` job requires the GitHub-hosted Docker setup. Do not run either
+privileged path outside its CI isolation.
 
 ## License
 

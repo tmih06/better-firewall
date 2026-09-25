@@ -3,7 +3,7 @@
 ## Safety and validation
 
 - Keep local validation unprivileged and independent of live firewall state. Use `make test`, `make check`, and `make package` for safe local checks.
-- Run real nftables integration tests and packet-load performance tests only in the disposable GitHub-hosted CI jobs through `scripts/ci/isolate.sh`. Do not execute integration-tagged tests or `scripts/perf/run.sh` on a workstation; they exercise kernel firewall state and can disrupt network or SSH access.
+- Run nftables integration tests and packet-load performance tests only in disposable GitHub-hosted CI. Integration uses `scripts/ci/isolate.sh`; performance runs bfw and k6 in separate containers on an internal-only Docker network with no published ports. Do not execute integration-tagged tests or `scripts/perf/run.sh` on a workstation.
 - Read `README.md`'s privileged-testing and performance sections when changing those paths. Treat `.github/workflows/ci.yml` and `Makefile` as the source of truth for CI jobs and local targets.
 
 ## Design and implementation

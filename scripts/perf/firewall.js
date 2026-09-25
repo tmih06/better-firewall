@@ -1,7 +1,7 @@
 import http from 'k6/http';
 import { check } from 'k6';
 
-const targetUrl = __ENV.TARGET_URL || 'http://10.200.1.1:8080/';
+const targetUrl = __ENV.TARGET_URL || 'http://server:8080/';
 const vus = parseInt(__ENV.VUS || '10', 10);
 const duration = __ENV.DURATION || '5s';
 

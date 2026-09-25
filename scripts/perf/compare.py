@@ -303,15 +303,16 @@ def render_markdown(
     md.append(f"| Architecture | {metadata.get('arch', 'unknown')} |")
     md.append(f"| bfw Version | {metadata.get('bfw_version', 'local build')} |")
     md.append(f"| ufw Version | {metadata.get('ufw_version', 'unknown')} |")
+    md.append(f"| k6 Version | {metadata.get('k6_version', 'unknown')} |")
     md.append(f"| Test Concurrency (VUs) | {metadata.get('vus', '10')} |")
     md.append(f"| Test Duration | {metadata.get('duration', '5s')} |")
     md.append(f"| Warmup Duration | {metadata.get('warmup_duration', '2s')} |")
     md.append(f"| Repeats | {metadata.get('repeats', '2')} |")
-    md.append(f"| Isolation | Network + Mount Namespaces (`isolate.sh`) |\n")
+    md.append(f"| Isolation | {metadata.get('isolation', 'Not recorded')} |\n")
 
     # Controls
     md.append("## Security Controls Proof\n")
-    md.append("Verification that firewall is actively filtering traversed packets across private veth namespaces:\n")
+    md.append("Security controls verify that k6 traffic reaches the server on the benchmark network and that the firewall filters the tested ports:\n")
     md.append("| Control | Expected | Actual | Status |")
     md.append("|---|---|---|---|")
     pos_stat = "PASS" if controls.get("positive_permitted") else "FAIL"
