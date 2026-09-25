@@ -38,7 +38,8 @@ jobs:
             mkdir -p "$stage/packaging"
             cp packaging/better-firewall.service \
               packaging/better-firewall-sweep.service \
-              packaging/better-firewall-sweep.timer "$stage/packaging/"
+              packaging/better-firewall-sweep.timer \
+              packaging/better-firewall-protect.service "$stage/packaging/"
             tar -C "$stage" -czf "dist/better-firewall-linux-$arch.tar.gz" bfw packaging
             rm -rf "$stage"
           done

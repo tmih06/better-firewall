@@ -24,6 +24,7 @@ type State struct {
 	AppPolicy string      `json:"app_policy"` // skip|allow|deny|reject
 	Panic     bool        `json:"panic,omitempty"`
 	Sets      []IPSet     `json:"sets,omitempty"`
+	Bans      []ThreatBan `json:"threat_bans,omitempty"`
 	NAT       []NATRule   `json:"nat,omitempty"`
 }
 
@@ -39,6 +40,16 @@ type IPSet struct {
 	Name     string   `json:"name"`
 	Family   string   `json:"family"` // ip|ip6|inet
 	Elements []string `json:"elements"`
+}
+
+// ThreatBan is one expiring source-IP decision from local protection or a
+// trusted threat-intelligence provider.
+type ThreatBan struct {
+	Address    string `json:"address"` // canonical IP address or CIDR prefix
+	Source     string `json:"source"`  // ssh:<jail-name> | crowdsec
+	Reason     string `json:"reason,omitempty"`
+	DecisionID int64  `json:"decision_id,omitempty"`
+	ExpiresAt  int64  `json:"expires_at"` // Unix timestamp; bans are always temporary
 }
 
 // NATRule is a stored NAT rule (bfw extension).
@@ -86,6 +97,9 @@ func (s *Store) ConfPath() string { return filepath.Join(s.Dir, "better-firewall
 
 // SysctlPath is the kernel-tunables file applied on enable.
 func (s *Store) SysctlPath() string { return filepath.Join(s.Dir, "sysctl.conf") }
+
+// ProtectPath is the local jail and optional CrowdSec configuration file.
+func (s *Store) ProtectPath() string { return filepath.Join(s.Dir, "protect.json") }
 
 // AppDir holds INI application profiles.
 func (s *Store) AppDir() string { return filepath.Join(s.Dir, "applications.d") }

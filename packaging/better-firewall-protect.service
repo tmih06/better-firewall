@@ -1,0 +1,11 @@
+[Unit]
+Description=better-firewall authentication and CrowdSec protection
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/bfw protect
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

@@ -4,6 +4,7 @@ DefaultDependencies=no
 After=local-fs.target
 Before=network-pre.target
 Wants=network-pre.target
+Wants=better-firewall-sweep.timer
 ConditionPathExists=/etc/better-firewall/better-firewall.conf
 
 [Service]

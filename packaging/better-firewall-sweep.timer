@@ -1,5 +1,5 @@
 [Unit]
-Description=better-firewall expired-rule sweep timer
+Description=better-firewall expired-rule and threat-ban sweep timer
 
 [Timer]
 OnCalendar=minutely

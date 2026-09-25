@@ -20,16 +20,17 @@ import (
 // Import. Scalar fields are pointers so Import can tell "absent" from an
 // explicit zero value.
 type document struct {
-	Version   int             `json:"version"`
-	Rules4    []rule.Rule     `json:"rules4"`
-	Rules6    []rule.Rule     `json:"rules6"`
-	Policies  *store.Policies `json:"policies,omitempty"`
-	Logging   *string         `json:"logging,omitempty"`
-	IPv6      *bool           `json:"ipv6,omitempty"`
-	AppPolicy *string         `json:"app_policy,omitempty"`
-	Panic     *bool           `json:"panic,omitempty"`
-	Sets      []store.IPSet   `json:"sets,omitempty"`
-	NAT       []store.NATRule `json:"nat,omitempty"`
+	Version   int               `json:"version"`
+	Rules4    []rule.Rule       `json:"rules4"`
+	Rules6    []rule.Rule       `json:"rules6"`
+	Policies  *store.Policies   `json:"policies,omitempty"`
+	Logging   *string           `json:"logging,omitempty"`
+	IPv6      *bool             `json:"ipv6,omitempty"`
+	AppPolicy *string           `json:"app_policy,omitempty"`
+	Panic     *bool             `json:"panic,omitempty"`
+	Sets      []store.IPSet     `json:"sets,omitempty"`
+	NAT       []store.NATRule   `json:"nat,omitempty"`
+	Bans      []store.ThreatBan `json:"threat_bans,omitempty"`
 }
 
 // Export writes st as a versioned JSON document to w.
@@ -50,6 +51,7 @@ func Export(st *store.State, w io.Writer) error {
 		Panic:     &panicMode,
 		Sets:      st.Sets,
 		NAT:       st.NAT,
+		Bans:      st.Bans,
 	}
 	if doc.Rules4 == nil {
 		doc.Rules4 = []rule.Rule{}
@@ -117,6 +119,7 @@ func Import(r io.Reader, st *store.State, replace bool) (*store.State, int, erro
 		out.Rules6 = doc.Rules6
 		out.Sets = doc.Sets
 		out.NAT = doc.NAT
+		out.Bans = doc.Bans
 		return out, len(doc.Rules4) + len(doc.Rules6), nil
 	}
 
@@ -124,6 +127,7 @@ func Import(r io.Reader, st *store.State, replace bool) (*store.State, int, erro
 	added += mergeRules(&out.Rules6, doc.Rules6)
 	mergeSets(out, doc.Sets)
 	mergeNAT(out, doc.NAT)
+	mergeThreatBans(out, doc.Bans)
 	return out, added, nil
 }
 
@@ -213,6 +217,26 @@ func mergeNAT(st *store.State, nat []store.NATRule) {
 		}
 		if !dup {
 			st.NAT = append(st.NAT, n)
+		}
+	}
+}
+
+// mergeThreatBans replaces decisions with the same provider identity and
+// otherwise preserves the imported temporary ban alongside existing state.
+func mergeThreatBans(st *store.State, bans []store.ThreatBan) {
+	for _, ban := range bans {
+		found := -1
+		for i, old := range st.Bans {
+			if ban.Source == "crowdsec" && old.Source == "crowdsec" && ban.DecisionID == old.DecisionID ||
+				ban.Source != "crowdsec" && old.Source == ban.Source && old.Address == ban.Address {
+				found = i
+				break
+			}
+		}
+		if found >= 0 {
+			st.Bans[found] = ban
+		} else {
+			st.Bans = append(st.Bans, ban)
 		}
 	}
 }

@@ -51,7 +51,8 @@ log "make install DESTDIR=$STAGE"
 # DESTDIR would otherwise clobber a real system silently).
 host_paths=(/usr/sbin/bfw /etc/systemd/system/better-firewall.service \
     /etc/systemd/system/better-firewall-sweep.service \
-    /etc/systemd/system/better-firewall-sweep.timer /etc/better-firewall \
+    /etc/systemd/system/better-firewall-sweep.timer \
+    /etc/systemd/system/better-firewall-protect.service /etc/better-firewall \
     /etc/default/better-firewall)
 declare -A pre=()
 for p in "${host_paths[@]}"; do
@@ -74,7 +75,7 @@ log "asserting installed layout"
 [ -f "$BIN" ] || die "missing $BIN"
 [ -x "$BIN" ] || die "$BIN is not executable"
 [ -d "$STAGE/etc/better-firewall/applications.d" ] || die "missing applications.d staging dir"
-for u in better-firewall.service better-firewall-sweep.service better-firewall-sweep.timer; do
+for u in better-firewall.service better-firewall-sweep.service better-firewall-sweep.timer better-firewall-protect.service; do
     [ -f "$UNITDIR_STAGED/$u" ] || die "missing staged unit $u"
     [ ! -x "$UNITDIR_STAGED/$u" ] || die "unit $u must not be executable"
 done
@@ -88,6 +89,7 @@ expected="$(printf '%s\n' \
     "$UNITDIR_STAGED/better-firewall.service" \
     "$UNITDIR_STAGED/better-firewall-sweep.service" \
     "$UNITDIR_STAGED/better-firewall-sweep.timer" \
+    "$UNITDIR_STAGED/better-firewall-protect.service" \
     "$STAGE/etc/better-firewall" "$STAGE/etc/better-firewall/applications.d" \
     | sort)"
 actual="$(find "$STAGE" -mindepth 1 | sort)"
@@ -112,6 +114,7 @@ log "smoke: staged bfw --version (BFW_PREFIX=$STAGE)"
 BFW_PREFIX="$STAGE" "$BIN" --version >/dev/null || die "staged bfw --version failed"
 [ -f "$STAGE/etc/default/better-firewall" ] || die "missing /etc/default/better-firewall"
 [ -f "$STAGE/etc/better-firewall/better-firewall.default" ] || die "missing better-firewall defaults"
+[ -f "$STAGE/etc/better-firewall/protect.json" ] || die "missing default protection config"
 [ ! -e "$STAGE/etc/bfirewall" ] || die "legacy /etc/bfirewall path was materialized"
 [ ! -e "$STAGE/etc/default/bfirewall" ] || die "legacy /etc/default/bfirewall path was materialized"
 # Snapshot the stage after the smoke so the post-uninstall inventory can
@@ -130,11 +133,14 @@ if command -v systemd-analyze >/dev/null 2>&1; then
         "$UNITDIR_STAGED/better-firewall.service" \
         "$UNITDIR_STAGED/better-firewall-sweep.service" \
         "$UNITDIR_STAGED/better-firewall-sweep.timer" \
+        "$UNITDIR_STAGED/better-firewall-protect.service" \
         || die "systemd-analyze verify failed"
     rm -f "$UNITDIR_STAGED"/*.target
     # Referenced units' ExecStart binary exists inside the stage:
     grep -q 'ExecStart=/usr/sbin/bfw boot-load' "$UNITDIR_STAGED/better-firewall.service" \
         || die "better-firewall.service ExecStart drifted from /usr/sbin/bfw boot-load"
+    grep -q 'ExecStart=/usr/sbin/bfw protect' "$UNITDIR_STAGED/better-firewall-protect.service" \
+        || die "better-firewall-protect.service ExecStart drifted from /usr/sbin/bfw protect"
 elif [ "${CI:-}" = "true" ]; then
     die "systemd-analyze not found on CI runner (install systemd package)"
 else
@@ -146,13 +152,13 @@ fi
 # delete the staged binary + units, skip every systemctl call, and leave the
 # applications.d directory in place (it holds user-managed app profiles).
 # Expected post-uninstall state = post-smoke snapshot minus exactly the
-# binary and the three units.
+# binary and the four units.
 log "make uninstall DESTDIR=$STAGE"
 make uninstall DESTDIR="$STAGE" >/dev/null
 if [ -e "$BIN" ] || [ -L "$BIN" ]; then
     die "staged binary still present after uninstall"
 fi
-for u in better-firewall.service better-firewall-sweep.service better-firewall-sweep.timer; do
+for u in better-firewall.service better-firewall-sweep.service better-firewall-sweep.timer better-firewall-protect.service; do
     { [ ! -e "$UNITDIR_STAGED/$u" ] && [ ! -L "$UNITDIR_STAGED/$u" ]; } \
         || die "staged unit $u still present after uninstall"
 done
@@ -164,6 +170,7 @@ removed="$(printf '%s\n' \
     "$UNITDIR_STAGED/better-firewall.service" \
     "$UNITDIR_STAGED/better-firewall-sweep.service" \
     "$UNITDIR_STAGED/better-firewall-sweep.timer" \
+    "$UNITDIR_STAGED/better-firewall-protect.service" \
     | sort)"
 expected_leftover="$(comm -23 <(printf '%s\n' "$post_smoke") <(printf '%s\n' "$removed"))"
 leftover="$(find "$STAGE" -mindepth 1 | sort)"
@@ -198,7 +205,8 @@ INSTALL_STAGE="$STAGE/installer-stage"
 mkdir -p "$RELEASE_DIR" "$PAYLOAD/packaging"
 cp packaging/better-firewall.service \
     packaging/better-firewall-sweep.service \
-    packaging/better-firewall-sweep.timer "$PAYLOAD/packaging/"
+    packaging/better-firewall-sweep.timer \
+    packaging/better-firewall-protect.service "$PAYLOAD/packaging/"
 for arch in amd64 arm64; do
     GOOS=linux GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -o "$PAYLOAD/bfw" ./cmd/bfw
     ASSET="better-firewall-linux-$arch.tar.gz"
@@ -218,6 +226,7 @@ for p in \
     "$INSTALL_STAGE/etc/systemd/system/better-firewall.service" \
     "$INSTALL_STAGE/etc/systemd/system/better-firewall-sweep.service" \
     "$INSTALL_STAGE/etc/systemd/system/better-firewall-sweep.timer" \
+    "$INSTALL_STAGE/etc/systemd/system/better-firewall-protect.service" \
     "$INSTALL_STAGE/etc/better-firewall/applications.d"; do
     [ -e "$p" ] || die "release installer did not create $p"
 done

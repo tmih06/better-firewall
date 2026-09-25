@@ -70,6 +70,7 @@ func TestMaterializeCreatesTree(t *testing.T) {
 	for _, want := range []string{
 		"better-firewall.default",
 		"sysctl.conf",
+		"protect.json",
 		"applications.d/openssh.ini",
 		"applications.d/nginx.ini",
 		"applications.d/mail.ini",

@@ -27,6 +27,7 @@ func TestStorePaths(t *testing.T) {
 		s.RulesPath():             "/x/etc/better-firewall/rules.json",
 		s.ConfPath():              "/x/etc/better-firewall/better-firewall.conf",
 		s.SysctlPath():            "/x/etc/better-firewall/sysctl.conf",
+		s.ProtectPath():           "/x/etc/better-firewall/protect.json",
 		s.AppDir():                "/x/etc/better-firewall/applications.d",
 		s.FragmentPath("before"):  "/x/etc/better-firewall/before.rules",
 		s.FragmentPath("before6"): "/x/etc/better-firewall/before6.rules",
@@ -81,6 +82,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	st.Sets = []IPSet{{Name: "blocklist", Family: "inet", Elements: []string{"10.0.0.0/8", "192.168.0.0/16"}}}
 	st.NAT = []NATRule{{Kind: "masquerade", IfaceOut: "eth0", Src: "10.9.0.0/24"},
 		{Kind: "dnat", Proto: "tcp", Dst: "203.0.113.5", Dport: 8080, ToDest: "10.0.0.8:80"}}
+	st.Bans = []ThreatBan{{Address: "203.0.113.9", Source: "crowdsec", Reason: "ssh-bf", ExpiresAt: 1_900_000_000}}
 
 	if err := s.Save(st); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -389,7 +391,7 @@ func TestEnsureDefaults(t *testing.T) {
 	if err := s.EnsureDefaults(); err != nil {
 		t.Fatalf("EnsureDefaults: %v", err)
 	}
-	for _, p := range []string{s.SysctlPath(), filepath.Join(s.AppDir(), "openssh.ini"), s.EtcFile} {
+	for _, p := range []string{s.SysctlPath(), s.ProtectPath(), filepath.Join(s.AppDir(), "openssh.ini"), s.EtcFile} {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("expected %s to exist: %v", p, err)
 		}

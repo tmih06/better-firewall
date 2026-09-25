@@ -41,6 +41,8 @@ func (e *Env) dispatch(args []string) int {
 		return e.cmdMigrate(args[1:])
 	case "sweep":
 		return e.cmdSweep(args[1:])
+	case "protect":
+		return e.cmdProtect(args[1:])
 	case "logs":
 		return e.cmdLogs(args[1:])
 	case "version":

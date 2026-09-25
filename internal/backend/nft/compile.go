@@ -66,14 +66,16 @@ func baseFor(dir string) string {
 
 // compiled is the full object graph for one Apply batch.
 type compiled struct {
-	table      *nftables.Table
-	chains     []*nftables.Chain
-	chainIndex map[string]*nftables.Chain
-	sets       []*nftables.Set
-	elems      map[*nftables.Set][]nftables.SetElement
-	rules      []*nftables.Rule
-	natTables  []*nftables.Table
-	setID      uint32
+	table       *nftables.Table
+	chains      []*nftables.Chain
+	chainIndex  map[string]*nftables.Chain
+	sets        []*nftables.Set
+	elems       map[*nftables.Set][]nftables.SetElement
+	rules       []*nftables.Rule
+	natTables   []*nftables.Table
+	setID       uint32
+	threatBans4 *nftables.Set
+	threatBans6 *nftables.Set
 }
 
 // newSetID pre-assigns kernel set IDs at compile time so Lookup/Dynset
@@ -212,6 +214,9 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 		c.chain(name)
 	}
 	// ---- before-* chains: ufw before.rules + before6.rules defaults ------
+	if err := c.compileThreatBans(st, now); err != nil {
+		return nil, err
+	}
 	c.compileBefore()
 	// ---- after-* chains: ufw after.rules + after6.rules defaults --------
 	c.compileAfter()
@@ -273,6 +278,26 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 	return c, nil
 }
 
+func (c *compiled) addThreatBanRules(chain string) {
+	for _, family := range []struct {
+		set *nftables.Set
+		v6  bool
+	}{{c.threatBans4, false}, {c.threatBans6, true}} {
+		if family.set == nil {
+			continue
+		}
+		offset, length := uint32(12), uint32(4)
+		if family.v6 {
+			offset, length = 8, 16
+		}
+		match := join(nfproto(family.v6), ex(
+			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: offset, Len: length},
+			&expr.Lookup{SourceRegister: 1, SetName: family.set.Name, SetID: family.set.ID},
+		), ex(counter(), verdict(expr.VerdictDrop)))
+		c.addRule(chain, match...)
+	}
+}
+
 // compileBefore emits the ufw before.rules/before6.rules equivalent rules.
 // The inet table handles both families in one chain, so v6 rules carry a
 // `meta nfproto ipv6` guard and v4 rules `meta nfproto ipv4`.
@@ -287,6 +312,9 @@ func (c *compiled) compileBefore() {
 	for _, ch := range []string{in, out, fwd} {
 		c.addRule(ch, join(nfproto(true), rhType(0), ex(counter(), verdict(expr.VerdictDrop)))...)
 	}
+
+	c.addThreatBanRules(in)
+	c.addThreatBanRules(fwd)
 
 	// established/related fast path
 	for _, ch := range []string{in, out, fwd} {
@@ -494,53 +522,75 @@ func (c *compiled) compileLoggingChains(level string, policies map[string]string
 	}
 }
 
-// compileNamedSets turns st.Sets into bfw_set_<name> (v4) and
-// bfw_set_<name>6 (v6) interval sets. Both are always created so rule
-// lookups never reference a missing set.
+// compileNamedSets turns st.Sets into interval sets. Both address families
+// are always created so rule lookups never reference a missing set.
 func (c *compiled) compileNamedSets(st *store.State) error {
 	for _, s := range st.Sets {
-		v4 := &nftables.Set{
-			Table: c.table, Name: "bfw_set_" + s.Name, ID: c.newSetID(),
-			KeyType: nftables.TypeIPAddr, Interval: true,
-		}
-		v6 := &nftables.Set{
-			Table: c.table, Name: "bfw_set_" + s.Name + "6", ID: c.newSetID(),
-			KeyType: nftables.TypeIP6Addr, Interval: true,
-		}
-		c.sets = append(c.sets, v4, v6)
-		var iv4, iv6 [][2][]byte // [start, endExclusive)
-		for _, e := range s.Elements {
-			_, ipnet, err := net.ParseCIDR(e)
-			if err != nil {
-				ip := net.ParseIP(e)
-				if ip == nil {
-					return fmt.Errorf("set %s: bad element %q", s.Name, e)
-				}
-				bits := 128
-				if ip.To4() != nil {
-					bits = 32
-				}
-				ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)}
-			}
-			start := canonIP(ipnet.IP.Mask(ipnet.Mask))
-			end := addOne(canonIP(lastAddr(ipnet)))
-			if len(start) == 16 {
-				iv6 = append(iv6, [2][]byte{start, end})
-			} else {
-				iv4 = append(iv4, [2][]byte{start, end})
-			}
-		}
-		// Overlapping intervals make the kernel reject the whole batch
-		// (__nft_rbtree_insert ENOTEMPTY); merge like nft does.
-		for set, ivs := range map[*nftables.Set][][2][]byte{v4: iv4, v6: iv6} {
-			for _, iv := range mergeIntervals(ivs) {
-				c.elems[set] = append(c.elems[set],
-					nftables.SetElement{Key: iv[0]},
-					nftables.SetElement{Key: iv[1], IntervalEnd: true})
-			}
+		if _, _, err := c.compileAddressSet(
+			"bfw_set_"+s.Name, "bfw_set_"+s.Name+"6", "set "+s.Name, s.Elements,
+		); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func (c *compiled) compileThreatBans(st *store.State, now int64) error {
+	addresses := make([]string, 0, len(st.Bans))
+	for _, ban := range st.Bans {
+		if ban.ExpiresAt > now {
+			addresses = append(addresses, ban.Address)
+		}
+	}
+	var err error
+	c.threatBans4, c.threatBans6, err = c.compileAddressSet(
+		"bfw_threat_bans", "bfw_threat_bans6", "threat ban", addresses,
+	)
+	return err
+}
+
+func (c *compiled) compileAddressSet(name4, name6, source string, elements []string) (*nftables.Set, *nftables.Set, error) {
+	v4 := &nftables.Set{
+		Table: c.table, Name: name4, ID: c.newSetID(),
+		KeyType: nftables.TypeIPAddr, Interval: true,
+	}
+	v6 := &nftables.Set{
+		Table: c.table, Name: name6, ID: c.newSetID(),
+		KeyType: nftables.TypeIP6Addr, Interval: true,
+	}
+	c.sets = append(c.sets, v4, v6)
+	var iv4, iv6 [][2][]byte // [start, endExclusive)
+	for _, element := range elements {
+		_, ipnet, err := net.ParseCIDR(element)
+		if err != nil {
+			ip := net.ParseIP(element)
+			if ip == nil {
+				return nil, nil, fmt.Errorf("%s: bad element %q", source, element)
+			}
+			bits := 128
+			if ip.To4() != nil {
+				bits = 32
+			}
+			ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)}
+		}
+		start := canonIP(ipnet.IP.Mask(ipnet.Mask))
+		end := addOne(canonIP(lastAddr(ipnet)))
+		if len(start) == 16 {
+			iv6 = append(iv6, [2][]byte{start, end})
+		} else {
+			iv4 = append(iv4, [2][]byte{start, end})
+		}
+	}
+	// Overlapping intervals make the kernel reject the whole batch
+	// (__nft_rbtree_insert ENOTEMPTY); merge like nft does.
+	for set, intervals := range map[*nftables.Set][][2][]byte{v4: iv4, v6: iv6} {
+		for _, interval := range mergeIntervals(intervals) {
+			c.elems[set] = append(c.elems[set],
+				nftables.SetElement{Key: interval[0]},
+				nftables.SetElement{Key: interval[1], IntervalEnd: true})
+		}
+	}
+	return v4, v6, nil
 }
 
 // mergeIntervals sorts and coalesces overlapping/adjacent [start,end)

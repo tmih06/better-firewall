@@ -7,6 +7,7 @@ package tests
 
 import (
 	"encoding/json"
+	"github.com/tmih06/better-firewall/internal/store"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,6 +99,43 @@ func TestNamedIPSetsCRUDAndReferences(t *testing.T) {
 	env.runErr("set", "create", "invalid name with spaces")
 	env.runErr("set", "add", "nonexistent_set", "1.2.3.4")
 	env.runErr("set", "add", "blocklist", "invalid.ip.string")
+}
+
+func TestThreatBansLoadAsKernelSetsBeforeEstablishedAcceptance(t *testing.T) {
+	env := newTestEnv(t)
+	now := time.Now().Unix()
+	st := store.Defaults()
+	st.Bans = []store.ThreatBan{
+		{Address: "198.51.100.19", Source: "ssh:ssh", ExpiresAt: now + 3600},
+		{Address: "2001:db8::19/128", Source: "crowdsec", Reason: "integration", DecisionID: 19, ExpiresAt: now + 3600},
+	}
+	data, err := json.Marshal(st)
+	if err != nil {
+		t.Fatalf("marshal state: %v", err)
+	}
+	rulesPath := filepath.Join(env.dir, "etc", "better-firewall", "rules.json")
+	if err := os.WriteFile(rulesPath, data, 0600); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+	env.runOK("--force", "enable")
+
+	v4, err := env.nft("list", "set", "inet", "better-firewall", "bfw_threat_bans")
+	if err != nil || !strings.Contains(v4, "198.51.100.19") {
+		t.Fatalf("IPv4 threat set output=%q err=%v", v4, err)
+	}
+	v6, err := env.nft("list", "set", "inet", "better-firewall", "bfw_threat_bans6")
+	if err != nil || !strings.Contains(v6, "2001:db8::19") {
+		t.Fatalf("IPv6 threat set output=%q err=%v", v6, err)
+	}
+	input, err := env.nft("list", "chain", "inet", "better-firewall", "bfw-before-input")
+	if err != nil {
+		t.Fatalf("list input chain: %v", err)
+	}
+	banAt := strings.Index(input, "ip saddr @bfw_threat_bans")
+	establishedAt := strings.Index(input, "ct state established,related")
+	if banAt < 0 || establishedAt < 0 || banAt > establishedAt {
+		t.Fatalf("kernel chain does not drop threat sources before established acceptance:\n%s", input)
+	}
 }
 
 // -----------------------------------------------------------------------------

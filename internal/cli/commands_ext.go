@@ -1108,6 +1108,16 @@ func expiredCount(st *store.State, now int64) int {
 	return n
 }
 
+func expiredThreatBanCount(st *store.State, now int64) int {
+	n := 0
+	for _, ban := range st.Bans {
+		if ban.ExpiresAt <= now {
+			n++
+		}
+	}
+	return n
+}
+
 func (e *Env) cmdSweep(args []string) int {
 	if len(args) != 0 {
 		e.Msg("%s", HelpText(e.Prog))
@@ -1125,13 +1135,19 @@ func (e *Env) cmdSweep(args []string) int {
 	if err != nil {
 		return e.Errorf("%v", err)
 	}
-	n := expiredCount(st, time.Now().Unix())
-	if n == 0 {
+	now := time.Now().Unix()
+	nRules := expiredCount(st, now)
+	nBans := expiredThreatBanCount(st, now)
+	if nRules == 0 && nBans == 0 {
 		e.Msg("Removed 0 expired rule(s)")
 		return 0
 	}
-	// commitState sweeps the expired rules, saves, and applies when live.
-	return e.commitState(st, fmt.Sprintf("Removed %d expired rule(s)", n))
+	// commitState sweeps expired rules and bans, saves, and applies when live.
+	result := fmt.Sprintf("Removed %d expired rule(s)", nRules)
+	if nBans > 0 {
+		result += fmt.Sprintf(" and %d expired threat ban(s)", nBans)
+	}
+	return e.commitState(st, result)
 }
 
 // ---------------------------------------------------------------- rule

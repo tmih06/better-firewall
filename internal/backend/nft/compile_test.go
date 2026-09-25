@@ -3,6 +3,7 @@ package nft
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
@@ -276,6 +277,57 @@ func TestCompileICMPType(t *testing.T) {
 	st.Rules6[0].Dst.Ports = []rule.PortRange{{Lo: 80, Hi: 80, Proto: "tcp"}}
 	if _, err := RenderText(st, nil); err == nil {
 		t.Fatal("RenderText accepted ports on an ICMP rule")
+	}
+}
+
+func TestCompileThreatBansUseMergedAddressSetsBeforeEstablishedTraffic(t *testing.T) {
+	now := time.Now().Unix()
+	st := store.Defaults()
+	st.Bans = []store.ThreatBan{
+		{Address: "203.0.113.9", Source: "crowdsec", ExpiresAt: now + 3600},
+		{Address: "203.0.113.9", Source: "ssh:sshd", ExpiresAt: now + 7200},
+		{Address: "198.51.100.0/24", Source: "crowdsec", ExpiresAt: now + 3600},
+		{Address: "198.51.100.9", Source: "ssh:sshd", ExpiresAt: now + 7200},
+		{Address: "192.0.2.77", Source: "crowdsec", ExpiresAt: now},
+		{Address: "2001:db8::7", Source: "crowdsec", ExpiresAt: now + 3600},
+	}
+	c, err := compile(st, nil)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+
+	sets := map[string]*nftables.Set{}
+	for _, set := range c.sets {
+		sets[set.Name] = set
+	}
+	for _, name := range []string{"bfw_threat_bans", "bfw_threat_bans6"} {
+		if sets[name] == nil || !sets[name].Interval || sets[name].HasTimeout {
+			t.Fatalf("missing static interval set %q", name)
+		}
+	}
+	if got := len(c.elems[sets["bfw_threat_bans"]]); got != 4 {
+		t.Fatalf("IPv4 threat elements = %d, want two merged address intervals", got)
+	}
+	if got := len(c.elems[sets["bfw_threat_bans6"]]); got != 2 {
+		t.Fatalf("IPv6 threat elements = %d, want one address interval", got)
+	}
+
+	text, err := RenderText(st, nil)
+	if err != nil {
+		t.Fatalf("RenderText: %v", err)
+	}
+	for _, want := range []string{"ip saddr @bfw_threat_bans", "ip6 saddr @bfw_threat_bans6", "flags interval"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rendered ruleset omitted %q:\n%s", want, text)
+		}
+	}
+	banAt := strings.Index(text, "ip saddr @bfw_threat_bans")
+	establishedAt := strings.Index(text, "ct state established,related")
+	if banAt < 0 || establishedAt < 0 || banAt > establishedAt {
+		t.Fatalf("threat ban must precede established-flow acceptance:\n%s", text)
+	}
+	if strings.Contains(text, "192.0.2.77") {
+		t.Fatalf("expired threat address was compiled:\n%s", text)
 	}
 }
 

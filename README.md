@@ -158,6 +158,93 @@ description=Nginx Full
 ports=80,443/tcp
 ```
 
+### Authentication protection (optional)
+
+`bfw protect` is a long-running, root-owned service. The embedded
+`/etc/better-firewall/protect.json` default watches systemd journal records
+from `sshd`, ignores `127.0.0.0/8` and `::1/128`, and bans a source IP for one
+hour after five failed-password messages within ten minutes. Failure counters
+live in memory; persisted bans survive service restarts. This is Fail2ban-like
+behavior, not a Fail2ban compatibility layer; it does not read flat log files
+or load Fail2ban filters and actions.
+
+Jails select journal identifiers and regular expressions. Each pattern must
+capture the source address in a named `ip` group:
+
+```json
+{
+  "jails": [
+    {
+      "name": "ssh",
+      "identifiers": ["sshd"],
+      "patterns": [
+        "(?i)Failed password for .* from (?P<ip>[a-f0-9:.]+) port [0-9]+"
+      ],
+      "max_retries": 5,
+      "find_time": "10m",
+      "ban_time": "1h",
+      "ignore_ips": ["192.0.2.0/24"]
+    }
+  ]
+}
+```
+
+`find_time` and `ban_time` use Go duration syntax; `ban_time` must be at least
+one second. `ignore_ips` accepts addresses and CIDR prefixes. Add identifiers
+and patterns for other journald-backed services. The service starts the
+journal follower at the current end of the log; it does not replay historical
+failures.
+
+To enable the local jail:
+
+```sh
+sudo systemctl enable --now better-firewall-protect.service
+sudo systemctl status better-firewall-protect.service
+```
+
+The unit is installed but not enabled automatically. Bans are persisted in
+`rules.json`, compiled into IPv4/IPv6 interval sets, and checked before
+established-flow acceptance on input and forwarded traffic. Expired bans are
+removed by the minutely sweep timer; the firewall systemd unit starts that
+timer. If running the firewall outside its systemd unit, enable
+`better-firewall-sweep.timer` separately. A ban may therefore remain enforced
+for up to one sweep interval after its configured expiry.
+
+#### CrowdSec Local API bouncer
+
+The same service can consume CrowdSec LAPI decisions. On the LAPI host, create a
+bouncer with `sudo cscli bouncers add bfirewall`; the key is shown once. Store
+it in a root-owned file readable only by root:
+
+```sh
+sudo install -o root -g root -m 0600 /dev/null /etc/better-firewall/crowdsec.key
+sudoedit /etc/better-firewall/crowdsec.key
+```
+
+Add the `crowdsec` object to `protect.json`:
+
+```json
+{
+  "crowdsec": {
+    "url": "https://lapi.example:8080",
+    "api_key_file": "/etc/better-firewall/crowdsec.key",
+    "poll_interval": "30s"
+  }
+}
+```
+
+The URL must use HTTPS, except HTTP to loopback for a local LAPI. The bouncer
+uses `X-Api-Key`, requests IP and range decision deltas, and reconciles a full
+snapshot at startup. Only `ban` decisions with IP/range scopes are enforced;
+the API key is not stored in `protect.json` or firewall state. Redirects are
+rejected to prevent forwarding the key. TLS client-certificate authentication
+is not currently supported. Protocol details and first-party references are in
+[`docs/crowdsec-lapi-research.md`](docs/crowdsec-lapi-research.md).
+
+Once the config and key file are in place, enable the same optional service
+with the systemd commands above. The CrowdSec bouncer can also run with
+`"jails": []` to consume only LAPI decisions.
+
 ### Status & reports
 
 ```sh
@@ -266,10 +353,11 @@ internal/rule      canonical rule model (Rules4/Rules6 dual lists)
 internal/store     persistent state under /etc/better-firewall
 internal/backend   backend interface (atomic apply, read-back, fragments)
 internal/backend/nft   nftables compiler/renderer via google/nftables netlink
+internal/protect  journal failure detector and CrowdSec LAPI bouncer
 internal/appprof   INI application-profile parsing/expansion
 internal/sysstate  sysctl writes, modprobe, ssh detection, mutating flock
 internal/impexp    state export/import and firewall migration
-internal/defaults  embedded default profiles/sysctl, lazily materialized
+internal/defaults  embedded protection config, profiles/sysctl; lazy materialization
 internal/report    `show` reports
 internal/services  service-name → port resolution
 packaging          systemd units
@@ -291,6 +379,7 @@ make test               # go test ./...            (unit; no root needed)
 make check              # gofmt, module tidy check, vet, staticcheck, actionlint, shellcheck, govulncheck
 make package            # staged install + systemd verify + staged uninstall (no root/systemctl)
 make test-integration   # privileged: real nftables inside disposable namespaces (see below)
+make benchmark-protect  # unprivileged detector, CrowdSec decode, nft set microbenchmarks
 ```
 
 Unit tests are dependency-injected (`hookGeteuid`, `hookUnderSSH`,
@@ -299,10 +388,11 @@ surface is testable without root or a kernel.
 
 ### Privileged testing — read before running
 
-Never run privileged integration tests or the performance benchmark on this
+Never run privileged integration tests or the k6 performance benchmark on this
 workstation or any production host. Both use real kernel firewall state;
 running them outside the isolated CI setup can disrupt networking or SSH.
-
+`make benchmark-protect` is an unprivileged Go microbenchmark and is safe to run
+locally.
 The `integration` job runs only on a disposable GitHub-hosted runner through
 `scripts/ci/isolate.sh`, which:
 
@@ -368,8 +458,9 @@ Coverage intent (not a claim that every behavior is proven):
 | Repo area | CI job(s) |
 |---|---|
 | Go source (all `internal/*`, `cmd/bfw`) | `lint` (gofmt, module tidiness, vet/staticcheck), `build` (Go 1.22.x min + 1.26.x + 1.27.x stable, linux/amd64 + linux/arm64), `unit-test` (race + coverage artifact), `vuln` (govulncheck), `security-codeql` |
+| `internal/protect` | `unit-test` and `protection-benchmarks` (jail detector + CrowdSec client race tests; journal detection, decision decode, and ban-set cardinality benchmarks) |
 | `etc/better-firewall/*`, `etc/default/*`, embedded defaults | `unit-test` (materialization, overrides, preservation) and `package` (staged configuration tree) |
-| `tests/`, nft backend (`internal/backend/nft` integration tests) | `integration` — isolated namespaces, `BFW_ISOLATED`-gated |
+| `tests/`, nft backend (`internal/backend/nft` integration tests) | `integration` — isolated namespaces, including kernel threat-ban set/rule installation |
 | `packaging/*` systemd units, install layout | `package` — staged install + `systemd-analyze verify` + staged uninstall; systemctl stubbed |
 | bfw vs ufw performance | `performance` — k6 keep-alive, connection-churn, and mixed-load profiles across 10–1,000 rules; uploads detailed comparison artifacts |
 | `.github/workflows/*.yml`, `scripts/**/*.sh` | `lint` — actionlint + shellcheck |

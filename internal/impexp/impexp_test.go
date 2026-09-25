@@ -290,6 +290,7 @@ func TestExportImportRoundTrip(t *testing.T) {
 	st.Policies.Forward = "reject"
 	st.Sets = []store.IPSet{{Name: "bad", Family: "ip", Elements: []string{"10.0.0.1"}}}
 	st.NAT = []store.NATRule{{Kind: "masquerade", IfaceOut: "eth0"}}
+	st.Bans = []store.ThreatBan{{Address: "203.0.113.7", Source: "crowdsec", Reason: "scenario", DecisionID: 7, ExpiresAt: 1_900_000_000}}
 
 	var buf bytes.Buffer
 	if err := Export(st, &buf); err != nil {
@@ -319,12 +320,16 @@ func TestExportImportRoundTrip(t *testing.T) {
 	if len(back.Sets) != 1 || len(back.NAT) != 1 {
 		t.Errorf("sets/nat not preserved: %+v", back)
 	}
+	if len(back.Bans) != 1 || back.Bans[0] != st.Bans[0] {
+		t.Errorf("threat bans not preserved: %+v", back.Bans)
+	}
 
 	// Merge into a state already holding the same rule → dedup, count 0.
 	existing := store.Defaults()
 	dup := r4
 	dup.ID = "bbb"
 	existing.Rules4 = []rule.Rule{dup}
+	existing.Bans = []store.ThreatBan{{Address: "192.0.2.4", Source: "ssh:ssh", ExpiresAt: 1_900_000_000}}
 	merged, n, err := Import(bytes.NewReader(buf.Bytes()), existing, false)
 	if err != nil {
 		t.Fatalf("Import merge: %v", err)
@@ -341,9 +346,12 @@ func TestExportImportRoundTrip(t *testing.T) {
 	if len(merged.Rules6) != 1 {
 		t.Fatalf("Rules6 = %d, want 1", len(merged.Rules6))
 	}
-	// Sets merged by name (union), NAT deduped.
+	// Sets merged by name (union), NAT deduped, and temporary bans preserved.
 	if len(merged.Sets) != 1 || len(merged.NAT) != 1 {
 		t.Errorf("sets/nat merge wrong: %+v", merged)
+	}
+	if len(merged.Bans) != 2 {
+		t.Errorf("threat bans not merged: %+v", merged.Bans)
 	}
 }
 

@@ -1124,6 +1124,7 @@ func iptCloneState(st *store.State) *store.State {
 	if st.NAT != nil {
 		out.NAT = append([]store.NATRule(nil), st.NAT...)
 	}
+	out.Bans = append([]store.ThreatBan(nil), st.Bans...)
 	return &out
 }
 

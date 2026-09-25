@@ -527,6 +527,13 @@ func sweepExpired(st *store.State) {
 	}
 	st.Rules4 = keep(st.Rules4)
 	st.Rules6 = keep(st.Rules6)
+	bans := st.Bans[:0]
+	for _, ban := range st.Bans {
+		if ban.ExpiresAt > now {
+			bans = append(bans, ban)
+		}
+	}
+	st.Bans = bans
 }
 
 // findOtherPosition replicates backend.find_other_position: returns the

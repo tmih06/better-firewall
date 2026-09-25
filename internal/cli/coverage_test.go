@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/nftables"
 
@@ -148,6 +149,9 @@ func TestRunEnsureDefaultsMaterializes(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(prefix, "etc", "better-firewall", "applications.d", "openssh.ini")); err != nil {
 		t.Errorf("openssh.ini not materialized: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(prefix, "etc", "better-firewall", "protect.json")); err != nil {
+		t.Errorf("protect.json not materialized: %v", err)
 	}
 }
 
@@ -1586,6 +1590,10 @@ func TestExportImportRoundTrip(t *testing.T) {
 	st := store.Defaults()
 	st.Logging = "full"
 	st.Rules4 = []rule.Rule{*mkExtRule("allow", "in", "tcp", "any", "any", ports(443, "tcp"))}
+	st.Bans = []store.ThreatBan{{
+		Address: "203.0.113.9", Source: "crowdsec", Reason: "decision",
+		DecisionID: 1, ExpiresAt: time.Now().Add(time.Hour).Unix(),
+	}}
 	if err := e.Store.Save(st); err != nil {
 		t.Fatal(err)
 	}
@@ -1607,7 +1615,7 @@ func TestExportImportRoundTrip(t *testing.T) {
 		t.Fatalf("stdout = %q", out2.String())
 	}
 	st2 := loadState(t, e2)
-	if st2.Logging != "full" || len(st2.Rules4) != 1 {
+	if st2.Logging != "full" || len(st2.Rules4) != 1 || len(st2.Bans) != 1 || st2.Bans[0].DecisionID != 1 {
 		t.Fatalf("imported state = %+v", st2)
 	}
 
@@ -1620,6 +1628,9 @@ func TestExportImportRoundTrip(t *testing.T) {
 	st2 = loadState(t, e2)
 	if len(st2.Rules4) != 1 {
 		t.Errorf("reimport duplicated: %d rules", len(st2.Rules4))
+	}
+	if len(st2.Bans) != 1 {
+		t.Errorf("reimport duplicated threat bans: %d", len(st2.Bans))
 	}
 }
 
@@ -1771,6 +1782,10 @@ func TestSweep(t *testing.T) {
 	exp.ExpiresAt = 1
 	st := store.Defaults()
 	st.Rules4 = []rule.Rule{*exp, *mkExtRule("deny", "in", "udp", "any", "any", ports(53, "udp"))}
+	st.Bans = []store.ThreatBan{
+		{Address: "203.0.113.1", Source: "crowdsec", ExpiresAt: 1},
+		{Address: "203.0.113.2", Source: "crowdsec", ExpiresAt: time.Now().Add(time.Hour).Unix()},
+	}
 	if err := e.Store.Save(st); err != nil {
 		t.Fatal(err)
 	}
@@ -1783,6 +1798,12 @@ func TestSweep(t *testing.T) {
 	st = loadState(t, e)
 	if len(st.Rules4) != 1 || st.Rules4[0].Action != "deny" {
 		t.Fatalf("rules4 = %+v", st.Rules4)
+	}
+	if !strings.Contains(out.String(), "1 expired threat ban(s)") {
+		t.Fatalf("stdout = %q, want expired threat-ban count", out.String())
+	}
+	if len(st.Bans) != 1 || st.Bans[0].Address != "203.0.113.2" {
+		t.Fatalf("threat bans after sweep = %+v, want only active address", st.Bans)
 	}
 
 	// Idempotent second run.

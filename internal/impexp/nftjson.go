@@ -878,5 +878,6 @@ func nftCloneState(st *store.State) *store.State {
 		out.Sets[i].Elements = append([]string(nil), st.Sets[i].Elements...)
 	}
 	out.NAT = append([]store.NATRule(nil), st.NAT...)
+	out.Bans = append([]store.ThreatBan(nil), st.Bans...)
 	return &out
 }

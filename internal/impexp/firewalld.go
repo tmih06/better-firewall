@@ -1699,5 +1699,6 @@ func fwCloneState(st *store.State) *store.State {
 	for i := range out.Sets {
 		out.Sets[i].Elements = append([]string(nil), out.Sets[i].Elements...)
 	}
+	out.Bans = append([]store.ThreatBan(nil), st.Bans...)
 	return &out
 }

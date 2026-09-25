@@ -1,6 +1,7 @@
-// Package defaults embeds the shipped configuration: app profiles,
-// sysctl.conf, and /etc/default/better-firewall. Files are materialized lazily —
-// created on first use if missing, never overwriting user edits.
+// Package defaults embeds the shipped protection and firewall configuration,
+// application profiles, sysctl.conf, and /etc/default/better-firewall. Files
+// are materialized lazily — created on first use if missing, never overwriting
+// user edits.
 package defaults
 
 import (

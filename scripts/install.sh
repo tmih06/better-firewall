@@ -57,17 +57,18 @@ grep -E "^[[:xdigit:]]{64}  $asset\$" "$tmp/SHA256SUMS" > "$tmp/selected.SHA256S
 tar -tzf "$tmp/$asset" > "$tmp/members" || fail "release bundle is not a valid tar archive"
 while IFS= read -r member; do
 	case "$member" in
-		bfw|packaging/|packaging/better-firewall.service|packaging/better-firewall-sweep.service|packaging/better-firewall-sweep.timer) ;;
+		bfw|packaging/|packaging/better-firewall.service|packaging/better-firewall-sweep.service|packaging/better-firewall-sweep.timer|packaging/better-firewall-protect.service) ;;
 		*) fail "unexpected path in release bundle: $member" ;;
 	esac
 done < "$tmp/members"
-for member in bfw packaging/better-firewall.service packaging/better-firewall-sweep.service packaging/better-firewall-sweep.timer; do
+for member in bfw packaging/better-firewall.service packaging/better-firewall-sweep.service packaging/better-firewall-sweep.timer packaging/better-firewall-protect.service; do
 	grep -Fxq "$member" "$tmp/members" || fail "release bundle is missing $member"
 done
 tar -xOzf "$tmp/$asset" bfw > "$tmp/bfw" || fail "could not extract bfw"
 tar -xOzf "$tmp/$asset" packaging/better-firewall.service > "$tmp/better-firewall.service" || fail "could not extract service unit"
 tar -xOzf "$tmp/$asset" packaging/better-firewall-sweep.service > "$tmp/better-firewall-sweep.service" || fail "could not extract sweep service"
 tar -xOzf "$tmp/$asset" packaging/better-firewall-sweep.timer > "$tmp/better-firewall-sweep.timer" || fail "could not extract sweep timer"
+tar -xOzf "$tmp/$asset" packaging/better-firewall-protect.service > "$tmp/better-firewall-protect.service" || fail "could not extract protection service"
 
 install -d -m 0755 "$root/usr/sbin" \
 	"$root/etc/systemd/system" \
@@ -77,6 +78,7 @@ mv -f "$root/usr/sbin/.bfw.$$" "$root/usr/sbin/bfw"
 install -m 0644 "$tmp/better-firewall.service" "$root/etc/systemd/system/better-firewall.service"
 install -m 0644 "$tmp/better-firewall-sweep.service" "$root/etc/systemd/system/better-firewall-sweep.service"
 install -m 0644 "$tmp/better-firewall-sweep.timer" "$root/etc/systemd/system/better-firewall-sweep.timer"
+install -m 0644 "$tmp/better-firewall-protect.service" "$root/etc/systemd/system/better-firewall-protect.service"
 
 if [ -z "$root" ]; then
 	systemctl daemon-reload
