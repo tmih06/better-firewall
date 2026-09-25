@@ -68,6 +68,7 @@ fi
 PERF_DURATION="${PERF_DURATION:-10s}"
 PERF_WARMUP_DURATION="${PERF_WARMUP_DURATION:-2s}"
 PERF_VUS="${PERF_VUS:-10}"
+PERF_CHURN_RPS="${PERF_CHURN_RPS:-200}"
 PERF_PEAK_VUS="${PERF_PEAK_VUS:-50}"
 PERF_MIXED_STAGES="${PERF_MIXED_STAGES:-4s:0,6s:${PERF_PEAK_VUS},10s:${PERF_PEAK_VUS},5s:0}"
 PERF_REPEATS="${PERF_REPEATS:-3}"
@@ -217,6 +218,7 @@ execute_k6_run() {
     attacker_exec k6 run -q \
         -e PROFILE="$profile" \
         -e VUS=5 \
+        -e CHURN_RPS=50 \
         -e DURATION="$PERF_WARMUP_DURATION" \
         -e MIXED_STAGES="1s:5,1s:0" \
         -e TARGET_URL="http://server:${HTTP_PORT}/" \
@@ -227,6 +229,7 @@ execute_k6_run() {
     attacker_exec k6 run \
         -e PROFILE="$profile" \
         -e VUS="$PERF_VUS" \
+        -e CHURN_RPS="$PERF_CHURN_RPS" \
         -e DURATION="$PERF_DURATION" \
         -e MIXED_STAGES="$PERF_MIXED_STAGES" \
         -e TARGET_URL="http://server:${HTTP_PORT}/" \
@@ -278,7 +281,7 @@ BFW_VER="$(server_exec bfw --version 2>&1 | head -n 1 || echo 'bfw version unava
 UFW_VER="$(server_exec ufw --version 2>&1 | head -n 1 || echo 'ufw version unavailable')"
 python3 - "$METADATA_FILE" \
     "$(uname -srm)" "$(uname -m)" "$BFW_VER" "$UFW_VER" "$K6_VER" \
-    "$PERF_VUS" "$PERF_PEAK_VUS" "$PERF_DURATION" "$PERF_WARMUP_DURATION" \
+    "$PERF_VUS" "$PERF_PEAK_VUS" "$PERF_CHURN_RPS" "$PERF_DURATION" "$PERF_WARMUP_DURATION" \
     "$PERF_REPEATS" "$PERF_CARDINALITIES" "$PERF_PROFILES" "$PERF_MIXED_STAGES" \
     "$BASELINE_CONTROL_PASSED" "$POS_CONTROL_PASSED" \
     "$NEG_CONTROL_PASSED" "$BENCH_CONTROLS_PASSED" <<'PY'
@@ -294,6 +297,7 @@ import sys
     k6_version,
     vus,
     peak_vus,
+    churn_rps,
     duration,
     warmup_duration,
     repeats,
@@ -314,6 +318,7 @@ metadata = {
         "k6_version": k6_version,
         "vus": vus,
         "peak_vus": peak_vus,
+        "churn_rps": churn_rps,
         "duration": duration,
         "warmup_duration": warmup_duration,
         "repeats": repeats,

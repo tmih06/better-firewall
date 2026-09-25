@@ -563,6 +563,11 @@ def evaluate_thresholds(
     # 2. Correctness and latency per scenario
     for scenario_name in sorted(scenarios, key=_scenario_sort_key):
         metrics = scenarios[scenario_name]
+        dropped = metrics.get("dropped_iterations", 0)
+        if dropped > 0:
+            violations.append(
+                f"Load Threshold: Scenario '{scenario_name}' dropped {dropped} iterations at the configured arrival rate"
+            )
         err = metrics.get("error_rate", 0.0)
         if err > max_error_rate:
             violations.append(
@@ -627,6 +632,7 @@ def render_markdown(
     md.append(f"| Traffic Profiles | {metadata.get('profiles', 'keepalive churn mixed')} |")
     md.append(f"| Test Concurrency (VUs) | {metadata.get('vus', '10')} |")
     md.append(f"| Mixed Peak Concurrency (VUs) | {metadata.get('peak_vus', '50')} |")
+    md.append(f"| Fresh-Connection Target Rate (req/s) | {metadata.get('churn_rps', '200')} |")
     md.append(f"| Mixed Ramp Stages | {metadata.get('mixed_stages', '4s:0,6s:50,10s:50,5s:0')} |")
     md.append(f"| Fixed-VU Profile Duration | {metadata.get('duration', '10s')} |")
     md.append(f"| Warmup Duration | {metadata.get('warmup_duration', '2s')} |")
@@ -654,8 +660,8 @@ def render_markdown(
 
     # Per-profile traffic performance tables
     md.append("## Traversed Traffic Performance (k6 Throughput & Latency)\n")
-    md.append("| Profile | Scenario | Rules | Reqs | Errors | Checks | Throughput (req/s) | p50 (ms) | p95 (ms) | p99 (ms) | Err % | RX (MiB) | TX (MiB) | VU max |")
-    md.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    md.append("| Profile | Scenario | Rules | Reqs | Dropped It. | Errors | Checks | Throughput (req/s) | p50 (ms) | p95 (ms) | p99 (ms) | Err % | RX (MiB) | TX (MiB) | VU max |")
+    md.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 
     for scenario_name in sorted(scenarios, key=_scenario_sort_key):
         engine, card_text, profile = split_scenario_key(scenario_name)
@@ -667,10 +673,10 @@ def render_markdown(
         }.get(engine, engine)
         check_pct = f"{s['check_rate'] * 100:.2f}%" if s.get("check_rate") is not None else "N/A"
         md.append(
-            f"| {profile} | {label} | {card_text} | {s['request_count']} | {s['error_count']} | {check_pct} | "
-            f"{s['throughput_rps']:.1f} | {s['latency_p50_ms']:.2f} | {s['latency_p95_ms']:.2f} | "
-            f"{s['latency_p99_ms']:.2f} | {s['error_rate'] * 100:.2f}% | {_mib(s.get('data_received_bytes'))} | "
-            f"{_mib(s.get('data_sent_bytes'))} | {s['vus_max']:.0f} |"
+            f"| {profile} | {label} | {card_text} | {s['request_count']} | {s.get('dropped_iterations', 0)} | "
+            f"{s['error_count']} | {check_pct} | {s['throughput_rps']:.1f} | {s['latency_p50_ms']:.2f} | "
+            f"{s['latency_p95_ms']:.2f} | {s['latency_p99_ms']:.2f} | {s['error_rate'] * 100:.2f}% | "
+            f"{_mib(s.get('data_received_bytes'))} | {_mib(s.get('data_sent_bytes'))} | {s['vus_max']:.0f} |"
         )
     md.append("")
 
@@ -721,6 +727,7 @@ def render_markdown(
     md.append(f"- Max Allowable Error Rate: `{thresholds['max_error_rate'] * 100:.1f}%`")
     md.append(f"- Min Allowable Check Rate: `{thresholds.get('min_check_rate', 0.99) * 100:.1f}%`")
     md.append(f"- Max Allowable Latency (p95): `{thresholds['max_p95_latency_ms']:.1f} ms`")
+    md.append("- Maximum Dropped Iterations: `0`")
 
     if thresholds["violations"]:
         md.append("\n### Threshold Violations:")

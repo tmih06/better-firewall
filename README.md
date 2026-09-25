@@ -266,15 +266,17 @@ directly as root, and never spoof the CI guard to run it locally. The standard
 `scripts/perf/run.sh` builds a server image containing the downloaded `bfw`
 artifact and starts it beside a separate k6 attacker container on an
 internal-only Docker network. It compares baseline, bfw, and ufw with 10, 100,
-500, and 1,000 rules over three alternating repeats. Each ruleset gets three
-profiles: keep-alive requests, one new TCP connection per request, and a mixed
-70/20/10 small/medium/large response workload ramping up to 50 virtual users.
+500, and 1,000 rules over three alternating repeats. Each ruleset uses three
+profiles: keep-alive requests, bounded fresh-connection churn (200 new
+connections/second by default), and a mixed 70/20/10 small/medium/large response
+workload ramping up to 50 virtual users.
 
-The report includes per-profile throughput, latency percentiles, request and
-check/error counts, transferred bytes, active virtual users, comparative
-ratios, and separate rule-configuration and firewall-enable timings. Results
-are saved under `artifacts/performance/` (`summary.md`, `summary.json`,
-`raw/*.json`) and uploaded as the `better-firewall-performance` CI artifact.
+The report includes per-profile throughput, latency percentiles, request,
+drop, check and error counts, transferred bytes, active virtual users,
+comparative ratios, and separate rule-configuration and firewall-enable
+timings. Results are saved under `artifacts/performance/` (`summary.md`,
+`summary.json`, `raw/*.json`) and uploaded as the
+`better-firewall-performance` CI artifact.
 
 Hosted-runner numbers remain noisy (shared CPU and Docker bridge overhead).
 Treat ratios as indicative of relative overhead, not as absolute throughput

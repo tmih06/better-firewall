@@ -11,6 +11,7 @@ const KNOWN_PROFILES = ['keepalive', 'churn', 'mixed'];
 const targetUrl = __ENV.TARGET_URL || 'http://server:8080/';
 const profile = __ENV.PROFILE || 'keepalive';
 const vus = parseInt(__ENV.VUS || '10', 10);
+const churnRate = parseInt(__ENV.CHURN_RPS || '200', 10);
 const duration = __ENV.DURATION || '10s';
 // Comma-separated "duration:targetVUs" pairs for the mixed profile ramp.
 const mixedStages = __ENV.MIXED_STAGES || '4s:0,6s:50,10s:50,5s:0';
@@ -45,9 +46,21 @@ function buildOptions() {
   };
 
   if (profile === 'churn') {
-    // Force a brand-new TCP connection per iteration to expose per-connection
-    // firewall overhead (conntrack creation/teardown under short flows).
-    return Object.assign({}, base, { vus: vus, duration: duration, noConnectionReuse: true });
+    // Bound fresh TCP connections per second so repeated runs do not exhaust
+    // the attacker's ephemeral ports before TIME_WAIT entries expire.
+    return Object.assign({}, base, {
+      scenarios: {
+        connection_churn: {
+          executor: 'constant-arrival-rate',
+          rate: churnRate,
+          timeUnit: '1s',
+          duration: duration,
+          preAllocatedVUs: vus,
+          maxVUs: vus,
+        },
+      },
+      noConnectionReuse: true,
+    });
   }
 
   if (profile === 'mixed') {

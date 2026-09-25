@@ -33,6 +33,7 @@ def make_valid_k6_dict(
     vus_max: float = 10.0,
     received: int = 2_500_000,
     sent: int = 500_000,
+    dropped_iterations: int = 0,
 ) -> dict:
     """Helper to produce a valid k6 machine summary dictionary."""
     fails = int(count * error_rate)
@@ -74,6 +75,7 @@ def make_valid_k6_dict(
             "vus_max": {"values": {"value": vus_max, "min": 1.0, "max": vus_max}},
             "data_received": {"values": {"count": received, "rate": received / 5.0}},
             "data_sent": {"values": {"count": sent, "rate": sent / 5.0}},
+            "dropped_iterations": {"values": {"count": dropped_iterations}},
             "http_req_connecting": {"values": {"avg": 0.4, "min": 0.0, "max": 5.0}},
             "http_req_waiting": {"values": {"avg": 1.1, "min": 0.2, "max": 9.0}},
             "http_req_receiving": {"values": {"avg": 0.2, "min": 0.0, "max": 3.0}},
@@ -103,7 +105,9 @@ def make_apply_times() -> dict:
 class TestCompareEngine(unittest.TestCase):
     def test_parse_valid_k6_summary(self):
         """Test parsing valid k6 metrics dictionary including extended fields."""
-        fixture = make_valid_k6_dict(error_rate=0.002, count=5000, check_rate=0.999, vus_max=50)
+        fixture = make_valid_k6_dict(
+            error_rate=0.002, count=5000, check_rate=0.999, vus_max=50, dropped_iterations=5
+        )
         parsed = compare.parse_k6_summary(fixture)
         self.assertAlmostEqual(parsed["throughput_rps"], 1250.5)
         self.assertEqual(parsed["request_count"], 5000)
@@ -117,6 +121,7 @@ class TestCompareEngine(unittest.TestCase):
         self.assertAlmostEqual(parsed["check_rate"], 0.999)
         self.assertEqual(parsed["iterations"], 5000)
         self.assertEqual(parsed["vus_max"], 50)
+        self.assertEqual(parsed["dropped_iterations"], 5)
         self.assertEqual(parsed["data_received_bytes"], 2_500_000)
         self.assertEqual(parsed["data_sent_bytes"], 500_000)
         self.assertAlmostEqual(parsed["connecting_avg_ms"], 0.4)
@@ -209,10 +214,14 @@ class TestCompareEngine(unittest.TestCase):
     def test_aggregate_repeats(self):
         """Test averaging rates and summing counters across repeats."""
         r1 = compare.parse_k6_summary(
-            make_valid_k6_dict(rate=1000.0, p95=4.0, count=5000, error_rate=0.002, vus_max=20)
+            make_valid_k6_dict(
+                rate=1000.0, p95=4.0, count=5000, error_rate=0.002, vus_max=20, dropped_iterations=3
+            )
         )
         r2 = compare.parse_k6_summary(
-            make_valid_k6_dict(rate=1200.0, p95=6.0, count=6000, error_rate=0.0, vus_max=50)
+            make_valid_k6_dict(
+                rate=1200.0, p95=6.0, count=6000, error_rate=0.0, vus_max=50, dropped_iterations=7
+            )
         )
         agg = compare.aggregate_repeats([r1, r2])
         self.assertAlmostEqual(agg["throughput_rps"], 1100.0)
@@ -221,6 +230,7 @@ class TestCompareEngine(unittest.TestCase):
         self.assertAlmostEqual(agg["latency_p95_ms"], 5.0)
         self.assertEqual(agg["vus_max"], 50)
         self.assertEqual(agg["repeats"], 2)
+        self.assertEqual(agg["dropped_iterations"], 10)
 
     def test_aggregate_empty_list_fail(self):
         """Test empty runs list raises ValueError."""
@@ -390,6 +400,21 @@ class TestCompareEngine(unittest.TestCase):
         self.assertFalse(res["passed"])
         self.assertTrue(any("latency" in v for v in res["violations"]))
 
+    def test_threshold_evaluation_dropped_iterations_failure(self):
+        """A configured arrival rate must not silently lose iterations."""
+        scenarios = {
+            "bfw_10_churn": {
+                "error_rate": 0.0,
+                "check_rate": 1.0,
+                "latency_p95_ms": 1.0,
+                "dropped_iterations": 7,
+            },
+        }
+        controls = {"baseline_unfiltered": True, "positive_permitted": True, "negative_denied": True}
+        result = compare.evaluate_thresholds(scenarios, controls, max_error_rate=0.01, max_p95_latency_ms=500.0)
+        self.assertFalse(result["passed"])
+        self.assertTrue(any("dropped 7 iterations" in violation for violation in result["violations"]))
+
     def test_threshold_evaluation_controls_failure(self):
         """Test failure when security controls fail."""
         scenarios = {"baseline_0_keepalive": {"error_rate": 0.0, "check_rate": 1.0, "latency_p95_ms": 1.0}}
@@ -461,6 +486,7 @@ class TestCompareCLIAndReports(unittest.TestCase):
                 "k6_version": "2.3.0",
                 "vus": "10",
                 "peak_vus": "50",
+                "churn_rps": "200",
                 "profiles": "keepalive churn mixed",
                 "cardinalities": "10 100 500 1000",
                 "repeats": "3",
@@ -514,6 +540,7 @@ class TestCompareCLIAndReports(unittest.TestCase):
         # 3 repeats aggregated per scenario
         self.assertEqual(data["scenarios"]["bfw_10_keepalive"]["repeats"], 3)
         self.assertEqual(data["scenarios"]["bfw_10_keepalive"]["request_count"], 33000)
+        self.assertEqual(data["scenarios"]["bfw_10_churn"]["dropped_iterations"], 0)
         # Per-profile rollups exist for both engines
         self.assertEqual(len(data["profiles"]), 6)
         keep_bfw = next(p for p in data["profiles"] if p["profile"] == "keepalive" and p["engine"] == "bfw")
@@ -537,6 +564,7 @@ class TestCompareCLIAndReports(unittest.TestCase):
         self.assertIn("# Firewall Performance Benchmark: `bfw` vs `ufw`", md_content)
         self.assertIn("OVERALL VERDICT", md_content.upper())
         self.assertIn("Traversed Traffic Performance", md_content)
+        self.assertIn("Dropped It.", md_content)
         self.assertIn("Comparative Ratios", md_content)
         self.assertIn("CLI Rule Timing", md_content)
         self.assertIn("keepalive", md_content)
@@ -546,6 +574,7 @@ class TestCompareCLIAndReports(unittest.TestCase):
         self.assertIn("k6 Version | 2.3.0", md_content)
         self.assertIn("Mixed Peak Concurrency", md_content)
         self.assertIn("Fixed-VU Profile Duration", md_content)
+        self.assertIn("Fresh-Connection Target Rate", md_content)
 
     def test_cli_fails_on_corrupt_k6_json(self):
         """Test CLI explicitly fails (exit code 1) on missing metrics in json."""
