@@ -16,7 +16,7 @@ import (
 	"github.com/google/nftables/expr"
 	"golang.org/x/sys/unix"
 
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 // RenderText returns the canonical nft -f-style text of the ruleset

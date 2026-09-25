@@ -13,9 +13,9 @@ import (
 	"strconv"
 	"strings"
 
-	"bfirewall/internal/appprof"
-	"bfirewall/internal/rule"
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/appprof"
+	"github.com/tmih06/better-firewall/internal/rule"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 var appNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9 _\-\.+]*$`)

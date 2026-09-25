@@ -1,4 +1,4 @@
-# /etc/default/bfirewall
+# /etc/default/better-firewall
 #
 
 # Set to yes to apply rules to support IPv6 (no means only IPv6 on loopback
@@ -23,7 +23,7 @@ DEFAULT_FORWARD_POLICY="DROP"
 # details
 DEFAULT_APPLICATION_POLICY="SKIP"
 
-# bfirewall only ever touches its own tables; this key is accepted for
+# better-firewall only ever touches its own tables; this key is accepted for
 # ufw-config compatibility and ignored.
 MANAGE_BUILTINS=no
 
@@ -35,7 +35,7 @@ LOGGING_BACKEND="kernel"
 #KERNEL_SYSLOG_LEVEL="warning"
 
 # Sysctl file applied on enable.
-IPT_SYSCTL=/etc/bfirewall/sysctl.conf
+IPT_SYSCTL=/etc/better-firewall/sysctl.conf
 
 # Extra connection tracking modules to load on enable.
 IPT_MODULES=""

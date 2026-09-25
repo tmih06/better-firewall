@@ -1,10 +1,10 @@
 [Unit]
-Description=bfirewall - ufw-compatible nftables firewall
+Description=better-firewall - ufw-compatible nftables firewall
 DefaultDependencies=no
 After=local-fs.target
 Before=network-pre.target
 Wants=network-pre.target
-ConditionPathExists=/etc/bfirewall/bfw.conf
+ConditionPathExists=/etc/better-firewall/better-firewall.conf
 
 [Service]
 Type=oneshot

@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"bfirewall/internal/rule"
-	"bfirewall/internal/store"
-	"bfirewall/internal/sysstate"
+	"github.com/tmih06/better-firewall/internal/rule"
+	"github.com/tmih06/better-firewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/sysstate"
 )
 
 // combined returns all rules in display order (v4 then v6) with family

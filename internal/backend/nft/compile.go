@@ -1,5 +1,5 @@
 // compile.go translates the persistent firewall model (store.State) into
-// nftables objects for `table inet bfirewall` plus optional per-family NAT
+// nftables objects for `table inet better-firewall` plus optional per-family NAT
 // tables. The chain layout mirrors ufw's iptables layout (ufw-* → bfw-*):
 //
 //	base chain input/output/forward (policy = configured)
@@ -29,8 +29,8 @@ import (
 	"github.com/google/nftables/expr"
 	"golang.org/x/sys/unix"
 
-	"bfirewall/internal/rule"
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/rule"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 // Chain names (ufw-* equivalents).
@@ -114,7 +114,7 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 	if st.Panic {
 		pol = store.Policies{Input: "deny", Output: "deny", Forward: "deny"}
 	}
-	// /etc/default/bfirewall DEFAULT_*_POLICY keys override stored policies
+	// /etc/default/better-firewall DEFAULT_*_POLICY keys override stored policies
 	// (ufw reads them from /etc/default/ufw at apply time) — but never
 	// override panic's forced deny-all.
 	if !st.Panic {
@@ -810,7 +810,7 @@ func (c *compiled) portExprs(ports []rule.PortRange, which, proto string) []expr
 	return []expr.Any{load, &expr.Lookup{SourceRegister: 1, SetName: set.Name, SetID: set.ID}}
 }
 
-// compileNAT builds table ip/ip6 bfirewall-nat when st.NAT is non-empty.
+// compileNAT builds table ip/ip6 better-firewall-nat when st.NAT is non-empty.
 func (c *compiled) compileNAT(st *store.State) error {
 	if len(st.NAT) == 0 {
 		return nil

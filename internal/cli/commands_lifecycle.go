@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	nftbe "bfirewall/internal/backend/nft"
-	"bfirewall/internal/store"
-	"bfirewall/internal/sysstate"
+	nftbe "github.com/tmih06/better-firewall/internal/backend/nft"
+	"github.com/tmih06/better-firewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/sysstate"
 )
 
 // Indirections so tests can stub the process/system boundary.
@@ -36,13 +36,13 @@ func (e *Env) checkRoot() bool {
 	return true
 }
 
-// acquireLock takes the mutating-command flock: /run/bfw.lock, falling back
-// to <state dir>/bfw.lock when /run is not writable (ufw falls back for
+// acquireLock takes the mutating-command flock: /run/better-firewall.lock, falling back
+// to <state dir>/better-firewall.lock when /run is not writable (ufw falls back for
 // non-root/TESTSTATE; we probe writability instead).
 func (e *Env) acquireLock() (func(), int) {
-	path := "/run/bfw.lock"
+	path := "/run/better-firewall.lock"
 	if !dirWritable("/run") {
-		path = filepath.Join(e.Store.Dir, "bfw.lock")
+		path = filepath.Join(e.Store.Dir, "better-firewall.lock")
 	}
 	f, err := hookLockFile(path)
 	if err != nil {
@@ -216,7 +216,7 @@ func (e *Env) stopFirewall() int {
 	return 0
 }
 
-// persistEnabled writes ENABLED=yes/no to bfw.conf and enables/disables the
+// persistEnabled writes ENABLED=yes/no to better-firewall.conf and enables/disables the
 // systemd unit. Boot persistence failures warn, never abort.
 func (e *Env) persistEnabled(enabled bool) int {
 	conf, err := e.Store.LoadConf()
@@ -241,8 +241,8 @@ func (e *Env) persistEnabled(enabled bool) int {
 	if enabled {
 		verb = "enable"
 	}
-	if err := hookRunCmd("systemctl", verb, "bfirewall.service"); err != nil && enabled {
-		e.Warnf("could not enable bfirewall.service; firewall will not persist across reboot")
+	if err := hookRunCmd("systemctl", verb, "better-firewall.service"); err != nil && enabled {
+		e.Warnf("could not enable better-firewall.service; firewall will not persist across reboot")
 	}
 	return 0
 }

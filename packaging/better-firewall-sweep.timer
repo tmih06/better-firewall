@@ -1,5 +1,5 @@
 [Unit]
-Description=bfirewall expired-rule sweep timer
+Description=better-firewall expired-rule sweep timer
 
 [Timer]
 OnCalendar=minutely

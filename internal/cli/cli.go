@@ -1,5 +1,5 @@
 // Package cli implements the bfw command line: the full ufw grammar plus
-// bfirewall extensions. Output conventions mirror ufw exactly:
+// better-firewall extensions. Output conventions mirror ufw exactly:
 //
 //	ERROR: <msg>   → stderr, exit 1
 //	syntax error   → full help to stdout, exit 1
@@ -15,9 +15,9 @@ import (
 	"io"
 	"strings"
 
-	"bfirewall/internal/backend"
-	nftbe "bfirewall/internal/backend/nft"
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/backend"
+	nftbe "github.com/tmih06/better-firewall/internal/backend/nft"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 // Env carries the process environment a command needs.
@@ -92,7 +92,7 @@ func Run(prog, version string, args []string, stdin io.Reader, stdout, stderr io
 			env.JSON = true
 		case "--version":
 			env.Msg("%s %s", prog, version)
-			env.Msg("Copyright 2026 bfirewall authors")
+			env.Msg("Copyright 2026 better-firewall authors")
 			return 0
 		case "-h", "--help":
 			env.Msg("%s", HelpText(prog))
@@ -132,14 +132,14 @@ Commands:
   show ARG                        show firewall report
   reset                           reset firewall to installation defaults
   app ARG                         application profile commands
-  set ARG                         named IP set commands (bfirewall)
-  nat ARG                         NAT commands (bfirewall)
-  check                           sanity-check ruleset (bfirewall)
-  diff                            diff stored vs live ruleset (bfirewall)
-  panic                           drop all traffic (bfirewall)
-  export|import|import-ufw        state migration (bfirewall)
-  sweep                           remove expired rules (bfirewall)
-  logs                            follow firewall logs (bfirewall)
+  set ARG                         named IP set commands (better-firewall)
+  nat ARG                         NAT commands (better-firewall)
+  check                           sanity-check ruleset (better-firewall)
+  diff                            diff stored vs live ruleset (better-firewall)
+  panic                           drop all traffic (better-firewall)
+  export|import|import-ufw        state migration (better-firewall)
+  sweep                           remove expired rules (better-firewall)
+  logs                            follow firewall logs (better-firewall)
   version                         show version
 
 Report types: raw, builtins, before-rules, user-rules, after-rules,

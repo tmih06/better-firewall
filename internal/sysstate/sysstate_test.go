@@ -55,7 +55,7 @@ func TestUnderSSHReturnsBool(t *testing.T) {
 
 func TestLockFile(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "bfw.lock")
+	path := filepath.Join(dir, "better-firewall.lock")
 
 	f1, err := LockFile(path)
 	if err != nil {

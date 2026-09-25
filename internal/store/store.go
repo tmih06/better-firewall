@@ -1,6 +1,6 @@
-// Package store owns all persistent state under /etc/bfirewall (overridable
-// via BFW_PREFIX for tests): rules.json, bfw.conf, sysctl.conf,
-// applications.d/, before/after.rules fragments, and /etc/default/bfirewall.
+// Package store owns all persistent state under /etc/better-firewall (overridable
+// via BFW_PREFIX for tests): rules.json, better-firewall.conf, sysctl.conf,
+// applications.d/, before/after.rules fragments, and /etc/default/better-firewall.
 package store
 
 import (
@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"bfirewall/internal/defaults"
-	"bfirewall/internal/rule"
+	"github.com/tmih06/better-firewall/internal/defaults"
+	"github.com/tmih06/better-firewall/internal/rule"
 )
 
 // State is the complete persistent firewall configuration.
@@ -65,16 +65,16 @@ func Defaults() *State {
 
 // Store binds a State to its on-disk location.
 type Store struct {
-	Dir     string // e.g. /etc/bfirewall
-	EtcFile string // e.g. /etc/default/bfirewall
+	Dir     string // e.g. /etc/better-firewall
+	EtcFile string // e.g. /etc/default/better-firewall
 }
 
 // Default returns the production store rooted at BFW_PREFIX or /.
 func Default() *Store {
 	prefix := os.Getenv("BFW_PREFIX")
 	return &Store{
-		Dir:     filepath.Join(prefix, "etc", "bfirewall"),
-		EtcFile: filepath.Join(prefix, "etc", "default", "bfirewall"),
+		Dir:     filepath.Join(prefix, "etc", "better-firewall"),
+		EtcFile: filepath.Join(prefix, "etc", "default", "better-firewall"),
 	}
 }
 
@@ -82,7 +82,7 @@ func Default() *Store {
 func (s *Store) RulesPath() string { return filepath.Join(s.Dir, "rules.json") }
 
 // ConfPath is the ENABLED/LOGLEVEL file (mirrors ufw.conf).
-func (s *Store) ConfPath() string { return filepath.Join(s.Dir, "bfw.conf") }
+func (s *Store) ConfPath() string { return filepath.Join(s.Dir, "better-firewall.conf") }
 
 // SysctlPath is the kernel-tunables file applied on enable.
 func (s *Store) SysctlPath() string { return filepath.Join(s.Dir, "sysctl.conf") }
@@ -143,13 +143,13 @@ func (s *Store) Save(st *State) error {
 	return nil
 }
 
-// Conf holds bfw.conf values.
+// Conf holds better-firewall.conf values.
 type Conf struct {
 	Enabled  bool
 	LogLevel string
 }
 
-// LoadConf reads bfw.conf; missing → disabled/low.
+// LoadConf reads better-firewall.conf; missing → disabled/low.
 func (s *Store) LoadConf() (*Conf, error) {
 	c := &Conf{LogLevel: "low"}
 	data, err := os.ReadFile(s.ConfPath())
@@ -174,7 +174,7 @@ func (s *Store) LoadConf() (*Conf, error) {
 	return c, nil
 }
 
-// SaveConf writes bfw.conf.
+// SaveConf writes better-firewall.conf.
 func (s *Store) SaveConf(c *Conf) error {
 	if err := os.MkdirAll(s.Dir, 0755); err != nil {
 		return err
@@ -183,11 +183,11 @@ func (s *Store) SaveConf(c *Conf) error {
 	if c.Enabled {
 		en = "yes"
 	}
-	body := fmt.Sprintf("# /etc/bfirewall/bfw.conf\n\nENABLED=%s\nLOGLEVEL=%s\n", en, c.LogLevel)
+	body := fmt.Sprintf("# /etc/better-firewall/better-firewall.conf\n\nENABLED=%s\nLOGLEVEL=%s\n", en, c.LogLevel)
 	return os.WriteFile(s.ConfPath(), []byte(body), 0644)
 }
 
-// EtcDefaults parses /etc/default/bfirewall KEY=VALUE pairs (ufw key names).
+// EtcDefaults parses /etc/default/better-firewall KEY=VALUE pairs (ufw key names).
 func (s *Store) EtcDefaults() (map[string]string, error) {
 	out := map[string]string{
 		"IPV6":                       "yes",
@@ -222,7 +222,7 @@ func (s *Store) EtcDefaults() (map[string]string, error) {
 	return out, nil
 }
 
-// WriteEtcDefault updates one key in /etc/default/bfirewall, preserving the
+// WriteEtcDefault updates one key in /etc/default/better-firewall, preserving the
 // file's other lines (creates the file if missing).
 func (s *Store) WriteEtcDefault(key, value string) error {
 	if err := os.MkdirAll(filepath.Dir(s.EtcFile), 0755); err != nil {
@@ -244,7 +244,7 @@ func (s *Store) WriteEtcDefault(key, value string) error {
 }
 
 // EnsureDefaults materializes embedded default files (app profiles,
-// sysctl.conf, /etc/default/bfirewall) into the store, skipping existing
+// sysctl.conf, /etc/default/better-firewall) into the store, skipping existing
 // files. Best-effort: permission errors are returned for the caller to
 // warn about, never fatal.
 func (s *Store) EnsureDefaults() error {
@@ -252,9 +252,9 @@ func (s *Store) EnsureDefaults() error {
 	if err != nil {
 		return err
 	}
-	// /etc/default/bfirewall lives outside Dir.
+	// /etc/default/better-firewall lives outside Dir.
 	if _, err := os.Stat(s.EtcFile); os.IsNotExist(err) {
-		if data, derr := defaults.Read("bfirewall.default"); derr == nil {
+		if data, derr := defaults.Read("better-firewall.default"); derr == nil {
 			if mkerr := os.MkdirAll(filepath.Dir(s.EtcFile), 0755); mkerr == nil {
 				_ = os.WriteFile(s.EtcFile, data, 0644)
 			}

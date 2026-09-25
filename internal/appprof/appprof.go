@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"bfirewall/internal/services"
+	"github.com/tmih06/better-firewall/internal/services"
 )
 
 // PortSpec is one '|'-separated item of a profile's ports field.

@@ -5,7 +5,7 @@ package backend
 import (
 	"github.com/google/nftables"
 
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 // Backend applies the compiled ruleset to the kernel and reads it back.
@@ -24,7 +24,7 @@ type Backend interface {
 	ApplyFragments(path string) error
 }
 
-// Snapshot is the live kernel state relevant to bfirewall.
+// Snapshot is the live kernel state relevant to better-firewall.
 type Snapshot struct {
 	Tables []*nftables.Table
 	Chains []*nftables.Chain

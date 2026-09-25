@@ -1,4 +1,4 @@
-module bfirewall
+module github.com/tmih06/better-firewall
 
 go 1.22.2
 

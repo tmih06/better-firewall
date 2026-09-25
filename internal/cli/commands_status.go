@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 // cmdStatus implements `bfw status [verbose|numbered]`.

@@ -59,16 +59,24 @@ probe() {
         /scripts/probe.js
 }
 
-PERF_CARDINALITIES="${PERF_CARDINALITIES:-10 100 500}"
+PERF_CARDINALITIES="${PERF_CARDINALITIES:-10 100 500 1000}"
 read -r -a CARDINALITIES <<< "$PERF_CARDINALITIES"
 if [ "${#CARDINALITIES[@]}" -eq 0 ]; then
     echo "FATAL: PERF_CARDINALITIES must include at least one rule count." >&2
     exit 1
 fi
-PERF_DURATION="${PERF_DURATION:-3s}"
-PERF_WARMUP_DURATION="${PERF_WARMUP_DURATION:-1s}"
+PERF_DURATION="${PERF_DURATION:-10s}"
+PERF_WARMUP_DURATION="${PERF_WARMUP_DURATION:-2s}"
 PERF_VUS="${PERF_VUS:-10}"
-PERF_REPEATS="${PERF_REPEATS:-2}"
+PERF_PEAK_VUS="${PERF_PEAK_VUS:-50}"
+PERF_MIXED_STAGES="${PERF_MIXED_STAGES:-4s:0,6s:${PERF_PEAK_VUS},10s:${PERF_PEAK_VUS},5s:0}"
+PERF_REPEATS="${PERF_REPEATS:-3}"
+PERF_PROFILES="${PERF_PROFILES:-keepalive churn mixed}"
+read -r -a PROFILES <<< "$PERF_PROFILES"
+if [ "${#PROFILES[@]}" -eq 0 ]; then
+    echo "FATAL: PERF_PROFILES must include at least one traffic profile." >&2
+    exit 1
+fi
 
 HTTP_PORT=8080
 DENIED_PORT=8081
@@ -137,7 +145,9 @@ fi
 BENCH_CONTROLS_PASSED=0
 reset_firewalls
 
-# Initialize apply timing results.
+# Initialize apply timing results. Shape:
+# {"bfw": {"10": {"rule_add_seconds": [...], "enable_seconds": [...],
+#                 "total_seconds": [...]}}, "ufw": {...}}
 python3 - "$APPLY_TIMES_FILE" <<'PY'
 import json
 import sys
@@ -149,15 +159,30 @@ PY
 record_apply_time() {
     local engine="$1"
     local cardinality="$2"
-    local duration="$3"
-    python3 - "$APPLY_TIMES_FILE" "$engine" "$cardinality" "$duration" <<'PY'
+    local timing_json="$3"
+    python3 - "$APPLY_TIMES_FILE" "$engine" "$cardinality" "$timing_json" <<'PY'
 import json
 import sys
 
-path, engine, cardinality, duration = sys.argv[1:]
+path, engine, cardinality, timing_json = sys.argv[1:]
+try:
+    timing = json.loads(timing_json)
+    if timing.get("engine") != engine or timing.get("rule_count") != int(cardinality):
+        raise SystemExit(f"FATAL: apply timing identity mismatch for {engine}/{cardinality}")
+    rule_add = float(timing["rule_add_seconds"])
+    enable = float(timing["enable_seconds"])
+    total = float(timing["total_seconds"])
+except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+    raise SystemExit(f"FATAL: malformed apply timing for {engine}/{cardinality}: {exc}")
+
 with open(path, "r", encoding="utf-8") as source:
     results = json.load(source)
-results.setdefault(engine, {}).setdefault(cardinality, []).append(float(duration))
+bucket = results.setdefault(engine, {}).setdefault(
+    cardinality, {"rule_add_seconds": [], "enable_seconds": [], "total_seconds": []}
+)
+bucket["rule_add_seconds"].append(rule_add)
+bucket["enable_seconds"].append(enable)
+bucket["total_seconds"].append(total)
 with open(path, "w", encoding="utf-8") as output:
     json.dump(results, output, indent=2)
 PY
@@ -184,36 +209,44 @@ verify_benchmark_controls() {
 
 execute_k6_run() {
     local scenario="$1"
-    local repeat="$2"
-    local output_file="/results/${scenario}_r${repeat}.json"
+    local profile="$2"
+    local repeat="$3"
+    local output_file="/results/${scenario}_${profile}_r${repeat}.json"
 
     # Warmup metrics are discarded; keep the script's summary out of the repo.
     attacker_exec k6 run -q \
+        -e PROFILE="$profile" \
         -e VUS=5 \
         -e DURATION="$PERF_WARMUP_DURATION" \
+        -e MIXED_STAGES="1s:5,1s:0" \
         -e TARGET_URL="http://server:${HTTP_PORT}/" \
         -e SUMMARY_PATH=/tmp/warmup.json \
         /scripts/firewall.js >/dev/null 2>&1 || true
 
-    echo "[perf] Executing k6 run for ${scenario} (repeat ${repeat}/${PERF_REPEATS})..."
+    echo "[perf] Executing k6 ${profile} run for ${scenario} (repeat ${repeat}/${PERF_REPEATS})..."
     attacker_exec k6 run \
+        -e PROFILE="$profile" \
         -e VUS="$PERF_VUS" \
         -e DURATION="$PERF_DURATION" \
+        -e MIXED_STAGES="$PERF_MIXED_STAGES" \
         -e TARGET_URL="http://server:${HTTP_PORT}/" \
         -e SUMMARY_PATH="$output_file" \
         /scripts/firewall.js
 }
 
 # =============================================================================
-# EXECUTION MATRIX: repeated runs with alternating bfw/ufw order
+# EXECUTION MATRIX: profiles x rule scales x repeats, alternating engine order
+# Raw files: <engine>_<rules>_<profile>_r<repeat>.json (baseline uses 0 rules).
 # =============================================================================
 for ((repeat = 1; repeat <= PERF_REPEATS; repeat++)); do
     echo "===================================================================="
     echo "[perf] Starting benchmark repeat ${repeat}/${PERF_REPEATS}"
     echo "===================================================================="
 
-    reset_firewalls
-    execute_k6_run baseline "$repeat"
+    for profile in "${PROFILES[@]}"; do
+        reset_firewalls
+        execute_k6_run baseline_0 "$profile" "$repeat"
+    done
 
     if (( repeat % 2 == 1 )); then
         FIRST_ENGINE=bfw
@@ -226,10 +259,12 @@ for ((repeat = 1; repeat <= PERF_REPEATS; repeat++)); do
     for cardinality in "${CARDINALITIES[@]}"; do
         for engine in "$FIRST_ENGINE" "$SECOND_ENGINE"; do
             echo "[perf] Repeat ${repeat}: applying ${engine} with ${cardinality} rules..."
-            apply_duration="$(apply_rules "$engine" "$cardinality")"
-            record_apply_time "$engine" "$cardinality" "$apply_duration"
+            apply_timing="$(apply_rules "$engine" "$cardinality")"
+            record_apply_time "$engine" "$cardinality" "$apply_timing"
             verify_benchmark_controls "${engine}_${cardinality} (repeat ${repeat})"
-            execute_k6_run "${engine}_${cardinality}" "$repeat"
+            for profile in "${PROFILES[@]}"; do
+                execute_k6_run "${engine}_${cardinality}" "$profile" "$repeat"
+            done
         done
     done
 done
@@ -243,8 +278,9 @@ BFW_VER="$(server_exec bfw --version 2>&1 | head -n 1 || echo 'bfw version unava
 UFW_VER="$(server_exec ufw --version 2>&1 | head -n 1 || echo 'ufw version unavailable')"
 python3 - "$METADATA_FILE" \
     "$(uname -srm)" "$(uname -m)" "$BFW_VER" "$UFW_VER" "$K6_VER" \
-    "$PERF_VUS" "$PERF_DURATION" "$PERF_WARMUP_DURATION" "$PERF_REPEATS" \
-    "$PERF_CARDINALITIES" "$BASELINE_CONTROL_PASSED" "$POS_CONTROL_PASSED" \
+    "$PERF_VUS" "$PERF_PEAK_VUS" "$PERF_DURATION" "$PERF_WARMUP_DURATION" \
+    "$PERF_REPEATS" "$PERF_CARDINALITIES" "$PERF_PROFILES" "$PERF_MIXED_STAGES" \
+    "$BASELINE_CONTROL_PASSED" "$POS_CONTROL_PASSED" \
     "$NEG_CONTROL_PASSED" "$BENCH_CONTROLS_PASSED" <<'PY'
 import json
 import sys
@@ -257,10 +293,13 @@ import sys
     ufw_version,
     k6_version,
     vus,
+    peak_vus,
     duration,
     warmup_duration,
     repeats,
     cardinalities,
+    profiles,
+    mixed_stages,
     baseline,
     positive,
     negative,
@@ -274,10 +313,13 @@ metadata = {
         "ufw_version": ufw_version,
         "k6_version": k6_version,
         "vus": vus,
+        "peak_vus": peak_vus,
         "duration": duration,
         "warmup_duration": warmup_duration,
         "repeats": repeats,
         "cardinalities": cardinalities,
+        "profiles": profiles,
+        "mixed_stages": mixed_stages,
         "isolation": "Internal-only Docker network; separate k6 attacker and firewall server containers",
     },
     "controls": {

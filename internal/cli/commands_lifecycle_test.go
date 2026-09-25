@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"bfirewall/internal/backend"
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/backend"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 // fakeBackend records lifecycle calls; Apply/Flush/Loaded are the only
@@ -43,8 +43,8 @@ func lifecycleEnv(t *testing.T, stdin string) (*Env, *fakeBackend, *strings.Buil
 
 	dir := t.TempDir()
 	st := &store.Store{
-		Dir:     filepath.Join(dir, "etc", "bfirewall"),
-		EtcFile: filepath.Join(dir, "etc", "default", "bfirewall"),
+		Dir:     filepath.Join(dir, "etc", "better-firewall"),
+		EtcFile: filepath.Join(dir, "etc", "default", "better-firewall"),
 	}
 	fb := &fakeBackend{}
 	out, errOut := &strings.Builder{}, &strings.Builder{}

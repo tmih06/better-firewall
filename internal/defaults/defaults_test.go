@@ -8,12 +8,12 @@ import (
 )
 
 func TestRead(t *testing.T) {
-	data, err := Read("bfirewall.default")
+	data, err := Read("better-firewall.default")
 	if err != nil {
-		t.Fatalf("Read(bfirewall.default): %v", err)
+		t.Fatalf("Read(better-firewall.default): %v", err)
 	}
 	if !strings.Contains(string(data), "IPV6=yes") {
-		t.Errorf("bfirewall.default missing IPV6=yes:\n%s", data)
+		t.Errorf("better-firewall.default missing IPV6=yes:\n%s", data)
 	}
 
 	data, err = Read("applications.d/openssh.ini")
@@ -68,7 +68,7 @@ func TestMaterializeCreatesTree(t *testing.T) {
 		t.Fatal("Materialize created nothing")
 	}
 	for _, want := range []string{
-		"bfirewall.default",
+		"better-firewall.default",
 		"sysctl.conf",
 		"applications.d/openssh.ini",
 		"applications.d/nginx.ini",

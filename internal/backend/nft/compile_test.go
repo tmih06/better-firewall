@@ -7,8 +7,8 @@ import (
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
 
-	"bfirewall/internal/rule"
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/rule"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 func fixtureState() *store.State {
@@ -297,12 +297,12 @@ func TestRenderTextDeterministic(t *testing.T) {
 		t.Error("RenderText not deterministic")
 	}
 	for _, want := range []string{
-		"table inet bfirewall {",
+		"table inet better-firewall {",
 		"chain input {",
 		"type filter hook input priority 0; policy drop;",
 		"set bfw_set_badguys {",
 		"set bfw_limit_r3 {",
-		"table ip bfirewall-nat {",
+		"table ip better-firewall-nat {",
 		"masquerade",
 		"dnat to 10.0.0.5:80",
 		"jump bfw-user-input",

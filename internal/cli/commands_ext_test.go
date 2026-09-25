@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"bfirewall/internal/rule"
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/rule"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 func mkExtRule(action, dir, proto, src, dst string, dports ...rule.PortRange) *rule.Rule {
@@ -211,14 +211,14 @@ func TestSSHAllowsPort(t *testing.T) {
 }
 
 func TestNormalizeNft(t *testing.T) {
-	in := "table inet bfirewall {\n" +
+	in := "table inet better-firewall {\n" +
 		"\tchain input {\n" +
 		"\t\ttcp dport 22 counter packets 5 bytes 300 accept # handle 12\n" +
 		"\t}\n" +
 		"}\n"
 	got := normalizeNft(in)
 	want := []string{
-		"table inet bfirewall {",
+		"table inet better-firewall {",
 		"chain input {",
 		"tcp dport 22 accept",
 		"}",

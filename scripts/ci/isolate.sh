@@ -5,7 +5,7 @@
 # Provides:
 # - Separate network and mount namespaces (unshare -m -n -p -f)
 # - Private mount propagation (mount --make-rprivate /)
-# - Isolated tmpfs state for /etc/bfirewall, /etc/default/bfirewall, /etc/ufw, /run
+# - Isolated tmpfs state for /etc/better-firewall, /etc/default/better-firewall, /etc/ufw, /run
 # - Protection against host sysctl mutations, kernel module loading, and host hooks
 # - Preserved loopback interface without external networking
 # - Rejection of execution if in host namespace or non-CI environment
@@ -86,11 +86,11 @@ mount --make-rprivate /
 # C. Loopback interface up, no external routes or interfaces
 ip link set lo up 2>/dev/null || true
 
-# D. Isolated state directories: /etc/bfirewall, /etc/default/bfirewall, /etc/ufw, /run
+# D. Isolated state directories: /etc/better-firewall, /etc/default/better-firewall, /etc/ufw, /run
 WORK_DIR="$(mktemp -d /tmp/bfw_iso_state.XXXXXX)"
 mount -t tmpfs -o mode=0755,noexec=off tmpfs_bfw_iso "$WORK_DIR"
 
-mkdir -p "$WORK_DIR/etc/bfirewall/applications.d"
+mkdir -p "$WORK_DIR/etc/better-firewall/applications.d"
 mkdir -p "$WORK_DIR/etc/default"
 mkdir -p "$WORK_DIR/etc/ufw"
 mkdir -p "$WORK_DIR/run"
@@ -98,13 +98,13 @@ mkdir -p "$WORK_DIR/bin"
 
 # Seed default configs if available from repo
 REPO_DIR="$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd || echo "")"
-if [ -n "$REPO_DIR" ] && [ -d "$REPO_DIR/etc/bfirewall" ]; then
-    cp -r "$REPO_DIR/etc/bfirewall/"* "$WORK_DIR/etc/bfirewall/" 2>/dev/null || true
+if [ -n "$REPO_DIR" ] && [ -d "$REPO_DIR/etc/better-firewall" ]; then
+    cp -r "$REPO_DIR/etc/better-firewall/"* "$WORK_DIR/etc/better-firewall/" 2>/dev/null || true
 fi
-if [ -n "$REPO_DIR" ] && [ -f "$REPO_DIR/etc/default/bfirewall" ]; then
-    cp "$REPO_DIR/etc/default/bfirewall" "$WORK_DIR/etc/default/bfirewall" 2>/dev/null || true
+if [ -n "$REPO_DIR" ] && [ -f "$REPO_DIR/etc/default/better-firewall" ]; then
+    cp "$REPO_DIR/etc/default/better-firewall" "$WORK_DIR/etc/default/better-firewall" 2>/dev/null || true
 else
-    touch "$WORK_DIR/etc/default/bfirewall"
+    touch "$WORK_DIR/etc/default/better-firewall"
 fi
 
 # Seed ufw installed configuration if present on system so perf benchmarks have stock templates
@@ -116,10 +116,10 @@ if [ -f /etc/default/ufw ]; then
 else
     touch "$WORK_DIR/etc/default/ufw"
 fi
-mkdir -p /etc/bfirewall /etc/default /etc/ufw /run
-mount --bind "$WORK_DIR/etc/bfirewall" /etc/bfirewall
-touch /etc/default/bfirewall
-mount --bind "$WORK_DIR/etc/default/bfirewall" /etc/default/bfirewall
+mkdir -p /etc/better-firewall /etc/default /etc/ufw /run
+mount --bind "$WORK_DIR/etc/better-firewall" /etc/better-firewall
+touch /etc/default/better-firewall
+mount --bind "$WORK_DIR/etc/default/better-firewall" /etc/default/better-firewall
 touch /etc/default/ufw
 mount --bind "$WORK_DIR/etc/default/ufw" /etc/default/ufw
 mount --bind "$WORK_DIR/etc/ufw" /etc/ufw

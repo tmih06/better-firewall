@@ -10,7 +10,7 @@ import (
 	"github.com/google/nftables"
 	"github.com/mdlayher/netlink"
 
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 // Apply atomically replaces the managed tables with the compiled ruleset:

@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 """
 High-performance asynchronous HTTP server for firewall benchmarking.
-Runs inside the defended server container, serving constant HTTP payloads
+Runs inside the defended server container, serving sized HTTP payloads
 on one permitted and one denied port for k6 reachability controls.
+
+Response paths:
+  /        and /small   -> 200-byte JSON body
+  /medium               -> 32 KiB body
+  /large                -> 256 KiB body
+  anything else         -> 404 with a small JSON body
+The mixed k6 profile exercises a 70/20/10 small/medium/large request mix.
 """
 
 import argparse
@@ -11,15 +18,38 @@ import os
 import signal
 import sys
 
-RESPONSE_BODY = b'{"status":"ok","firewall_benchmark":true}\n'
-RESPONSE_DATA = (
-    b"HTTP/1.1 200 OK\r\n"
-    b"Content-Type: application/json\r\n"
-    b"Content-Length: " + str(len(RESPONSE_BODY)).encode("ascii") + b"\r\n"
-    b"Connection: keep-alive\r\n"
-    b"Server: bfw-perf-server/1.0\r\n"
-    b"\r\n"
-    + RESPONSE_BODY
+
+def _json_body(size: int) -> bytes:
+    """Build a JSON object body of exactly `size` bytes."""
+    template = b'{"status":"ok","firewall_benchmark":true,"pad":"'
+    suffix = b'"}\n'
+    pad_len = size - len(template) - len(suffix)
+    if pad_len < 0:
+        raise ValueError(f"requested body size {size} too small for JSON envelope")
+    return template + (b"x" * pad_len) + suffix
+
+
+def _build_response(status_line: bytes, body: bytes, content_type: bytes) -> bytes:
+    return (
+        b"HTTP/1.1 "
+        + status_line
+        + b"\r\nContent-Type: "
+        + content_type
+        + b"\r\nContent-Length: "
+        + str(len(body)).encode("ascii")
+        + b"\r\nConnection: keep-alive\r\nServer: bfw-perf-server/1.0\r\n\r\n"
+        + body
+    )
+
+
+RESPONSES = {
+    b"/": _build_response(b"200 OK", _json_body(200), b"application/json"),
+    b"/small": _build_response(b"200 OK", _json_body(200), b"application/json"),
+    b"/medium": _build_response(b"200 OK", _json_body(32 * 1024), b"application/json"),
+    b"/large": _build_response(b"200 OK", _json_body(256 * 1024), b"application/json"),
+}
+NOT_FOUND_RESPONSE = _build_response(
+    b"404 Not Found", b'{"status":"not_found"}\n', b"application/json"
 )
 
 
@@ -28,17 +58,25 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     try:
         while not reader.at_eof():
             line = await reader.readline()
+            while line in (b"\r\n", b"\n"):
+                # Tolerate stray CRLF keep-alive probes between requests.
+                line = await reader.readline()
             if not line:
                 break
 
-            # Read headers until end-of-headers (\r\n or \n)
+            path = b"/"
+            parts = line.split(b" ", 2)
+            if len(parts) >= 2:
+                path = parts[1].split(b"?", 1)[0]
+
+            # Consume request headers until the blank line terminator.
             while line and line not in (b"\r\n", b"\n"):
                 line = await reader.readline()
 
             if not line:
                 break
 
-            writer.write(RESPONSE_DATA)
+            writer.write(RESPONSES.get(path, NOT_FOUND_RESPONSE))
             await writer.drain()
     except (asyncio.CancelledError, ConnectionResetError, BrokenPipeError):
         pass

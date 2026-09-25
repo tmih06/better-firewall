@@ -1,6 +1,6 @@
 package cli
 
-import "bfirewall/internal/rule"
+import "github.com/tmih06/better-firewall/internal/rule"
 
 // ParsedRuleOp is the output of the ufw rule-grammar parser: what the user
 // asked to do, independent of execution.

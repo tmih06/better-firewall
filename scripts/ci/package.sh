@@ -49,9 +49,10 @@ log "make install DESTDIR=$STAGE"
 # Snapshot host paths first so we can prove afterwards that the staged
 # install wrote nothing outside $STAGE (e.g. a Makefile regression dropping
 # DESTDIR would otherwise clobber a real system silently).
-host_paths=(/usr/sbin/bfw /etc/systemd/system/bfirewall.service \
-    /etc/systemd/system/bfirewall-sweep.service \
-    /etc/systemd/system/bfirewall-sweep.timer /etc/bfirewall)
+host_paths=(/usr/sbin/bfw /etc/systemd/system/better-firewall.service \
+    /etc/systemd/system/better-firewall-sweep.service \
+    /etc/systemd/system/better-firewall-sweep.timer /etc/better-firewall \
+    /etc/default/better-firewall)
 declare -A pre=()
 for p in "${host_paths[@]}"; do
     if [ -e "$p" ]; then pre["$p"]=1; fi
@@ -72,8 +73,8 @@ UNITDIR_STAGED="$STAGE/etc/systemd/system"
 log "asserting installed layout"
 [ -f "$BIN" ] || die "missing $BIN"
 [ -x "$BIN" ] || die "$BIN is not executable"
-[ -d "$STAGE/etc/bfirewall/applications.d" ] || die "missing applications.d staging dir"
-for u in bfirewall.service bfirewall-sweep.service bfirewall-sweep.timer; do
+[ -d "$STAGE/etc/better-firewall/applications.d" ] || die "missing applications.d staging dir"
+for u in better-firewall.service better-firewall-sweep.service better-firewall-sweep.timer; do
     [ -f "$UNITDIR_STAGED/$u" ] || die "missing staged unit $u"
     [ ! -x "$UNITDIR_STAGED/$u" ] || die "unit $u must not be executable"
 done
@@ -84,10 +85,10 @@ log "checking for unexpected staged files"
 expected="$(printf '%s\n' \
     "$STAGE/usr" "$STAGE/usr/sbin" "$BIN" \
     "$STAGE/etc" "$STAGE/etc/systemd" "$UNITDIR_STAGED" \
-    "$UNITDIR_STAGED/bfirewall.service" \
-    "$UNITDIR_STAGED/bfirewall-sweep.service" \
-    "$UNITDIR_STAGED/bfirewall-sweep.timer" \
-    "$STAGE/etc/bfirewall" "$STAGE/etc/bfirewall/applications.d" \
+    "$UNITDIR_STAGED/better-firewall.service" \
+    "$UNITDIR_STAGED/better-firewall-sweep.service" \
+    "$UNITDIR_STAGED/better-firewall-sweep.timer" \
+    "$STAGE/etc/better-firewall" "$STAGE/etc/better-firewall/applications.d" \
     | sort)"
 actual="$(find "$STAGE" -mindepth 1 | sort)"
 unexpected="$(comm -13 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual"))"
@@ -104,11 +105,15 @@ fi
 # -------------------------------------------------------- binary smoke test
 # cli.Run() materializes store defaults via Store.EnsureDefaults *before*
 # flag handling, so plain `bfw --version` would try to write under
-# /etc/bfirewall on the host. BFW_PREFIX redirects that state root into the
+# /etc/better-firewall on the host. BFW_PREFIX redirects that state root into the
 # stage — this both keeps the "never touches host FS" promise airtight (even
-# when run privileged) and exercises the staged etc/bfirewall/ for real.
+# when run privileged) and exercises the staged etc/better-firewall/ for real.
 log "smoke: staged bfw --version (BFW_PREFIX=$STAGE)"
 BFW_PREFIX="$STAGE" "$BIN" --version >/dev/null || die "staged bfw --version failed"
+[ -f "$STAGE/etc/default/better-firewall" ] || die "missing /etc/default/better-firewall"
+[ -f "$STAGE/etc/better-firewall/better-firewall.default" ] || die "missing better-firewall defaults"
+[ ! -e "$STAGE/etc/bfirewall" ] || die "legacy /etc/bfirewall path was materialized"
+[ ! -e "$STAGE/etc/default/bfirewall" ] || die "legacy /etc/default/bfirewall path was materialized"
 # Snapshot the stage after the smoke so the post-uninstall inventory can
 # allow exactly the materialized default files EnsureDefaults added.
 post_smoke="$(find "$STAGE" -mindepth 1 | sort)"
@@ -122,14 +127,14 @@ if command -v systemd-analyze >/dev/null 2>&1; then
     done
     log "systemd-analyze verify --root=$STAGE"
     systemd-analyze verify --root="$STAGE" \
-        "$UNITDIR_STAGED/bfirewall.service" \
-        "$UNITDIR_STAGED/bfirewall-sweep.service" \
-        "$UNITDIR_STAGED/bfirewall-sweep.timer" \
+        "$UNITDIR_STAGED/better-firewall.service" \
+        "$UNITDIR_STAGED/better-firewall-sweep.service" \
+        "$UNITDIR_STAGED/better-firewall-sweep.timer" \
         || die "systemd-analyze verify failed"
     rm -f "$UNITDIR_STAGED"/*.target
     # Referenced units' ExecStart binary exists inside the stage:
-    grep -q 'ExecStart=/usr/sbin/bfw boot-load' "$UNITDIR_STAGED/bfirewall.service" \
-        || die "bfirewall.service ExecStart drifted from /usr/sbin/bfw boot-load"
+    grep -q 'ExecStart=/usr/sbin/bfw boot-load' "$UNITDIR_STAGED/better-firewall.service" \
+        || die "better-firewall.service ExecStart drifted from /usr/sbin/bfw boot-load"
 elif [ "${CI:-}" = "true" ]; then
     die "systemd-analyze not found on CI runner (install systemd package)"
 else
@@ -147,18 +152,18 @@ make uninstall DESTDIR="$STAGE" >/dev/null
 if [ -e "$BIN" ] || [ -L "$BIN" ]; then
     die "staged binary still present after uninstall"
 fi
-for u in bfirewall.service bfirewall-sweep.service bfirewall-sweep.timer; do
+for u in better-firewall.service better-firewall-sweep.service better-firewall-sweep.timer; do
     { [ ! -e "$UNITDIR_STAGED/$u" ] && [ ! -L "$UNITDIR_STAGED/$u" ]; } \
         || die "staged unit $u still present after uninstall"
 done
-[ -d "$STAGE/etc/bfirewall/applications.d" ] \
+[ -d "$STAGE/etc/better-firewall/applications.d" ] \
     || die "applications.d staging dir must survive uninstall"
 [ ! -e "$STUBBIN/called" ] || die "systemctl was invoked despite DESTDIR"
 removed="$(printf '%s\n' \
     "$BIN" \
-    "$UNITDIR_STAGED/bfirewall.service" \
-    "$UNITDIR_STAGED/bfirewall-sweep.service" \
-    "$UNITDIR_STAGED/bfirewall-sweep.timer" \
+    "$UNITDIR_STAGED/better-firewall.service" \
+    "$UNITDIR_STAGED/better-firewall-sweep.service" \
+    "$UNITDIR_STAGED/better-firewall-sweep.timer" \
     | sort)"
 expected_leftover="$(comm -23 <(printf '%s\n' "$post_smoke") <(printf '%s\n' "$removed"))"
 leftover="$(find "$STAGE" -mindepth 1 | sort)"

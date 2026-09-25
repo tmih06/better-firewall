@@ -7,32 +7,32 @@ import (
 	"strings"
 	"testing"
 
-	"bfirewall/internal/rule"
+	"github.com/tmih06/better-firewall/internal/rule"
 )
 
 // tmpStore builds a Store rooted at t.TempDir(), shaped like a BFW_PREFIX
-// installation (<dir>/etc/bfirewall + <dir>/etc/default/bfirewall).
+// installation (<dir>/etc/better-firewall + <dir>/etc/default/better-firewall).
 func tmpStore(t *testing.T) *Store {
 	t.Helper()
 	dir := t.TempDir()
 	return &Store{
-		Dir:     filepath.Join(dir, "etc", "bfirewall"),
-		EtcFile: filepath.Join(dir, "etc", "default", "bfirewall"),
+		Dir:     filepath.Join(dir, "etc", "better-firewall"),
+		EtcFile: filepath.Join(dir, "etc", "default", "better-firewall"),
 	}
 }
 
 func TestStorePaths(t *testing.T) {
-	s := &Store{Dir: "/x/etc/bfirewall", EtcFile: "/x/etc/default/bfirewall"}
+	s := &Store{Dir: "/x/etc/better-firewall", EtcFile: "/x/etc/default/better-firewall"}
 	cases := map[string]string{
-		s.RulesPath():             "/x/etc/bfirewall/rules.json",
-		s.ConfPath():              "/x/etc/bfirewall/bfw.conf",
-		s.SysctlPath():            "/x/etc/bfirewall/sysctl.conf",
-		s.AppDir():                "/x/etc/bfirewall/applications.d",
-		s.FragmentPath("before"):  "/x/etc/bfirewall/before.rules",
-		s.FragmentPath("before6"): "/x/etc/bfirewall/before6.rules",
-		s.FragmentPath("after"):   "/x/etc/bfirewall/after.rules",
-		s.InitPath("before"):      "/x/etc/bfirewall/before.init",
-		s.InitPath("after"):       "/x/etc/bfirewall/after.init",
+		s.RulesPath():             "/x/etc/better-firewall/rules.json",
+		s.ConfPath():              "/x/etc/better-firewall/better-firewall.conf",
+		s.SysctlPath():            "/x/etc/better-firewall/sysctl.conf",
+		s.AppDir():                "/x/etc/better-firewall/applications.d",
+		s.FragmentPath("before"):  "/x/etc/better-firewall/before.rules",
+		s.FragmentPath("before6"): "/x/etc/better-firewall/before6.rules",
+		s.FragmentPath("after"):   "/x/etc/better-firewall/after.rules",
+		s.InitPath("before"):      "/x/etc/better-firewall/before.init",
+		s.InitPath("after"):       "/x/etc/better-firewall/after.init",
 	}
 	for got, want := range cases {
 		if got != want {
@@ -45,10 +45,10 @@ func TestDefaultStoreHonorsBFWPrefix(t *testing.T) {
 	prefix := t.TempDir()
 	t.Setenv("BFW_PREFIX", prefix)
 	s := Default()
-	if want := filepath.Join(prefix, "etc", "bfirewall"); s.Dir != want {
+	if want := filepath.Join(prefix, "etc", "better-firewall"); s.Dir != want {
 		t.Errorf("Dir = %q, want %q", s.Dir, want)
 	}
-	if want := filepath.Join(prefix, "etc", "default", "bfirewall"); s.EtcFile != want {
+	if want := filepath.Join(prefix, "etc", "default", "better-firewall"); s.EtcFile != want {
 		t.Errorf("EtcFile = %q, want %q", s.EtcFile, want)
 	}
 }
@@ -172,7 +172,7 @@ func TestSaveErrorWhenDirIsFile(t *testing.T) {
 	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	s := &Store{Dir: filepath.Join(blocker, "etc", "bfirewall"), EtcFile: filepath.Join(dir, "etc-default")}
+	s := &Store{Dir: filepath.Join(blocker, "etc", "better-firewall"), EtcFile: filepath.Join(dir, "etc-default")}
 	if err := s.Save(Defaults()); err == nil {
 		t.Fatal("Save with non-directory Dir: got nil error")
 	}
@@ -273,7 +273,7 @@ func TestSaveConfRoundTrip(t *testing.T) {
 	}
 	data, _ := os.ReadFile(s.ConfPath())
 	if !strings.Contains(string(data), "ENABLED=yes\n") {
-		t.Fatalf("bfw.conf missing ENABLED=yes:\n%s", data)
+		t.Fatalf("better-firewall.conf missing ENABLED=yes:\n%s", data)
 	}
 }
 
@@ -408,7 +408,7 @@ func TestEnsureDefaults(t *testing.T) {
 		t.Fatalf("second EnsureDefaults: %v", err)
 	}
 	if data, _ := os.ReadFile(s.EtcFile); string(data) != string(custom) {
-		t.Error("EnsureDefaults overwrote user /etc/default/bfirewall")
+		t.Error("EnsureDefaults overwrote user /etc/default/better-firewall")
 	}
 	if data, _ := os.ReadFile(s.SysctlPath()); string(data) != string(customSysctl) {
 		t.Error("EnsureDefaults overwrote user sysctl.conf")

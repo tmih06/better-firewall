@@ -27,7 +27,7 @@ emergency panic mode, drift detection, and expiring rules.
   rules, foreign ufw chains, enabled-but-not-loaded) and `diff` (stored
   vs. live kernel ruleset, normalized against `nft -nn` output).
 - **Panic mode** — one command drops all traffic; `panic off` restores.
-- **App profiles** — INI profiles in `/etc/bfirewall/applications.d`,
+- **App profiles** — INI profiles in `/etc/better-firewall/applications.d`,
   shipped defaults for OpenSSH, Nginx, mail, and misc services.
 - **Migration** — `export`/`import` JSON state; `import-ufw` migrates a live
   ufw installation (`user.rules`, `user6.rules`, policies, `ufw.conf`).
@@ -61,10 +61,10 @@ Installation layout:
 | Path | Purpose |
 |---|---|
 | `/usr/sbin/bfw` | the binary |
-| `/etc/bfirewall/` | state dir: `rules.json`, `bfw.conf`, `sysctl.conf`, `applications.d/`, `before*.rules`/`after*.rules`, `*.init` hooks |
-| `/etc/default/bfirewall` | tunables (`IPT_SYSCTL`, `IPT_MODULES`, `DEFAULT_APPLICATION_POLICY`, …) |
-| `/etc/systemd/system/bfirewall.service` | loads rules at boot (`Before=network-pre.target`) |
-| `/etc/systemd/system/bfirewall-sweep.{service,timer}` | periodic removal of expired rules |
+| `/etc/better-firewall/` | state dir: `rules.json`, `better-firewall.conf`, `sysctl.conf`, `applications.d/`, `before*.rules`/`after*.rules`, `*.init` hooks |
+| `/etc/default/better-firewall` | tunables (`IPT_SYSCTL`, `IPT_MODULES`, `DEFAULT_APPLICATION_POLICY`, …) |
+| `/etc/systemd/system/better-firewall.service` | loads rules at boot (`Before=network-pre.target`) |
+| `/etc/systemd/system/better-firewall-sweep.{service,timer}` | periodic removal of expired rules |
 
 Set `BFW_PREFIX` to relocate the state dir (used by tests; e.g.
 `BFW_PREFIX=/tmp/fw`).
@@ -125,7 +125,7 @@ bfw logging off|low|medium|high|full
 ### Application profiles
 
 ```sh
-bfw app list                     # profiles from /etc/bfirewall/applications.d
+bfw app list                     # profiles from /etc/better-firewall/applications.d
 bfw app info PROFILE             # show profile details
 bfw app update PROFILE|all       # refresh rules generated from a profile
 bfw app default allow|deny|reject|skip
@@ -200,7 +200,7 @@ bfw import-ufw [--dir DIR]     # migrate ufw user.rules/user6.rules + policies +
 cmd/bfw            entrypoint — argv[0]=="ufw" enables drop-in mode
 internal/cli       full ufw grammar parser + commands + output conventions
 internal/rule      canonical rule model (Rules4/Rules6 dual lists)
-internal/store     persistent state under /etc/bfirewall
+internal/store     persistent state under /etc/better-firewall
 internal/backend   backend interface (atomic apply, read-back, fragments)
 internal/backend/nft   nftables compiler/renderer via google/nftables netlink
 internal/appprof   INI application-profile parsing/expansion
@@ -213,8 +213,8 @@ packaging          systemd units
 tests              integration tests (build tag `integration`)
 ```
 
-State lives in `/etc/bfirewall/rules.json` (atomic tmp+rename, mode 0600).
-Mutating commands take an exclusive flock on `/run/bfw.lock`. `enable`
+State lives in `/etc/better-firewall/rules.json` (atomic tmp+rename, mode 0600).
+Mutating commands take an exclusive flock on `/run/better-firewall.lock`. `enable`
 runs `before.init start` (abort on failure), applies the core ruleset in one
 netlink transaction, applies `before*.rules`/`after*.rules` fragments in a
 second transaction (rolling back core on failure), then applies
@@ -246,8 +246,8 @@ The `integration` job runs only on a disposable GitHub-hosted runner through
 - **fails closed outside CI**; no local override is provided;
 - requires **root**, then re-executes under
   `unshare --mount --net --pid --fork`;
-- inside the namespaces, mounts tmpfs over `/etc/bfirewall`,
-  `/etc/default/bfirewall`, `/etc/ufw`, `/run`, brings `lo` up with **no
+- inside the namespaces, mounts tmpfs over `/etc/better-firewall`,
+  `/etc/default/better-firewall`, `/etc/ufw`, `/run`, brings `lo` up with **no
   external networking**, shadows `modprobe`, makes host `/proc/sys` subtrees
   read-only, and exports `BFW_ISOLATED=1` + `BFW_ORIGINAL_NET_NS` so tests
   prove they are not using the host network namespace.
@@ -265,15 +265,20 @@ directly as root, and never spoof the CI guard to run it locally. The standard
 
 `scripts/perf/run.sh` builds a server image containing the downloaded `bfw`
 artifact and starts it beside a separate k6 attacker container on an
-internal-only Docker network. The attacker probes both allowed and denied
-ports, then runs the `scripts/perf/firewall.js` workload against bfw and ufw
-at multiple rule counts. Reports land in `artifacts/performance/`
-(`summary.md`, `summary.json`, `raw/*.json`).
+internal-only Docker network. It compares baseline, bfw, and ufw with 10, 100,
+500, and 1,000 rules over three alternating repeats. Each ruleset gets three
+profiles: keep-alive requests, one new TCP connection per request, and a mixed
+70/20/10 small/medium/large response workload ramping up to 50 virtual users.
 
-Fairness/variance caveats: both firewalls see identical traffic, alternate
-execution order, and get warmup + repeated runs, but hosted-runner numbers are
-noisy (shared CPU and Docker bridge overhead). Treat results as indicative of
-relative overhead, not as absolute throughput guarantees.
+The report includes per-profile throughput, latency percentiles, request and
+check/error counts, transferred bytes, active virtual users, comparative
+ratios, and separate rule-configuration and firewall-enable timings. Results
+are saved under `artifacts/performance/` (`summary.md`, `summary.json`,
+`raw/*.json`) and uploaded as the `better-firewall-performance` CI artifact.
+
+Hosted-runner numbers remain noisy (shared CPU and Docker bridge overhead).
+Treat ratios as indicative of relative overhead, not as absolute throughput
+guarantees.
 
 ### CI
 
@@ -286,10 +291,10 @@ Coverage intent (not a claim that every behavior is proven):
 | Repo area | CI job(s) |
 |---|---|
 | Go source (all `internal/*`, `cmd/bfw`) | `lint` (gofmt, module tidiness, vet/staticcheck), `build` (Go 1.22.x min + 1.26.x + 1.27.x stable, linux/amd64 + linux/arm64), `unit-test` (race + coverage artifact), `vuln` (govulncheck), `security-codeql` |
-| `etc/bfirewall/*`, `etc/default/*`, embedded defaults | `unit-test` (materialization, overrides, preservation) and `package` (staged configuration tree) |
+| `etc/better-firewall/*`, `etc/default/*`, embedded defaults | `unit-test` (materialization, overrides, preservation) and `package` (staged configuration tree) |
 | `tests/`, nft backend (`internal/backend/nft` integration tests) | `integration` — isolated namespaces, `BFW_ISOLATED`-gated |
 | `packaging/*` systemd units, install layout | `package` — staged install + `systemd-analyze verify` + staged uninstall; systemctl stubbed |
-| bfw vs ufw performance | `performance` — k6 attacker/server Docker containers; uploads performance artifacts |
+| bfw vs ufw performance | `performance` — k6 keep-alive, connection-churn, and mixed-load profiles across 10–1,000 rules; uploads detailed comparison artifacts |
 | `.github/workflows/*.yml`, `scripts/**/*.sh` | `lint` — actionlint + shellcheck |
 | Secrets in git history | `secrets` — gitleaks, full history (`fetch-depth: 0`, `--all`) |
 

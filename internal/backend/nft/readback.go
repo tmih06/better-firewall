@@ -7,11 +7,11 @@ import (
 
 	"github.com/google/nftables"
 
-	"bfirewall/internal/backend"
+	"github.com/tmih06/better-firewall/internal/backend"
 )
 
 // ReadBack returns the live ruleset objects for the managed tables
-// (inet bfirewall plus ip/ip6 bfirewall-nat when present). Tables and
+// (inet better-firewall plus ip/ip6 better-firewall-nat when present). Tables and
 // chains are returned unfiltered so foreign chains (e.g. ufw-*) remain
 // visible to Snapshot.ForeignChains; rules and sets are limited to the
 // managed tables.

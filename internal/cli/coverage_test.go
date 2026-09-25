@@ -18,11 +18,12 @@ import (
 	"strings"
 	"testing"
 
-	"bfirewall/internal/backend"
-	nftbe "bfirewall/internal/backend/nft"
-	"bfirewall/internal/rule"
-	"bfirewall/internal/store"
 	"github.com/google/nftables"
+
+	"github.com/tmih06/better-firewall/internal/backend"
+	nftbe "github.com/tmih06/better-firewall/internal/backend/nft"
+	"github.com/tmih06/better-firewall/internal/rule"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 // snapBackend lets a test control what ReadBack reports (foreign chains).
@@ -145,7 +146,7 @@ func TestRunEnsureDefaultsMaterializes(t *testing.T) {
 	if !strings.Contains(so.String(), "OpenSSH") {
 		t.Fatalf("app list missing bundled OpenSSH profile:\n%s", so.String())
 	}
-	if _, err := os.Stat(filepath.Join(prefix, "etc", "bfirewall", "applications.d", "openssh.ini")); err != nil {
+	if _, err := os.Stat(filepath.Join(prefix, "etc", "better-firewall", "applications.d", "openssh.ini")); err != nil {
 		t.Errorf("openssh.ini not materialized: %v", err)
 	}
 }
@@ -176,7 +177,7 @@ func TestDryRunEnableRendersWithoutSideEffects(t *testing.T) {
 		t.Fatalf("rc = %d", rc)
 	}
 	got := out.String()
-	if !strings.Contains(got, "table inet bfirewall") {
+	if !strings.Contains(got, "table inet better-firewall") {
 		t.Errorf("dry-run missing rendered ruleset:\n%s", got)
 	}
 	if !strings.Contains(got, "### sysctl ###") || !strings.Contains(got, "# forwarded tunable") {
@@ -201,7 +202,7 @@ func TestDryRunRuleOpDoesNotSave(t *testing.T) {
 		t.Fatalf("rc = %d", rc)
 	}
 	if !strings.Contains(out.String(), "Rules updated") ||
-		!strings.Contains(out.String(), "table inet bfirewall") {
+		!strings.Contains(out.String(), "table inet better-firewall") {
 		t.Fatalf("stdout = %q", out.String())
 	}
 	if fb.applies != 0 {
@@ -1046,7 +1047,7 @@ func TestDiffAgainstEmptyKernel(t *testing.T) {
 	if !strings.Contains(got, "--- stored") || !strings.Contains(got, "+++ kernel") {
 		t.Fatalf("stdout = %q", got)
 	}
-	if !strings.Contains(got, "-") || !strings.Contains(got, "bfirewall") {
+	if !strings.Contains(got, "-") || !strings.Contains(got, "better-firewall") {
 		t.Errorf("diff body missing stored rules:\n%s", got)
 	}
 }
@@ -1196,7 +1197,7 @@ func TestShowValidationAndRaw(t *testing.T) {
 	if rc := e2.cmdShow([]string{"raw"}); rc != 0 {
 		t.Fatalf("show raw rc = %d", rc)
 	}
-	if !strings.Contains(out2.String(), "table inet bfirewall") {
+	if !strings.Contains(out2.String(), "table inet better-firewall") {
 		t.Fatalf("stdout = %q", out2.String())
 	}
 

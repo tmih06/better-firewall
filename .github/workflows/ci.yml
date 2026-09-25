@@ -1,4 +1,4 @@
-# bfirewall CI — runs on every push, every pull request, and on manual
+# better-firewall CI — runs on every push, every pull request, and on manual
 # dispatch (Actions → CI → Run workflow). Actions are pinned to commit SHAs.
 #
 # Privileged integration tests go through scripts/ci/isolate.sh. The k6
@@ -225,7 +225,7 @@ jobs:
   # hardware-guaranteed — see README §Development for variance caveats.
   performance:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 90
     needs: build
     permissions:
       contents: read
@@ -246,7 +246,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: performance
+          name: better-firewall-performance
           path: artifacts/performance/**
           if-no-files-found: error
           retention-days: 30

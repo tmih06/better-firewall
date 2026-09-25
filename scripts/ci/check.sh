@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/ci/check.sh — static checks for bfirewall. Safe: no root, no
+# scripts/ci/check.sh — static checks for better-firewall. Safe: no root, no
 # namespace, no network mutation. Suitable for any developer machine and CI.
 #
 # Usage:

@@ -1,6 +1,6 @@
 //go:build integration
 
-// Package tests contains real kernel behavioral coverage for bfirewall extensions:
+// Package tests contains real kernel behavioral coverage for better-firewall extensions:
 // named sets CRUD/toggle/expiry, NAT v4/v6, status/check/diff/panic, application profiles,
 // import/export/import-ufw migration, and fragments/hooks atomic failure.
 package tests
@@ -29,7 +29,7 @@ func TestNamedIPSetsCRUDAndReferences(t *testing.T) {
 	}
 
 	// Verify set exists in kernel table
-	nftOut, err := env.nft("list", "set", "inet", "bfirewall", "bfw_set_blocklist")
+	nftOut, err := env.nft("list", "set", "inet", "better-firewall", "bfw_set_blocklist")
 	if err != nil {
 		t.Fatalf("expected set bfw_set_blocklist in kernel: %v\n%s", err, nftOut)
 	}
@@ -41,7 +41,7 @@ func TestNamedIPSetsCRUDAndReferences(t *testing.T) {
 	}
 
 	// Verify elements in live kernel set
-	nftOut, _ = env.nft("list", "set", "inet", "bfirewall", "bfw_set_blocklist")
+	nftOut, _ = env.nft("list", "set", "inet", "better-firewall", "bfw_set_blocklist")
 	for _, el := range []string{"192.0.2.1", "192.0.2.2", "198.51.100.0/24"} {
 		if !strings.Contains(nftOut, el) {
 			t.Fatalf("expected element %q in kernel set:\n%s", el, nftOut)
@@ -60,7 +60,7 @@ func TestNamedIPSetsCRUDAndReferences(t *testing.T) {
 		t.Fatalf("unexpected set del output: %q", out)
 	}
 
-	nftOut, _ = env.nft("list", "set", "inet", "bfirewall", "bfw_set_blocklist")
+	nftOut, _ = env.nft("list", "set", "inet", "better-firewall", "bfw_set_blocklist")
 	if strings.Contains(nftOut, "192.0.2.2") {
 		t.Fatalf("element 192.0.2.2 still present in kernel set after deletion:\n%s", nftOut)
 	}
@@ -72,7 +72,7 @@ func TestNamedIPSetsCRUDAndReferences(t *testing.T) {
 	}
 
 	// Kernel rule should reference @bfw_set_blocklist
-	nftOut, _ = env.nft("list", "chain", "inet", "bfirewall", "bfw-user-input")
+	nftOut, _ = env.nft("list", "chain", "inet", "better-firewall", "bfw-user-input")
 	if !strings.Contains(nftOut, "@bfw_set_blocklist") {
 		t.Fatalf("expected rule referencing @bfw_set_blocklist in kernel:\n%s", nftOut)
 	}
@@ -89,7 +89,7 @@ func TestNamedIPSetsCRUDAndReferences(t *testing.T) {
 		t.Fatalf("expected set destroyed output, got: %q", out)
 	}
 
-	nftOut, _ = env.nft("list", "table", "inet", "bfirewall")
+	nftOut, _ = env.nft("list", "table", "inet", "better-firewall")
 	if strings.Contains(nftOut, "bfw_set_blocklist") {
 		t.Fatalf("destroyed set still present in kernel table:\n%s", nftOut)
 	}
@@ -110,7 +110,7 @@ func TestRuleToggleAndExpirySweep(t *testing.T) {
 
 	// 1. Rule Toggle
 	env.runOK("allow", "5000/tcp")
-	nftOut, _ := env.nft("list", "chain", "inet", "bfirewall", "bfw-user-input")
+	nftOut, _ := env.nft("list", "chain", "inet", "better-firewall", "bfw-user-input")
 	if !strings.Contains(nftOut, "tcp dport 5000") {
 		t.Fatalf("rule 5000/tcp not found in kernel before toggle:\n%s", nftOut)
 	}
@@ -121,7 +121,7 @@ func TestRuleToggleAndExpirySweep(t *testing.T) {
 		t.Fatalf("expected Rule disabled, got: %q", out)
 	}
 
-	nftOut, _ = env.nft("list", "chain", "inet", "bfirewall", "bfw-user-input")
+	nftOut, _ = env.nft("list", "chain", "inet", "better-firewall", "bfw-user-input")
 	if strings.Contains(nftOut, "tcp dport 5000") {
 		t.Fatalf("disabled rule still present in active kernel chain:\n%s", nftOut)
 	}
@@ -132,7 +132,7 @@ func TestRuleToggleAndExpirySweep(t *testing.T) {
 		t.Fatalf("expected Rule enabled, got: %q", out)
 	}
 
-	nftOut, _ = env.nft("list", "chain", "inet", "bfirewall", "bfw-user-input")
+	nftOut, _ = env.nft("list", "chain", "inet", "better-firewall", "bfw-user-input")
 	if !strings.Contains(nftOut, "tcp dport 5000") {
 		t.Fatalf("re-enabled rule not restored in kernel chain:\n%s", nftOut)
 	}
@@ -154,7 +154,7 @@ func TestRuleToggleAndExpirySweep(t *testing.T) {
 		t.Fatalf("expected sweep to remove expired rule, got: %q", out)
 	}
 
-	nftOut, _ = env.nft("list", "chain", "inet", "bfirewall", "bfw-user-input")
+	nftOut, _ = env.nft("list", "chain", "inet", "better-firewall", "bfw-user-input")
 	if strings.Contains(nftOut, "tcp dport 5001") {
 		t.Fatalf("expired rule still present in kernel after sweep:\n%s", nftOut)
 	}
@@ -174,8 +174,8 @@ func TestNATRulesV4V6AndValidation(t *testing.T) {
 		t.Fatalf("expected NAT rule added, got: %q", out)
 	}
 
-	// Verify kernel table ip bfirewall-nat postrouting
-	nftOut, err := env.nft("list", "table", "ip", "bfirewall-nat")
+	// Verify kernel table ip better-firewall-nat postrouting
+	nftOut, err := env.nft("list", "table", "ip", "better-firewall-nat")
 	if err != nil {
 		t.Fatalf("failed to list nat table in kernel: %v\n%s", err, nftOut)
 	}
@@ -189,7 +189,7 @@ func TestNATRulesV4V6AndValidation(t *testing.T) {
 		t.Fatalf("expected DNAT rule added, got: %q", out)
 	}
 
-	nftOut, _ = env.nft("list", "table", "ip", "bfirewall-nat")
+	nftOut, _ = env.nft("list", "table", "ip", "better-firewall-nat")
 	if !strings.Contains(nftOut, "dnat to 10.10.0.5:8080") {
 		t.Fatalf("dnat rule missing in kernel nat table:\n%s", nftOut)
 	}
@@ -263,7 +263,7 @@ func TestStatusCheckDiffPanicRestore(t *testing.T) {
 		t.Fatalf("expected matching diff, got: %q", out)
 	}
 
-	nftOut, err := env.nft("add", "rule", "inet", "bfirewall", "bfw-user-input",
+	nftOut, err := env.nft("add", "rule", "inet", "better-firewall", "bfw-user-input",
 		"tcp", "dport", "9999", "accept")
 	if err != nil {
 		t.Fatalf("failed to inject kernel drift: %v\n%s", err, nftOut)
@@ -287,7 +287,7 @@ func TestStatusCheckDiffPanicRestore(t *testing.T) {
 	}
 
 	// Kernel base chains must all be policy drop
-	nftOut, _ = env.nft("list", "table", "inet", "bfirewall")
+	nftOut, _ = env.nft("list", "table", "inet", "better-firewall")
 	if !strings.Contains(nftOut, "policy drop") {
 		t.Fatalf("panic did not install drop policies:\n%s", nftOut)
 	}
@@ -304,7 +304,7 @@ func TestStatusCheckDiffPanicRestore(t *testing.T) {
 		t.Fatalf("expected Panic mode OFF, got: %q", out)
 	}
 
-	nftOut, _ = env.nft("list", "table", "inet", "bfirewall")
+	nftOut, _ = env.nft("list", "table", "inet", "better-firewall")
 	if !strings.Contains(nftOut, "policy accept") {
 		t.Fatalf("panic off did not restore output accept policy:\n%s", nftOut)
 	}
@@ -336,7 +336,7 @@ func TestApplicationProfiles(t *testing.T) {
 		t.Fatalf("allow OpenSSH output: %q", out)
 	}
 
-	nftOut, _ := env.nft("list", "chain", "inet", "bfirewall", "bfw-user-input")
+	nftOut, _ := env.nft("list", "chain", "inet", "better-firewall", "bfw-user-input")
 	if !strings.Contains(nftOut, "tcp dport 22") {
 		t.Fatalf("kernel chain missing port 22 for OpenSSH:\n%s", nftOut)
 	}
@@ -347,7 +347,7 @@ title=Custom Test App
 description=Test custom application profile
 ports=9100,9200/tcp
 `
-	profPath := filepath.Join(env.dir, "etc", "bfirewall", "applications.d", "custom.ini")
+	profPath := filepath.Join(env.dir, "etc", "better-firewall", "applications.d", "custom.ini")
 	if err := os.WriteFile(profPath, []byte(customProf), 0644); err != nil {
 		t.Fatalf("failed to write custom app profile: %v", err)
 	}
@@ -362,7 +362,7 @@ ports=9100,9200/tcp
 		t.Fatalf("allow CustomApp failed: %q", out)
 	}
 
-	nftOut, _ = env.nft("list", "chain", "inet", "bfirewall", "bfw-user-input")
+	nftOut, _ = env.nft("list", "chain", "inet", "better-firewall", "bfw-user-input")
 	if strings.Count(nftOut, "tcp dport { 9100, 9200 }") != 2 {
 		t.Fatalf("expected custom app port set in both address families:\n%s", nftOut)
 	}
@@ -399,7 +399,7 @@ func TestImportExportAndImportUFW(t *testing.T) {
 
 	// Re-enable and verify live kernel has imported rules
 	env.runOK("--force", "enable")
-	nftOut, _ := env.nft("list", "chain", "inet", "bfirewall", "bfw-user-input")
+	nftOut, _ := env.nft("list", "chain", "inet", "better-firewall", "bfw-user-input")
 	if !strings.Contains(nftOut, "tcp dport 1234") || !strings.Contains(nftOut, "udp dport 5678") {
 		t.Fatalf("imported rules missing in kernel after enable:\n%s", nftOut)
 	}
@@ -427,7 +427,7 @@ LOGLEVEL=low
 
 	out = env.runOK("import-ufw", "--dir", ufwDir)
 
-	nftOut, _ = env.nft("list", "chain", "inet", "bfirewall", "bfw-user-input")
+	nftOut, _ = env.nft("list", "chain", "inet", "better-firewall", "bfw-user-input")
 	if !strings.Contains(nftOut, "tcp dport 7777") {
 		t.Fatalf("migrated ufw rule 7777/tcp missing in kernel:\n%s", nftOut)
 	}
@@ -441,25 +441,25 @@ func TestFragmentsAndInitHooksAtomicFailure(t *testing.T) {
 	env := newTestEnv(t)
 
 	// 1. Valid before.rules fragment
-	validFrag := `table inet bfirewall {
+	validFrag := `table inet better-firewall {
     chain bfw-before-input {
         tcp dport 4444 accept
     }
 }
 `
-	fragPath := filepath.Join(env.dir, "etc", "bfirewall", "before.rules")
+	fragPath := filepath.Join(env.dir, "etc", "better-firewall", "before.rules")
 	if err := os.WriteFile(fragPath, []byte(validFrag), 0644); err != nil {
 		t.Fatalf("failed to write valid fragment: %v", err)
 	}
 
 	env.runOK("--force", "enable")
-	nftOut, _ := env.nft("list", "chain", "inet", "bfirewall", "bfw-before-input")
+	nftOut, _ := env.nft("list", "chain", "inet", "better-firewall", "bfw-before-input")
 	if !strings.Contains(nftOut, "tcp dport 4444") {
 		t.Fatalf("valid fragment rule not applied in kernel:\n%s", nftOut)
 	}
 
 	// 2. Broken before.rules fragment -> atomic failure and rollback
-	brokenFrag := `table inet bfirewall {
+	brokenFrag := `table inet better-firewall {
     chain bfw-before-input {
         this is completely broken syntax !!!
     }
@@ -475,7 +475,7 @@ func TestFragmentsAndInitHooksAtomicFailure(t *testing.T) {
 	}
 
 	// Verify rollback flushed the broken table from kernel
-	nftOut, _ = env.nft("list", "table", "inet", "bfirewall")
+	nftOut, _ = env.nft("list", "table", "inet", "better-firewall")
 	if !strings.Contains(nftOut, "Error") && len(nftOut) > 0 {
 		t.Fatalf("expected core table to be rolled back/flushed after fragment failure:\n%s", nftOut)
 	}
@@ -487,7 +487,7 @@ func TestFragmentsAndInitHooksAtomicFailure(t *testing.T) {
 	failingHook := `#!/bin/sh
 exit 1
 `
-	hookPath := filepath.Join(env.dir, "etc", "bfirewall", "before.init")
+	hookPath := filepath.Join(env.dir, "etc", "better-firewall", "before.init")
 	if err := os.WriteFile(hookPath, []byte(failingHook), 0755); err != nil {
 		t.Fatalf("failed to write hook: %v", err)
 	}

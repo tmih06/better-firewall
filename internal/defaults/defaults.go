@@ -1,5 +1,5 @@
 // Package defaults embeds the shipped configuration: app profiles,
-// sysctl.conf, and /etc/default/bfirewall. Files are materialized lazily —
+// sysctl.conf, and /etc/default/better-firewall. Files are materialized lazily —
 // created on first use if missing, never overwriting user edits.
 package defaults
 

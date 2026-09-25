@@ -1,5 +1,5 @@
 [Unit]
-Description=bfirewall expired-rule sweep
+Description=better-firewall expired-rule sweep
 
 [Service]
 Type=oneshot

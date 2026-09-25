@@ -15,9 +15,9 @@ import (
 	"sort"
 	"strings"
 
-	nftbe "bfirewall/internal/backend/nft"
-	"bfirewall/internal/report"
-	"bfirewall/internal/rule"
+	nftbe "github.com/tmih06/better-firewall/internal/backend/nft"
+	"github.com/tmih06/better-firewall/internal/report"
+	"github.com/tmih06/better-firewall/internal/rule"
 )
 
 // cmdShow implements `bfw show <report>`.

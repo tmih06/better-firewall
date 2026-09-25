@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"bfirewall/internal/rule"
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/rule"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 func ports(p uint16, proto string) rule.PortRange {

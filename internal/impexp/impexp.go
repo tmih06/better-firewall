@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"bfirewall/internal/rule"
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/rule"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 // document is the on-disk JSON shape produced by Export and consumed by
@@ -529,7 +529,7 @@ func applyUfwDefaults(st *store.State, etcFile string) []string {
 	}
 	if v, ok := kv["DEFAULT_APPLICATION_POLICY"]; ok {
 		// ufw stores iptables targets (ACCEPT/DROP/REJECT/SKIP); map to
-		// the bfirewall policy words (allow/deny/reject/skip).
+		// the better-firewall policy words (allow/deny/reject/skip).
 		switch strings.ToLower(v) {
 		case "accept", "allow":
 			st.AppPolicy = "allow"

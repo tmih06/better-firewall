@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"bfirewall/internal/impexp"
-	"bfirewall/internal/rule"
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/impexp"
+	"github.com/tmih06/better-firewall/internal/rule"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 // cmdExport implements `export [FILE]` — JSON state document to FILE or
@@ -101,7 +101,7 @@ func (e *Env) cmdImport(args []string) int {
 
 // cmdImportUFW implements `import-ufw [--dir DIR]` — migrates a ufw
 // installation's user.rules/user6.rules, /etc/default/ufw policies, and
-// ufw.conf into the bfirewall state.
+// ufw.conf into the better-firewall state.
 func (e *Env) cmdImportUFW(args []string) int {
 	dir := ""
 	for i := 0; i < len(args); i++ {
@@ -116,7 +116,7 @@ func (e *Env) cmdImportUFW(args []string) int {
 		}
 	}
 	if dir == "" {
-		// Derive <prefix>/etc/ufw from the store dir (<prefix>/etc/bfirewall)
+		// Derive <prefix>/etc/ufw from the store dir (<prefix>/etc/better-firewall)
 		// so BFW_PREFIX-rooted test trees work too.
 		dir = filepath.Join(filepath.Dir(e.Store.Dir), "ufw")
 	}

@@ -20,10 +20,10 @@ import (
 	"strings"
 	"time"
 
-	"bfirewall/internal/appprof"
-	"bfirewall/internal/rule"
-	"bfirewall/internal/services"
-	"bfirewall/internal/store"
+	"github.com/tmih06/better-firewall/internal/appprof"
+	"github.com/tmih06/better-firewall/internal/rule"
+	"github.com/tmih06/better-firewall/internal/services"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 // ErrSyntax reports malformed command lines. ufw raises ValueError for
@@ -707,7 +707,7 @@ func setApp(r *rule.Rule, loc, name string, remove bool, notFound string) error 
 	return nil
 }
 
-// loadProfiles loads app profiles from the bfirewall store dir plus the
+// loadProfiles loads app profiles from the better-firewall store dir plus the
 // ufw compatibility dir (both under BFW_PREFIX when set).
 func loadProfiles() []*appprof.Profile {
 	ufwDir := "/etc/ufw/applications.d"

@@ -11,20 +11,20 @@ build:
 
 install: build
 	install -Dm755 "$(BFW_BIN)" $(DESTDIR)$(SBINDIR)/bfw
-	install -dm755 $(DESTDIR)$(SYSCONFDIR)/bfirewall/applications.d
-	install -Dm644 packaging/bfirewall.service $(DESTDIR)$(UNITDIR)/bfirewall.service
-	install -Dm644 packaging/bfirewall-sweep.service $(DESTDIR)$(UNITDIR)/bfirewall-sweep.service
-	install -Dm644 packaging/bfirewall-sweep.timer $(DESTDIR)$(UNITDIR)/bfirewall-sweep.timer
+	install -dm755 $(DESTDIR)$(SYSCONFDIR)/better-firewall/applications.d
+	install -Dm644 packaging/better-firewall.service $(DESTDIR)$(UNITDIR)/better-firewall.service
+	install -Dm644 packaging/better-firewall-sweep.service $(DESTDIR)$(UNITDIR)/better-firewall-sweep.service
+	install -Dm644 packaging/better-firewall-sweep.timer $(DESTDIR)$(UNITDIR)/better-firewall-sweep.timer
 ifeq ($(strip $(DESTDIR)),)
 	-systemctl daemon-reload
 endif
 
 uninstall:
 ifeq ($(strip $(DESTDIR)),)
-	-systemctl disable bfirewall bfirewall-sweep.timer
+	-systemctl disable better-firewall.service better-firewall-sweep.timer
 endif
 	rm -f $(DESTDIR)$(SBINDIR)/bfw
-	rm -f $(DESTDIR)$(UNITDIR)/bfirewall.service $(DESTDIR)$(UNITDIR)/bfirewall-sweep.service $(DESTDIR)$(UNITDIR)/bfirewall-sweep.timer
+	rm -f $(DESTDIR)$(UNITDIR)/better-firewall.service $(DESTDIR)$(UNITDIR)/better-firewall-sweep.service $(DESTDIR)$(UNITDIR)/better-firewall-sweep.timer
 ifeq ($(strip $(DESTDIR)),)
 	-systemctl daemon-reload
 endif

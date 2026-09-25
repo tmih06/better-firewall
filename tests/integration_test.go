@@ -96,7 +96,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	env := &testEnv{t: t, dir: dir}
 
 	// Seed directory structure under BFW_PREFIX
-	if err := os.MkdirAll(filepath.Join(dir, "etc", "bfirewall", "applications.d"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "etc", "better-firewall", "applications.d"), 0755); err != nil {
 		t.Fatalf("failed to create app profile dir: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "etc", "default"), 0755); err != nil {
@@ -158,9 +158,9 @@ func (e *testEnv) nft(args ...string) (string, error) {
 
 func (e *testEnv) cleanupKernel() {
 	// Idempotently flush/remove managed tables from kernel
-	_ = exec.Command("nft", "delete", "table", "inet", "bfirewall").Run()
-	_ = exec.Command("nft", "delete", "table", "ip", "bfirewall-nat").Run()
-	_ = exec.Command("nft", "delete", "table", "ip6", "bfirewall-nat").Run()
+	_ = exec.Command("nft", "delete", "table", "inet", "better-firewall").Run()
+	_ = exec.Command("nft", "delete", "table", "ip", "better-firewall-nat").Run()
+	_ = exec.Command("nft", "delete", "table", "ip6", "better-firewall-nat").Run()
 }
 
 // -----------------------------------------------------------------------------
@@ -182,10 +182,10 @@ func TestLifecycleEnableDisableReloadReset(t *testing.T) {
 		t.Fatalf("unexpected enable output: %q", out)
 	}
 
-	// Verify live kernel ruleset has inet bfirewall table and core chains
-	nftOut, err := env.nft("list", "table", "inet", "bfirewall")
+	// Verify live kernel ruleset has inet better-firewall table and core chains
+	nftOut, err := env.nft("list", "table", "inet", "better-firewall")
 	if err != nil {
-		t.Fatalf("nft list table inet bfirewall failed: %v\n%s", err, nftOut)
+		t.Fatalf("nft list table inet better-firewall failed: %v\n%s", err, nftOut)
 	}
 	for _, expectedChain := range []string{"chain input", "chain output", "chain forward", "chain bfw-user-input"} {
 		if !strings.Contains(nftOut, expectedChain) {
@@ -212,7 +212,7 @@ func TestLifecycleEnableDisableReloadReset(t *testing.T) {
 	}
 
 	// Verify table flushed from kernel
-	nftOut, err = env.nft("list", "table", "inet", "bfirewall")
+	nftOut, err = env.nft("list", "table", "inet", "better-firewall")
 	if err == nil && !strings.Contains(nftOut, "Error") && len(nftOut) > 0 {
 		t.Fatalf("table still present in kernel after disable:\n%s", nftOut)
 	}
@@ -240,13 +240,13 @@ func TestLifecycleEnableDisableReloadReset(t *testing.T) {
 	// 6. Boot-load and Boot-unload
 	env.runOK("--force", "enable")
 	env.runOK("boot-unload")
-	nftOut, _ = env.nft("list", "table", "inet", "bfirewall")
+	nftOut, _ = env.nft("list", "table", "inet", "better-firewall")
 	if !strings.Contains(nftOut, "Error") && len(nftOut) > 0 {
 		t.Fatalf("table still present after boot-unload:\n%s", nftOut)
 	}
 
 	env.runOK("boot-load")
-	nftOut, err = env.nft("list", "table", "inet", "bfirewall")
+	nftOut, err = env.nft("list", "table", "inet", "better-firewall")
 	if err != nil {
 		t.Fatalf("boot-load failed to load table: %v\n%s", err, nftOut)
 	}
@@ -294,7 +294,7 @@ func TestRuleGrammarAllowDenyRejectLimit(t *testing.T) {
 	}
 
 	// Check kernel nftables ruleset
-	nftOut, err := env.nft("list", "table", "inet", "bfirewall")
+	nftOut, err := env.nft("list", "table", "inet", "better-firewall")
 	if err != nil {
 		t.Fatalf("nft list failed: %v", err)
 	}
@@ -391,7 +391,7 @@ func TestRuleRouteForwarding(t *testing.T) {
 	}
 
 	// Verify rule lands in bfw-user-forward chain in kernel
-	nftOut, err := env.nft("list", "chain", "inet", "bfirewall", "bfw-user-forward")
+	nftOut, err := env.nft("list", "chain", "inet", "better-firewall", "bfw-user-forward")
 	if err != nil {
 		t.Fatalf("failed to list bfw-user-forward chain: %v\n%s", err, nftOut)
 	}
@@ -415,7 +415,7 @@ func TestDualStackAndFamilyIsolation(t *testing.T) {
 	}
 
 	// Verify both v4 and v6 rules exist in bfw-user-input
-	nftOut, err := env.nft("list", "chain", "inet", "bfirewall", "bfw-user-input")
+	nftOut, err := env.nft("list", "chain", "inet", "better-firewall", "bfw-user-input")
 	if err != nil {
 		t.Fatalf("failed to list bfw-user-input chain: %v\n%s", err, nftOut)
 	}
@@ -436,7 +436,7 @@ func TestDualStackAndFamilyIsolation(t *testing.T) {
 	}
 
 	// Verify kernel chain contains both specific address matches
-	nftOut, _ = env.nft("list", "chain", "inet", "bfirewall", "bfw-user-input")
+	nftOut, _ = env.nft("list", "chain", "inet", "better-firewall", "bfw-user-input")
 	if !strings.Contains(nftOut, "192.168.10.0/24") {
 		t.Fatalf("expected IPv4 CIDR in bfw-user-input:\n%s", nftOut)
 	}
@@ -460,7 +460,7 @@ func TestPolicyAndLoggingLevels(t *testing.T) {
 	}
 
 	// Check kernel input base chain or jump to bfw-reject-input
-	nftOut, _ := env.nft("list", "table", "inet", "bfirewall")
+	nftOut, _ := env.nft("list", "table", "inet", "better-firewall")
 	if !strings.Contains(nftOut, "bfw-reject-input") {
 		t.Fatalf("expected bfw-reject-input in kernel table after default reject:\n%s", nftOut)
 	}
@@ -492,7 +492,7 @@ func TestPolicyAndLoggingLevels(t *testing.T) {
 		t.Fatalf("expected Logging enabled, got: %q", out)
 	}
 
-	nftOut, _ = env.nft("list", "table", "inet", "bfirewall")
+	nftOut, _ = env.nft("list", "table", "inet", "better-firewall")
 	if !strings.Contains(nftOut, "bfw-before-logging-input") && !strings.Contains(nftOut, "log") {
 		t.Fatalf("expected logging chains/rules in kernel table:\n%s", nftOut)
 	}

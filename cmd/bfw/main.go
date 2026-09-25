@@ -1,4 +1,4 @@
-// bfw is the bfirewall command-line tool: a ufw-compatible frontend for
+// bfw is the better-firewall command-line tool: a ufw-compatible frontend for
 // nftables. When invoked as "ufw" (argv[0]), behavior is identical — it is
 // a drop-in replacement.
 package main
@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"bfirewall/internal/cli"
+	"github.com/tmih06/better-firewall/internal/cli"
 )
 
 var version = "0.1.0"

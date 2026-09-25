@@ -19,9 +19,9 @@ import (
 	"strings"
 	"time"
 
-	nftbe "bfirewall/internal/backend/nft"
-	"bfirewall/internal/rule"
-	"bfirewall/internal/store"
+	nftbe "github.com/tmih06/better-firewall/internal/backend/nft"
+	"github.com/tmih06/better-firewall/internal/rule"
+	"github.com/tmih06/better-firewall/internal/store"
 )
 
 // ---------------------------------------------------------------- set
