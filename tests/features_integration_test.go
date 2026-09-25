@@ -225,7 +225,7 @@ func TestStatusCheckDiffPanicRestore(t *testing.T) {
 
 	// 1. Status verbose
 	out := env.runOK("status", "verbose")
-	if !strings.Contains(out, "Status: active") || !strings.Contains(out, "Logging: low") || !strings.Contains(out, "Default:") {
+	if !strings.Contains(out, "Status: active") || !strings.Contains(out, "Logging: on (low)") || !strings.Contains(out, "Default:") {
 		t.Fatalf("status verbose missing key fields:\n%s", out)
 	}
 
@@ -361,8 +361,8 @@ ports=9100,9200/tcp
 	}
 
 	nftOut, _ = env.nft("list", "chain", "inet", "bfirewall", "bfw-user-input")
-	if !strings.Contains(nftOut, "tcp dport 9100") || !strings.Contains(nftOut, "tcp dport 9200") {
-		t.Fatalf("kernel chain missing custom app ports 9100/9200:\n%s", nftOut)
+	if strings.Count(nftOut, "tcp dport { 9100, 9200 }") != 2 {
+		t.Fatalf("expected custom app port set in both address families:\n%s", nftOut)
 	}
 }
 
@@ -410,7 +410,7 @@ func TestImportExportAndImportUFW(t *testing.T) {
 
 	userRules := `*filter
 :ufw-user-input - [0:0]
--A ufw-user-input -p tcp --dport 7777 -j ACCEPT
+### tuple ### allow tcp 7777 0.0.0.0/0 any 0.0.0.0/0 in
 COMMIT
 `
 	if err := os.WriteFile(filepath.Join(ufwDir, "user.rules"), []byte(userRules), 0644); err != nil {
