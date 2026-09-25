@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 # Ensure scripts/perf is in Python path for direct imports
 PERF_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -19,6 +20,7 @@ if PERF_DIR not in sys.path:
     sys.path.insert(0, PERF_DIR)
 
 import compare
+import measure_resources
 
 
 def make_valid_k6_dict(
@@ -39,6 +41,22 @@ def make_valid_k6_dict(
     fails = int(count * error_rate)
     check_fails = int(count * (1.0 - check_rate))
     return {
+        "benchmark_resources": {
+            "server": {
+                "cpu_avg_pct": 12.5,
+                "cpu_peak_pct": 25.0,
+                "memory_avg_mib": 32.0,
+                "memory_peak_mib": 40.0,
+                "sample_count": 10,
+            },
+            "attacker": {
+                "cpu_avg_pct": 5.0,
+                "cpu_peak_pct": 10.0,
+                "memory_avg_mib": 48.0,
+                "memory_peak_mib": 50.0,
+                "sample_count": 10,
+            },
+        },
         "metrics": {
             "http_reqs": {
                 "values": {
@@ -86,7 +104,7 @@ def make_valid_k6_dict(
 
 def make_apply_times() -> dict:
     """New-style apply timings: per-phase lists of per-repeat samples."""
-    return {
+    data = {
         "bfw": {
             "10": {"rule_add_seconds": [0.01, 0.011, 0.0105], "enable_seconds": [0.002, 0.002, 0.002], "total_seconds": [0.012, 0.013, 0.0125]},
             "100": {"rule_add_seconds": [0.04, 0.042, 0.041], "enable_seconds": [0.003, 0.003, 0.003], "total_seconds": [0.043, 0.045, 0.044]},
@@ -100,6 +118,89 @@ def make_apply_times() -> dict:
             "1000": {"rule_add_seconds": [16.0, 16.4, 16.2], "enable_seconds": [0.15, 0.15, 0.15], "total_seconds": [16.15, 16.55, 16.35]},
         },
     }
+    for cards in data.values():
+        for timing in cards.values():
+            timing.update(
+                {
+                    "rule_add_cpu_seconds": [0.01, 0.02, 0.03],
+                    "enable_cpu_seconds": [0.001, 0.002, 0.003],
+                    "rule_add_peak_rss_kib": [4096, 8192, 6144],
+                    "enable_peak_rss_kib": [6144, 8192, 7168],
+                }
+            )
+    return data
+
+
+
+class TestResourceSamples(unittest.TestCase):
+    def test_parses_docker_cpu_and_memory_for_both_containers(self):
+        containers = {"server": "aabbccddeeff0011", "attacker": "1122334455667788"}
+        output = (
+            "aabbccddeeff|25.0%|32MiB / 1GiB\n"
+            "112233445566|5.5%|2.5MiB / 512MiB\n"
+        )
+        sample = measure_resources.parse_docker_stats(output, containers)
+        self.assertEqual(sample["server"], {"cpu_pct": 25.0, "memory_mib": 32.0})
+        self.assertEqual(sample["attacker"]["memory_mib"], 2.5)
+
+    def test_aggregates_resource_samples_as_average_and_peak(self):
+        samples = [
+            {
+                "server": {"cpu_pct": 10.0, "memory_mib": 32.0},
+                "attacker": {"cpu_pct": 5.0, "memory_mib": 48.0},
+            },
+            {
+                "server": {"cpu_pct": 30.0, "memory_mib": 64.0},
+                "attacker": {"cpu_pct": 15.0, "memory_mib": 96.0},
+            },
+        ]
+        summary = measure_resources.aggregate_samples(samples)
+        self.assertEqual(summary["server"]["cpu_avg_pct"], 20.0)
+        self.assertEqual(summary["server"]["cpu_peak_pct"], 30.0)
+        self.assertEqual(summary["server"]["memory_avg_mib"], 48.0)
+        self.assertEqual(summary["server"]["memory_peak_mib"], 64.0)
+        self.assertEqual(summary["attacker"]["cpu_avg_pct"], 10.0)
+        self.assertEqual(summary["attacker"]["memory_peak_mib"], 96.0)
+        self.assertEqual(summary["server"]["sample_count"], 2)
+
+    def test_rejects_missing_container_stats(self):
+        containers = {"server": "aabbccddeeff0011", "attacker": "1122334455667788"}
+        with self.assertRaisesRegex(ValueError, "omitted containers"):
+            measure_resources.parse_docker_stats("aabbccddeeff|1.0%|1MiB / 1GiB\n", containers)
+
+    def test_run_measured_adds_resources_to_k6_summary(self):
+        containers = {"server": "aabbccddeeff0011", "attacker": "1122334455667788"}
+        stats = subprocess.CompletedProcess(
+            ["docker", "stats"],
+            0,
+            stdout="aabbccddeeff|10.0%|32MiB / 1GiB\n112233445566|5.0%|48MiB / 1GiB\n",
+            stderr="",
+        )
+        process = mock.Mock()
+        process.poll.side_effect = [None, 0]
+        process.wait.return_value = 0
+
+        with tempfile.TemporaryDirectory() as directory:
+            summary_path = os.path.join(directory, "summary.json")
+            with open(summary_path, "w", encoding="utf-8") as output:
+                json.dump({"metrics": {"http_reqs": {"values": {"count": 1}}}}, output)
+
+            with (
+                mock.patch.object(measure_resources.subprocess, "Popen", return_value=process),
+                mock.patch.object(measure_resources.subprocess, "run", return_value=stats) as stats_run,
+                mock.patch.object(measure_resources.time, "sleep"),
+            ):
+                status = measure_resources.run_measured(["k6"], summary_path, containers, 0.01)
+
+            with open(summary_path, "r", encoding="utf-8") as summary_file:
+                summary = json.load(summary_file)
+
+        self.assertEqual(status, 0)
+        self.assertEqual(stats_run.call_count, 2)
+        self.assertEqual(summary["metrics"]["http_reqs"]["values"]["count"], 1)
+        self.assertEqual(summary["benchmark_resources"]["server"]["cpu_avg_pct"], 10.0)
+        self.assertEqual(summary["benchmark_resources"]["attacker"]["memory_peak_mib"], 48.0)
+        self.assertEqual(summary["benchmark_resources"]["server"]["sample_count"], 2)
 
 
 class TestCompareEngine(unittest.TestCase):
@@ -126,6 +227,15 @@ class TestCompareEngine(unittest.TestCase):
         self.assertEqual(parsed["data_sent_bytes"], 500_000)
         self.assertAlmostEqual(parsed["connecting_avg_ms"], 0.4)
         self.assertAlmostEqual(parsed["waiting_avg_ms"], 1.1)
+        self.assertEqual(parsed["resource_usage"]["server"]["cpu_avg_pct"], 12.5)
+
+    def test_resource_usage_is_required(self):
+        fixture = make_valid_k6_dict()
+        del fixture["benchmark_resources"]
+        with self.assertRaises(ValueError) as ctx:
+            compare.parse_k6_summary(fixture)
+        self.assertIn("Missing benchmark resource usage", str(ctx.exception))
+
 
     def test_missing_metrics_root_explicit_fail(self):
         """Test missing 'metrics' key raises explicit ValueError."""
@@ -339,6 +449,10 @@ class TestCompareEngine(unittest.TestCase):
         self.assertAlmostEqual(row10["rule_add_speedup"], round(0.145 / 0.0105, 2))
         self.assertAlmostEqual(row10["enable_speedup"], round(0.05 / 0.002, 2))
         self.assertEqual(row10["bfw_repeats"], 3)
+        self.assertAlmostEqual(row10["bfw_rule_add_cpu_s"], 0.02)
+        self.assertAlmostEqual(row10["bfw_enable_cpu_s"], 0.002)
+        self.assertEqual(row10["bfw_rule_add_peak_rss_mib"], 8.0)
+        self.assertEqual(row10["ufw_enable_peak_rss_mib"], 8.0)
 
     def test_apply_times_malformed_explicit_fail(self):
         """Malformed apply timing entries must raise ValueError."""
@@ -437,6 +551,31 @@ class TestCompareEngine(unittest.TestCase):
         self.assertTrue(any("Baseline unfiltered" in v for v in res3["violations"]))
 
 
+    def test_apply_rules_reports_child_cpu_and_peak_rss(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bin_dir = os.path.join(temp_dir, "bin")
+            os.makedirs(bin_dir)
+            bfw_stub = os.path.join(bin_dir, "bfw")
+            with open(bfw_stub, "w", encoding="utf-8") as stub:
+                stub.write("#!/bin/sh\nexit 0\n")
+            os.chmod(bfw_stub, 0o755)
+            env = os.environ.copy()
+            env["PATH"] = bin_dir + os.pathsep + env["PATH"]
+            result = subprocess.run(
+                [sys.executable, os.path.join(PERF_DIR, "apply_rules.py"), "bfw", "2", "8080"],
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        timing = json.loads(result.stdout)
+        self.assertEqual(timing["engine"], "bfw")
+        self.assertEqual(timing["rule_count"], 2)
+        for phase in ("rule_add", "enable"):
+            self.assertGreaterEqual(timing[f"{phase}_cpu_seconds"], 0.0)
+            self.assertGreater(timing[f"{phase}_peak_rss_kib"], 0)
+
 class TestCompareCLIAndReports(unittest.TestCase):
     def setUp(self):
         self.test_dir = tempfile.TemporaryDirectory()
@@ -491,6 +630,11 @@ class TestCompareCLIAndReports(unittest.TestCase):
                 "cardinalities": "10 100 500 1000",
                 "repeats": "3",
                 "isolation": "Internal-only Docker network; separate k6 attacker and firewall server containers",
+                "bfw_binary_size_bytes": 1234567,
+                "ufw_launcher_size_bytes": 512,
+                "ufw_launcher_path": "/usr/sbin/ufw",
+                "ufw_package_installed_kib": 2048,
+                "resource_sample_interval_seconds": 1.0,
             },
             "controls": {
                 "baseline_unfiltered": True,
@@ -540,6 +684,8 @@ class TestCompareCLIAndReports(unittest.TestCase):
         # 3 repeats aggregated per scenario
         self.assertEqual(data["scenarios"]["bfw_10_keepalive"]["repeats"], 3)
         self.assertEqual(data["scenarios"]["bfw_10_keepalive"]["request_count"], 33000)
+        self.assertEqual(data["scenarios"]["bfw_10_keepalive"]["resource_usage"]["server"]["sample_count"], 30)
+        self.assertEqual(data["scenarios"]["bfw_10_keepalive"]["resource_usage"]["server"]["cpu_avg_pct"], 12.5)
         self.assertEqual(data["scenarios"]["bfw_10_churn"]["dropped_iterations"], 0)
         # Per-profile rollups exist for both engines
         self.assertEqual(len(data["profiles"]), 6)
@@ -552,6 +698,8 @@ class TestCompareCLIAndReports(unittest.TestCase):
         self.assertGreater(t_row["rule_add_speedup"], 1.0)
         self.assertIsNotNone(t_row["bfw_enable_s"])
         self.assertIsNotNone(t_row["ufw_enable_s"])
+        self.assertAlmostEqual(t_row["bfw_rule_add_cpu_s"], 0.02)
+        self.assertAlmostEqual(t_row["bfw_rule_add_peak_rss_mib"], 8.0)
         # Ratios are per-profile, using the matching baseline
         comp = next(c for c in data["comparisons"] if c["profile"] == "churn" and c["cardinality"] == 10)
         self.assertAlmostEqual(
@@ -567,6 +715,16 @@ class TestCompareCLIAndReports(unittest.TestCase):
         self.assertIn("Dropped It.", md_content)
         self.assertIn("Comparative Ratios", md_content)
         self.assertIn("CLI Rule Timing", md_content)
+        self.assertIn("Executable & Package Footprint", md_content)
+        self.assertIn("Container Resource Usage", md_content)
+        self.assertIn("CLI Process Resource Usage", md_content)
+        self.assertIn("1234567 bytes", md_content)
+        self.assertIn("/usr/sbin/ufw", md_content)
+        self.assertIn("2048 KiB", md_content)
+        self.assertIn(
+            "| keepalive | **bfw** | 10 | Server / defender | 12.50 | 25.00 | 32.00 | 40.00 | 30 |",
+            md_content,
+        )
         self.assertIn("keepalive", md_content)
         self.assertIn("churn", md_content)
         self.assertIn("mixed", md_content)
@@ -614,6 +772,10 @@ class TestCompareCLIAndReports(unittest.TestCase):
                     "rule_add_seconds": [0.1, 0.1],
                     "enable_seconds": [0.01, 0.01],
                     "total_seconds": [0.11, 0.11],
+                    "rule_add_cpu_seconds": [0.02, 0.02],
+                    "enable_cpu_seconds": [0.002, 0.002],
+                    "rule_add_peak_rss_kib": [8192, 8192],
+                    "enable_peak_rss_kib": [8192, 8192],
                 }
             }
             for engine in ("bfw", "ufw")

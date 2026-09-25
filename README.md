@@ -274,7 +274,14 @@ workload ramping up to 50 virtual users.
 The report includes per-profile throughput, latency percentiles, request,
 drop, check and error counts, transferred bytes, active virtual users,
 comparative ratios, and separate rule-configuration and firewall-enable
-timings. Results are saved under `artifacts/performance/` (`summary.md`,
+timings. Each measured k6 run also samples Docker CPU and memory for both
+the server/defender and attacker containers once per second by default
+(`PERF_RESOURCE_SAMPLE_INTERVAL` overrides the interval). Rule-add and
+enable phases report child-process CPU time and peak RSS. The footprint section
+measures the native `bfw` executable, the UFW launcher file, and dpkg's
+installed size for the `ufw` package; launcher bytes exclude its Python runtime
+and package dependencies, so those values are not like-for-like executable
+sizes. Results are saved under `artifacts/performance/` (`summary.md`,
 `summary.json`, `raw/*.json`) and uploaded as the
 `better-firewall-performance` CI artifact.
 

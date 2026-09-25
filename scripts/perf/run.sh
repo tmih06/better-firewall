@@ -72,6 +72,7 @@ PERF_CHURN_RPS="${PERF_CHURN_RPS:-200}"
 PERF_PEAK_VUS="${PERF_PEAK_VUS:-50}"
 PERF_MIXED_STAGES="${PERF_MIXED_STAGES:-4s:0,6s:${PERF_PEAK_VUS},10s:${PERF_PEAK_VUS},5s:0}"
 PERF_REPEATS="${PERF_REPEATS:-3}"
+PERF_RESOURCE_SAMPLE_INTERVAL="${PERF_RESOURCE_SAMPLE_INTERVAL:-1}"
 PERF_PROFILES="${PERF_PROFILES:-keepalive churn mixed}"
 read -r -a PROFILES <<< "$PERF_PROFILES"
 if [ "${#PROFILES[@]}" -eq 0 ]; then
@@ -102,6 +103,17 @@ if ! compose up --build --detach; then
     compose logs --no-color >&2 || true
     exit 1
 fi
+SERVER_CONTAINER_ID="$(compose ps -q server)"
+ATTACKER_CONTAINER_ID="$(compose ps -q attacker)"
+if [[ -z "$SERVER_CONTAINER_ID" || -z "$ATTACKER_CONTAINER_ID" ]]; then
+    echo "FATAL: Could not resolve benchmark container IDs for resource sampling." >&2
+    exit 1
+fi
+BFW_BINARY_SIZE_BYTES="$(server_exec stat -c '%s' /usr/local/bin/bfw)"
+UFW_LAUNCHER_PATH="$(server_exec sh -c 'command -v ufw')"
+UFW_LAUNCHER_SIZE_BYTES="$(server_exec stat -c '%s' "$UFW_LAUNCHER_PATH")"
+UFW_PACKAGE_INSTALLED_KIB="$(server_exec dpkg-query -W -f="\${Installed-Size}" ufw)"
+echo "[perf] bfw executable: ${BFW_BINARY_SIZE_BYTES} bytes; ufw launcher: ${UFW_LAUNCHER_SIZE_BYTES} bytes; ufw package: ${UFW_PACKAGE_INSTALLED_KIB} KiB."
 K6_VER="$(attacker_exec k6 version | head -n 1)"
 echo "[perf] Using ${K6_VER}; k6 attacker and firewall server are on the private Docker network."
 
@@ -146,9 +158,9 @@ fi
 BENCH_CONTROLS_PASSED=0
 reset_firewalls
 
-# Initialize apply timing results. Shape:
-# {"bfw": {"10": {"rule_add_seconds": [...], "enable_seconds": [...],
-#                 "total_seconds": [...]}}, "ufw": {...}}
+# Apply timings and process resources; each list has one sample per repeat.
+# {"bfw": {"10": {"rule_add_seconds": [...], "rule_add_cpu_seconds": [...],
+#                 "rule_add_peak_rss_kib": [...], ...}}, "ufw": {...}}
 python3 - "$APPLY_TIMES_FILE" <<'PY'
 import json
 import sys
@@ -163,6 +175,7 @@ record_apply_time() {
     local timing_json="$3"
     python3 - "$APPLY_TIMES_FILE" "$engine" "$cardinality" "$timing_json" <<'PY'
 import json
+import math
 import sys
 
 path, engine, cardinality, timing_json = sys.argv[1:]
@@ -170,20 +183,30 @@ try:
     timing = json.loads(timing_json)
     if timing.get("engine") != engine or timing.get("rule_count") != int(cardinality):
         raise SystemExit(f"FATAL: apply timing identity mismatch for {engine}/{cardinality}")
-    rule_add = float(timing["rule_add_seconds"])
-    enable = float(timing["enable_seconds"])
-    total = float(timing["total_seconds"])
+    measurements = {
+        field: float(timing[field])
+        for field in (
+            "rule_add_seconds",
+            "enable_seconds",
+            "total_seconds",
+            "rule_add_cpu_seconds",
+            "enable_cpu_seconds",
+            "rule_add_peak_rss_kib",
+            "enable_peak_rss_kib",
+        )
+    }
+    if any(not math.isfinite(value) or value < 0 for value in measurements.values()):
+        raise SystemExit(f"FATAL: invalid apply timing for {engine}/{cardinality}")
 except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
     raise SystemExit(f"FATAL: malformed apply timing for {engine}/{cardinality}: {exc}")
 
 with open(path, "r", encoding="utf-8") as source:
     results = json.load(source)
 bucket = results.setdefault(engine, {}).setdefault(
-    cardinality, {"rule_add_seconds": [], "enable_seconds": [], "total_seconds": []}
+    cardinality, {field: [] for field in measurements}
 )
-bucket["rule_add_seconds"].append(rule_add)
-bucket["enable_seconds"].append(enable)
-bucket["total_seconds"].append(total)
+for field, value in measurements.items():
+    bucket[field].append(value)
 with open(path, "w", encoding="utf-8") as output:
     json.dump(results, output, indent=2)
 PY
@@ -226,7 +249,14 @@ execute_k6_run() {
         /scripts/firewall.js >/dev/null 2>&1 || true
 
     echo "[perf] Executing k6 ${profile} run for ${scenario} (repeat ${repeat}/${PERF_REPEATS})..."
-    attacker_exec k6 run \
+    python3 "$REPO_ROOT/scripts/perf/measure_resources.py" \
+        --summary "$RAW_DIR/${scenario}_${profile}_r${repeat}.json" \
+        --sample-interval "$PERF_RESOURCE_SAMPLE_INTERVAL" \
+        --container server "$SERVER_CONTAINER_ID" \
+        --container attacker "$ATTACKER_CONTAINER_ID" \
+        -- \
+        docker compose --project-name "$COMPOSE_PROJECT" --file "$COMPOSE_FILE" \
+        exec --no-TTY attacker k6 run \
         -e PROFILE="$profile" \
         -e VUS="$PERF_VUS" \
         -e CHURN_RPS="$PERF_CHURN_RPS" \
@@ -281,6 +311,8 @@ BFW_VER="$(server_exec bfw --version 2>&1 | head -n 1 || echo 'bfw version unava
 UFW_VER="$(server_exec ufw --version 2>&1 | head -n 1 || echo 'ufw version unavailable')"
 python3 - "$METADATA_FILE" \
     "$(uname -srm)" "$(uname -m)" "$BFW_VER" "$UFW_VER" "$K6_VER" \
+    "$BFW_BINARY_SIZE_BYTES" "$UFW_LAUNCHER_SIZE_BYTES" "$UFW_LAUNCHER_PATH" \
+    "$UFW_PACKAGE_INSTALLED_KIB" "$PERF_RESOURCE_SAMPLE_INTERVAL" \
     "$PERF_VUS" "$PERF_PEAK_VUS" "$PERF_CHURN_RPS" "$PERF_DURATION" "$PERF_WARMUP_DURATION" \
     "$PERF_REPEATS" "$PERF_CARDINALITIES" "$PERF_PROFILES" "$PERF_MIXED_STAGES" \
     "$BASELINE_CONTROL_PASSED" "$POS_CONTROL_PASSED" \
@@ -295,6 +327,11 @@ import sys
     bfw_version,
     ufw_version,
     k6_version,
+    bfw_binary_size_bytes,
+    ufw_launcher_size_bytes,
+    ufw_launcher_path,
+    ufw_package_installed_kib,
+    resource_sample_interval,
     vus,
     peak_vus,
     churn_rps,
@@ -315,6 +352,11 @@ metadata = {
         "arch": arch,
         "bfw_version": bfw_version,
         "ufw_version": ufw_version,
+        "bfw_binary_size_bytes": int(bfw_binary_size_bytes),
+        "ufw_launcher_size_bytes": int(ufw_launcher_size_bytes),
+        "ufw_launcher_path": ufw_launcher_path,
+        "ufw_package_installed_kib": int(ufw_package_installed_kib),
+        "resource_sample_interval_seconds": float(resource_sample_interval),
         "k6_version": k6_version,
         "vus": vus,
         "peak_vus": peak_vus,

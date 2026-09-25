@@ -12,6 +12,7 @@ Any other *.json file in the results directory is rejected (fail-closed).
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -47,6 +48,41 @@ def _values(metrics: Dict[str, Any], name: str) -> Dict[str, Any]:
     if not isinstance(metric, dict) or not isinstance(metric.get("values"), dict):
         raise ValueError(f"Missing required metric: '{name}'")
     return metric["values"]
+
+
+def _parse_benchmark_resources(data: Any) -> Dict[str, Dict[str, Any]]:
+    if not isinstance(data, dict):
+        raise ValueError("Missing benchmark resource usage")
+
+    result: Dict[str, Dict[str, Any]] = {}
+    for container in ("server", "attacker"):
+        values = data.get(container)
+        if not isinstance(values, dict):
+            raise ValueError(f"Missing benchmark resource usage for '{container}'")
+
+        parsed: Dict[str, Any] = {}
+        for name in ("cpu_avg_pct", "cpu_peak_pct", "memory_avg_mib", "memory_peak_mib"):
+            value = values.get(name)
+            if isinstance(value, bool):
+                raise ValueError(f"Invalid benchmark resource '{container}.{name}'")
+            try:
+                parsed[name] = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid benchmark resource '{container}.{name}'") from exc
+            if not math.isfinite(parsed[name]) or parsed[name] < 0:
+                raise ValueError(f"Invalid benchmark resource '{container}.{name}'")
+
+        sample_count = values.get("sample_count")
+        if type(sample_count) is not int or sample_count <= 0:
+            raise ValueError(f"Invalid benchmark resource '{container}.sample_count'")
+        if (
+            parsed["cpu_peak_pct"] < parsed["cpu_avg_pct"]
+            or parsed["memory_peak_mib"] < parsed["memory_avg_mib"]
+        ):
+            raise ValueError(f"Inconsistent benchmark resource peaks for '{container}'")
+        parsed["sample_count"] = sample_count
+        result[container] = parsed
+    return result
 
 
 def _avg(values: Dict[str, Any]) -> Optional[float]:
@@ -125,6 +161,7 @@ def parse_k6_summary(data_or_path: Any) -> Dict[str, Any]:
     dropped_count = 0
     if isinstance(dropped, dict) and isinstance(dropped.get("values"), dict):
         dropped_count = int(dropped["values"].get("count") or 0)
+    resource_usage = _parse_benchmark_resources(data.get("benchmark_resources"))
 
     return {
         "throughput_rps": float(rate),
@@ -136,6 +173,7 @@ def parse_k6_summary(data_or_path: Any) -> Dict[str, Any]:
         "check_fails": int(check_values.get("fails") or 0),
         "iterations": int(iteration_values.get("count") or 0),
         "dropped_iterations": dropped_count,
+        "resource_usage": resource_usage,
         "vus": float(vus_values.get("value") or 0.0),
         "vus_max": float(vus_max_values.get("value") or 0.0),
         "data_received_bytes": int(received_values.get("count") or 0),
@@ -162,6 +200,25 @@ def _mean(runs: List[Dict[str, Any]], key: str, digits: int) -> Optional[float]:
 def _total(runs: List[Dict[str, Any]], key: str) -> int:
     return sum(int(r.get(key) or 0) for r in runs)
 
+
+
+def _aggregate_resource_usage(runs: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    result: Dict[str, Dict[str, Any]] = {}
+    for container in ("server", "attacker"):
+        samples = [run["resource_usage"][container] for run in runs]
+        total_samples = sum(sample["sample_count"] for sample in samples)
+        result[container] = {
+            "cpu_avg_pct": round(
+                sum(sample["cpu_avg_pct"] * sample["sample_count"] for sample in samples) / total_samples, 2
+            ),
+            "cpu_peak_pct": max(sample["cpu_peak_pct"] for sample in samples),
+            "memory_avg_mib": round(
+                sum(sample["memory_avg_mib"] * sample["sample_count"] for sample in samples) / total_samples, 2
+            ),
+            "memory_peak_mib": max(sample["memory_peak_mib"] for sample in samples),
+            "sample_count": total_samples,
+        }
+    return result
 
 def aggregate_repeats(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Aggregate multiple repeat runs for a single scenario.
@@ -197,6 +254,7 @@ def aggregate_repeats(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "receiving_avg_ms": _mean(runs, "receiving_avg_ms", 3),
         "sending_avg_ms": _mean(runs, "sending_avg_ms", 3),
         "repeats": n,
+        "resource_usage": _aggregate_resource_usage(runs),
     }
 
 
@@ -254,16 +312,13 @@ def load_results_directory(results_dir: str) -> Dict[str, Any]:
 
 def load_apply_times_from_dict(data: Dict[str, Any]) -> Dict[str, Dict[str, Dict[str, Any]]]:
     """
-    Validate CLI apply timings and attach per-phase means.
+    Validate CLI apply timings and attach per-phase means and process resources.
 
-    Expected shape (one timing list per repeat):
-      {"bfw": {"500": {"rule_add_seconds": [..], "enable_seconds": [..],
-                       "total_seconds": [..]}}, "ufw": {...}}
+    Expected shape (one sample per repeat) includes wall-clock, CPU-second, and
+    peak-RSS KiB lists for rule addition and firewall enable.
 
-    Returns {engine: {cardinality: {"rule_add_seconds": [...], ...,
-             "rule_add_mean_s": float, "enable_mean_s": float,
-             "total_mean_s": float, "repeats": int}}}.
-    Malformed entries raise ValueError (fail-closed).
+    Returns the validated samples, wall/CPU means, peak RSS MiB, and repeat
+    count for each engine/cardinality pair. Malformed entries raise ValueError.
     """
     if not isinstance(data, dict):
         raise ValueError("Invalid apply times file: root must be a JSON object")
@@ -283,20 +338,31 @@ def load_apply_times_from_dict(data: Dict[str, Any]) -> Dict[str, Dict[str, Dict
                 raise ValueError(f"Invalid apply times for {engine}/{card_text}: expected object of lists")
 
             entry: Dict[str, Any] = {}
-            for phase in ("rule_add_seconds", "enable_seconds", "total_seconds"):
-                samples = timing.get(phase)
+            timing_fields = (
+                "rule_add_seconds",
+                "enable_seconds",
+                "total_seconds",
+                "rule_add_cpu_seconds",
+                "enable_cpu_seconds",
+                "rule_add_peak_rss_kib",
+                "enable_peak_rss_kib",
+            )
+            for field in timing_fields:
+                samples = timing.get(field)
                 if not isinstance(samples, list) or not samples:
                     raise ValueError(
-                        f"Invalid apply times for {engine}/{card_text}: missing or empty '{phase}' list"
+                        f"Invalid apply times for {engine}/{card_text}: missing or empty '{field}' list"
                     )
                 try:
-                    entry[phase] = [float(sample) for sample in samples]
+                    entry[field] = [float(sample) for sample in samples]
                 except (TypeError, ValueError) as exc:
                     raise ValueError(
-                        f"Invalid apply times for {engine}/{card_text}: non-numeric '{phase}' sample"
+                        f"Invalid apply times for {engine}/{card_text}: non-numeric '{field}' sample"
                     ) from exc
+                if any(not math.isfinite(sample) or sample < 0 for sample in entry[field]):
+                    raise ValueError(f"Invalid apply times for {engine}/{card_text}: invalid '{field}' sample")
 
-            sample_counts = {len(entry[phase]) for phase in ("rule_add_seconds", "enable_seconds", "total_seconds")}
+            sample_counts = {len(entry[field]) for field in timing_fields}
             if len(sample_counts) != 1:
                 raise ValueError(f"Invalid apply times for {engine}/{card_text}: phase sample counts differ")
 
@@ -304,6 +370,10 @@ def load_apply_times_from_dict(data: Dict[str, Any]) -> Dict[str, Dict[str, Dict
             entry["rule_add_mean_s"] = round(sum(entry["rule_add_seconds"]) / repeats, 4)
             entry["enable_mean_s"] = round(sum(entry["enable_seconds"]) / repeats, 4)
             entry["total_mean_s"] = round(sum(entry["total_seconds"]) / repeats, 4)
+            entry["rule_add_cpu_mean_s"] = round(sum(entry["rule_add_cpu_seconds"]) / repeats, 6)
+            entry["enable_cpu_mean_s"] = round(sum(entry["enable_cpu_seconds"]) / repeats, 6)
+            entry["rule_add_peak_rss_mib"] = round(max(entry["rule_add_peak_rss_kib"]) / 1024, 2)
+            entry["enable_peak_rss_mib"] = round(max(entry["enable_peak_rss_kib"]) / 1024, 2)
             entry["repeats"] = repeats
             engine_entry[str(int(card_text))] = entry
 
@@ -523,6 +593,10 @@ def compute_timing_comparisons(
             row[f"{engine}_enable_s"] = entry["enable_mean_s"] if entry else None
             row[f"{engine}_total_s"] = entry["total_mean_s"] if entry else None
             row[f"{engine}_repeats"] = entry["repeats"] if entry else 0
+            row[f"{engine}_rule_add_cpu_s"] = entry["rule_add_cpu_mean_s"] if entry else None
+            row[f"{engine}_enable_cpu_s"] = entry["enable_cpu_mean_s"] if entry else None
+            row[f"{engine}_rule_add_peak_rss_mib"] = entry["rule_add_peak_rss_mib"] if entry else None
+            row[f"{engine}_enable_peak_rss_mib"] = entry["enable_peak_rss_mib"] if entry else None
 
         row["rule_add_speedup"] = (
             _ratio(ufw_entry["rule_add_mean_s"], bfw_entry["rule_add_mean_s"], 2) if bfw_entry and ufw_entry else None
@@ -638,7 +712,44 @@ def render_markdown(
     md.append(f"| Warmup Duration | {metadata.get('warmup_duration', '2s')} |")
     md.append(f"| Repeats | {metadata.get('repeats', '3')} |")
     md.append(f"| Rule Scales | {metadata.get('cardinalities', '10 100 500 1000')} |")
+    md.append(f"| Resource Sample Interval | {metadata.get('resource_sample_interval_seconds', 'N/A')} s |")
     md.append(f"| Isolation | {metadata.get('isolation', 'Not recorded')} |\n")
+    bfw_size = metadata.get("bfw_binary_size_bytes")
+    bfw_size_text = (
+        f"{bfw_size} bytes ({bfw_size / (1024 * 1024):.2f} MiB)"
+        if isinstance(bfw_size, int) and not isinstance(bfw_size, bool) and bfw_size >= 0
+        else "N/A"
+    )
+    ufw_launcher_size = metadata.get("ufw_launcher_size_bytes")
+    ufw_launcher_size_text = (
+        f"{ufw_launcher_size} bytes ({ufw_launcher_size / (1024 * 1024):.2f} MiB)"
+        if isinstance(ufw_launcher_size, int)
+        and not isinstance(ufw_launcher_size, bool)
+        and ufw_launcher_size >= 0
+        else "N/A"
+    )
+    ufw_package_size = metadata.get("ufw_package_installed_kib")
+    ufw_package_size_text = (
+        f"{ufw_package_size} KiB"
+        if isinstance(ufw_package_size, int)
+        and not isinstance(ufw_package_size, bool)
+        and ufw_package_size >= 0
+        else "N/A"
+    )
+    launcher_path = metadata.get("ufw_launcher_path", "unknown path")
+    md.append("## Executable & Package Footprint\n")
+    md.append("| Component | Measured size | Measurement scope |")
+    md.append("|---|---|---|")
+    md.append(f"| `bfw` executable | {bfw_size_text} | File at `/usr/local/bin/bfw` |")
+    md.append(
+        f"| UFW launcher | {ufw_launcher_size_text} | Launcher file at `{launcher_path}`; "
+        "does not include Python modules or shared dependencies |"
+    )
+    md.append(
+        f"| Installed `ufw` package | {ufw_package_size_text} | dpkg `Installed-Size` for `ufw`; "
+        "excludes dependencies |"
+    )
+    md.append("")
 
     # Controls
     md.append("## Security Controls Proof\n")
@@ -678,6 +789,25 @@ def render_markdown(
             f"{s['latency_p95_ms']:.2f} | {s['latency_p99_ms']:.2f} | {s['error_rate'] * 100:.2f}% | "
             f"{_mib(s.get('data_received_bytes'))} | {_mib(s.get('data_sent_bytes'))} | {s['vus_max']:.0f} |"
         )
+    md.append("")
+    md.append("## Container Resource Usage\n")
+    md.append(
+        f"Docker CPU and memory samples are collected every "
+        f"{metadata.get('resource_sample_interval_seconds', 'N/A')} s during each measured k6 run. "
+        "Values are report-only; they do not gate CI."
+    )
+    md.append("| Profile | Scenario | Rules | Container | CPU Avg (%) | CPU Peak (%) | Memory Avg (MiB) | Memory Peak (MiB) | Samples |")
+    md.append("|---|---|---|---|---|---|---|---|---|")
+    for scenario_name in sorted(scenarios, key=_scenario_sort_key):
+        engine, card_text, profile = split_scenario_key(scenario_name)
+        label = {"baseline": "Baseline (No FW)", "bfw": "**bfw**", "ufw": "ufw"}.get(engine, engine)
+        for container, container_label in (("server", "Server / defender"), ("attacker", "Attacker / k6")):
+            usage = scenarios[scenario_name]["resource_usage"][container]
+            md.append(
+                f"| {profile} | {label} | {card_text} | {container_label} | {usage['cpu_avg_pct']:.2f} | "
+                f"{usage['cpu_peak_pct']:.2f} | {usage['memory_avg_mib']:.2f} | "
+                f"{usage['memory_peak_mib']:.2f} | {usage['sample_count']} |"
+            )
     md.append("")
 
     # Comparative ratios per profile (informational)
@@ -719,6 +849,28 @@ def render_markdown(
         md.append(
             f"| {row['cardinality']} | {b_add} | {b_en} | {b_tot} | {u_add} | {u_en} | {u_tot} | "
             f"**{add_sp}** | **{en_sp}** | **{tot_sp}** |"
+        )
+    md.append("")
+    md.append("## CLI Process Resource Usage\n")
+    md.append(
+        "CPU seconds are the mean per invocation. Peak RSS is the maximum child-process RSS across repeats; "
+        "these values are distinct from container-level k6 samples."
+    )
+    md.append(
+        "| Rules | `bfw` Add CPU (s) | `bfw` Add Peak RSS (MiB) | `bfw` Enable CPU (s) | `bfw` Enable Peak RSS (MiB) | "
+        "`ufw` Add CPU (s) | `ufw` Add Peak RSS (MiB) | `ufw` Enable CPU (s) | `ufw` Enable Peak RSS (MiB) |"
+    )
+    md.append("|---|---|---|---|---|---|---|---|---|")
+    for row in timing_rows:
+        md.append(
+            f"| {row['cardinality']} | {_fmt(row.get('bfw_rule_add_cpu_s'), '.6f')} | "
+            f"{_fmt(row.get('bfw_rule_add_peak_rss_mib'), '.2f')} | "
+            f"{_fmt(row.get('bfw_enable_cpu_s'), '.6f')} | "
+            f"{_fmt(row.get('bfw_enable_peak_rss_mib'), '.2f')} | "
+            f"{_fmt(row.get('ufw_rule_add_cpu_s'), '.6f')} | "
+            f"{_fmt(row.get('ufw_rule_add_peak_rss_mib'), '.2f')} | "
+            f"{_fmt(row.get('ufw_enable_cpu_s'), '.6f')} | "
+            f"{_fmt(row.get('ufw_enable_peak_rss_mib'), '.2f')} |"
         )
     md.append("")
 
