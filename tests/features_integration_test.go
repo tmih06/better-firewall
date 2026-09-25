@@ -8,7 +8,6 @@ package tests
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -264,8 +263,11 @@ func TestStatusCheckDiffPanicRestore(t *testing.T) {
 		t.Fatalf("expected matching diff, got: %q", out)
 	}
 
-	// Manually inject a drift rule into kernel table
-	_ = exec.Command("nft", "add", "rule", "inet", "bfirewall", "bfw-user-input", "counter").Run()
+	nftOut, err := env.nft("add", "rule", "inet", "bfirewall", "bfw-user-input",
+		"tcp", "dport", "9999", "accept")
+	if err != nil {
+		t.Fatalf("failed to inject kernel drift: %v\n%s", err, nftOut)
+	}
 	so, _ := env.runErr("diff")
 	if !strings.Contains(so, "--- stored") || !strings.Contains(so, "+++ kernel") {
 		t.Fatalf("expected diff output after manual drift injection, got:\n%s", so)
@@ -285,7 +287,7 @@ func TestStatusCheckDiffPanicRestore(t *testing.T) {
 	}
 
 	// Kernel base chains must all be policy drop
-	nftOut, _ := env.nft("list", "table", "inet", "bfirewall")
+	nftOut, _ = env.nft("list", "table", "inet", "bfirewall")
 	if !strings.Contains(nftOut, "policy drop") {
 		t.Fatalf("panic did not install drop policies:\n%s", nftOut)
 	}
