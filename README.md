@@ -1,10 +1,10 @@
-# bfirewall
+# better-firewall
 
-A ufw-compatible firewall frontend for **nftables**, written in Go. The `bfw`
-binary speaks the complete ufw command grammar — same syntax, same output
-conventions, same exit codes — and can be symlinked/renamed to `ufw` as a
-drop-in replacement. On top of the ufw grammar it adds extensions for named
-IP sets, NAT, emergency panic mode, drift detection, and expiring rules.
+better-firewall is a ufw-compatible firewall frontend for **nftables**, written
+in Go. Its `bfw` binary speaks the complete ufw command grammar — same syntax,
+same output conventions, same exit codes — and can be symlinked/renamed to
+`ufw` as a drop-in replacement. It adds extensions for named IP sets, NAT,
+emergency panic mode, drift detection, and expiring rules.
 
 ## Features
 
@@ -103,12 +103,12 @@ bfw delete RULE|NUM
 bfw insert NUM RULE
 bfw prepend RULE
 bfw route RULE                 # forwarded/routed traffic
-bfw rule enable|disable NUM    # bfirewall extension: toggle without deleting
+bfw rule enable|disable NUM    # better-firewall extension: toggle without deleting
 ```
 
 RULE supports the full ufw shape — `in|out` on interfaces, `from`/`to`
 addresses and CIDRs, `port`, `proto`, `comment`, service names — plus
-bfirewall extensions:
+better-firewall extensions:
 
 ```sh
 bfw allow from set trusted to any port 22 proto tcp   # named set endpoint
