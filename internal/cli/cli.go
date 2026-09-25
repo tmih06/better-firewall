@@ -137,7 +137,8 @@ Commands:
   check                           sanity-check ruleset (better-firewall)
   diff                            diff stored vs live ruleset (better-firewall)
   panic                           drop all traffic (better-firewall)
-  export|import|import-ufw        state migration (better-firewall)
+  export|import|import-ufw        state import/export
+  migrate OPTIONS                 import a system firewall; optionally take over
   sweep                           remove expired rules (better-firewall)
   logs                            follow firewall logs (better-firewall)
   version                         show version

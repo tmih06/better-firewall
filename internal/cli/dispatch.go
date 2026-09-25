@@ -37,6 +37,8 @@ func (e *Env) dispatch(args []string) int {
 		return e.cmdImport(args[1:])
 	case "import-ufw":
 		return e.cmdImportUFW(args[1:])
+	case "migrate":
+		return e.cmdMigrate(args[1:])
 	case "sweep":
 		return e.cmdSweep(args[1:])
 	case "logs":

@@ -607,6 +607,9 @@ func ruleSuperset(a, b *rule.Rule) bool {
 	if b.Proto != "" && b.Proto != "any" && b.Proto != a.Proto {
 		return false
 	}
+	if b.ICMPType != "" && b.ICMPType != a.ICMPType {
+		return false
+	}
 	if b.Dapp != "" && b.Dapp != a.Dapp {
 		return false
 	}
@@ -834,33 +837,10 @@ func mapNftValue(t string) string {
 // mapIcmpType maps a symbolic icmp/icmpv6 type name to its number, keyed on
 // the preceding proto token ("icmp" or "icmpv6").
 func mapIcmpType(proto, name string) string {
-	if proto == "icmpv6" {
-		if n, ok := icmpv6Types[name]; ok {
-			return n
-		}
-		return name
-	}
-	if n, ok := icmpv4Types[name]; ok {
+	if n, err := rule.ICMPTypeNumber(proto, name); err == nil {
 		return n
 	}
 	return name
-}
-
-var icmpv4Types = map[string]string{
-	"echo-reply": "0", "destination-unreachable": "3", "echo-request": "8",
-	"time-exceeded": "11", "parameter-problem": "12",
-}
-
-var icmpv6Types = map[string]string{
-	"destination-unreachable": "1", "packet-too-big": "2", "time-exceeded": "3",
-	"parameter-problem": "4", "echo-request": "128", "echo-reply": "129",
-	"router-solicitation": "133", "router-advertisement": "134",
-	"neighbour-solicitation": "135", "neighbour-advertisement": "136",
-	"nd-router-solicit": "133", "nd-router-advert": "134",
-	"nd-neighbor-solicit": "135", "nd-neighbor-advert": "136",
-	"ind-neighbor-solicit": "141", "ind-neighbor-advert": "142",
-	"mld-listener-query": "130", "mld-listener-report": "131",
-	"mld-listener-done": "132", "mld2-listener-report": "143",
 }
 
 // nftSymToNum maps symbolic ct-state tokens to the numeric form `nft -nn`

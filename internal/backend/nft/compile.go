@@ -703,6 +703,16 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 // ruleMatch builds the match expression list (everything before the
 // counter/verdict) for one rule+proto variant.
 func (c *compiled) ruleMatch(r *rule.Rule, proto string, v6 bool) ([]expr.Any, error) {
+	if proto == "icmp" && v6 {
+		return nil, fmt.Errorf("rule %s: proto icmp is IPv4-only", r.ID)
+	}
+	if proto == "icmpv6" && !v6 {
+		return nil, fmt.Errorf("rule %s: proto icmpv6 is IPv6-only", r.ID)
+	}
+	if (proto == "icmp" || proto == "icmpv6") &&
+		(len(r.Src.Ports) != 0 || len(r.Dst.Ports) != 0) {
+		return nil, fmt.Errorf("rule %s: ICMP rules cannot include ports", r.ID)
+	}
 	ex := nfproto(v6)
 	if r.IfaceIn != "" {
 		ex = append(ex, iif(r.IfaceIn)...)
@@ -716,6 +726,17 @@ func (c *compiled) ruleMatch(r *rule.Rule, proto string, v6 bool) ([]expr.Any, e
 			return nil, fmt.Errorf("rule %s: %w", r.ID, err)
 		}
 		ex = append(ex, l4proto(num)...)
+	}
+	if r.ICMPType != "" {
+		if proto != "icmp" && proto != "icmpv6" {
+			return nil, fmt.Errorf("rule %s: ICMP type requires proto icmp or icmpv6", r.ID)
+		}
+		typ, err := rule.ICMPTypeNumber(proto, r.ICMPType)
+		if err != nil {
+			return nil, fmt.Errorf("rule %s: %w", r.ID, err)
+		}
+		n, _ := strconv.ParseUint(typ, 10, 8)
+		ex = append(ex, icmpType(byte(n))...)
 	}
 	ex = append(ex, c.endpointAddr(&r.Src, "saddr", v6)...)
 	ex = append(ex, c.endpointAddr(&r.Dst, "daddr", v6)...)

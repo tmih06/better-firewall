@@ -237,6 +237,7 @@ func ImportUFW(dir string, etcFile string, st *store.State) (*store.State, int, 
 	if err != nil {
 		return nil, 0, warnings, err
 	}
+	warnings = append(warnings, "UFW import reads ### tuple ### records only; raw rules in user.rules/user6.rules and before/after*.rules are not imported")
 	if v4rules == nil && v6rules == nil {
 		return nil, 0, warnings, fmt.Errorf("no ufw rules found in %s", dir)
 	}

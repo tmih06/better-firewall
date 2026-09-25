@@ -59,6 +59,11 @@ func TestRuleSuperset(t *testing.T) {
 	tcp22 := rule.PortRange{Lo: 22, Hi: 22, Proto: "tcp"}
 	tcpAll := rule.PortRange{Lo: 1, Hi: 65535, Proto: "tcp"}
 
+	icmpv6 := func(typ string) *rule.Rule {
+		r := mkExtRule("allow", "in", "icmpv6", "any", "any")
+		r.ICMPType = typ
+		return r
+	}
 	cases := []struct {
 		name string
 		a, b *rule.Rule
@@ -141,6 +146,24 @@ func TestRuleSuperset(t *testing.T) {
 			mkExtRule("allow", "in", "tcp", "any", "any", tcp22),
 			mkExtRule("deny", "in", "any", "any", "any", rule.PortRange{Lo: 22, Hi: 22, Proto: "any"}),
 			true,
+		},
+		{
+			"untyped ICMP rule covers a typed rule",
+			icmpv6("135"),
+			mkExtRule("deny", "in", "icmpv6", "any", "any"),
+			true,
+		},
+		{
+			"different ICMP type does not shadow",
+			icmpv6("135"),
+			icmpv6("136"),
+			false,
+		},
+		{
+			"typed ICMP rule does not cover untyped rule",
+			icmpv6(""),
+			icmpv6("135"),
+			false,
 		},
 	}
 	for _, c := range cases {

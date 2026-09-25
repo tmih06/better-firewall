@@ -1,10 +1,10 @@
 # better-firewall
 
-better-firewall is a ufw-compatible firewall frontend for **nftables**, written
-in Go. Its `bfw` binary speaks the complete ufw command grammar — same syntax,
-same output conventions, same exit codes — and can be symlinked/renamed to
-`ufw` as a drop-in replacement. It adds extensions for named IP sets, NAT,
-emergency panic mode, drift detection, and expiring rules.
+better-firewall is a Linux firewall frontend for **nftables**, written in Go.
+Its `bfw` CLI implements the ufw 0.36.2 command grammar and can replace UFW
+when invoked as `ufw`. It imports supported rules from UFW, firewalld,
+iptables-persistent, and native nftables configurations; it does not emulate
+those managers' command-line interfaces.
 
 ## Features
 
@@ -29,8 +29,9 @@ emergency panic mode, drift detection, and expiring rules.
 - **Panic mode** — one command drops all traffic; `panic off` restores.
 - **App profiles** — INI profiles in `/etc/better-firewall/applications.d`,
   shipped defaults for OpenSSH, Nginx, mail, and misc services.
-- **Migration** — `export`/`import` JSON state; `import-ufw` migrates a live
-  ufw installation (`user.rules`, `user6.rules`, policies, `ufw.conf`).
+- **Migration** — `migrate` previews/imports supported UFW, firewalld,
+  iptables-persistent, and native nftables rules. Optional `--takeover` stops
+  and disables the source manager before enabling bfw.
 - **Fragments & hooks** — ufw-style `before*.rules`/`after*.rules` nft
   fragments and `before.init`/`after.init` hooks.
 - **systemd units** — boot-time load plus a sweep timer for expired rules.
@@ -38,9 +39,11 @@ emergency panic mode, drift detection, and expiring rules.
 ## Requirements
 
 - Linux with nftables (`nf_tables` kernel support)
-- Go 1.22+ (build only)
-- `nft` binary recommended for inspecting the live ruleset
-- Root privileges for all mutating commands and for `status`/`check`
+- systemd for packaged boot persistence and `migrate --takeover`
+- Go 1.22+ to build; the compiled `bfw` binary has no Python dependency
+- `nft` is recommended for inspection and required for native nftables import
+- Release installer: `curl` or `wget`, `tar`, and `sha256sum`
+- Root privileges for mutating commands and for `status`/`check`
 
 ## Build & Install
 
@@ -48,6 +51,17 @@ emergency panic mode, drift detection, and expiring rules.
 make build          # produces ./bfw
 sudo make install   # installs to /usr/sbin/bfw + systemd units
 sudo make uninstall
+```
+
+Version-tagged linux/amd64 and linux/arm64 releases include a
+checksum-verified systemd-oriented installer. It installs the binary and
+units but does not stop or replace an existing firewall manager:
+
+```sh
+curl -fsSL \
+  https://github.com/tmih06/bfirewall/releases/latest/download/install.sh \
+  -o install-bfw.sh
+sudo sh install-bfw.sh
 ```
 
 Or with Go directly:
@@ -113,7 +127,11 @@ better-firewall extensions:
 ```sh
 bfw allow from set trusted to any port 22 proto tcp   # named set endpoint
 bfw allow 8080/tcp expires 2h                         # auto-expiring (Ns|Nm|Nh|Nd)
+bfw allow to any proto icmpv6 type 135                # exact ICMPv6 type
 ```
+
+The bfw `type` extension applies only to `proto icmp` and `proto icmpv6`; TYPE
+accepts a supported symbolic name or a numeric value from 0 through 255.
 
 ### Policy & logging
 
@@ -182,15 +200,60 @@ bfw logs       # follow firewall log lines (journalctl -kf -g BFW; falls back to
 ```sh
 bfw export [FILE]              # JSON state → FILE or stdout
 bfw import [--replace] FILE    # merge (or replace) state; "-" reads stdin
-bfw import-ufw [--dir DIR]     # migrate ufw user.rules/user6.rules + policies + ufw.conf
+bfw import-ufw [--dir DIR]     # import UFW's saved rule files
+bfw migrate [OPTIONS]          # import a system firewall; optional --takeover
 ```
+
+`migrate` accepts `--from auto|ufw|firewalld|iptables|nftables`. `auto` requires
+exactly one recognized active manager; otherwise choose the source explicitly.
+`--dir DIR` selects UFW, firewalld, or iptables-persistent configuration files.
+Native nftables import reads the live ruleset through `nft -j list ruleset`.
+Firewalld imports permanent zone/service/ipset XML: `/etc/firewalld` overrides
+package definitions in `/usr/lib/firewalld`; runtime-only changes are not
+imported. The stock `allow-host-ipv6` policy shape and one family-scoped
+`icmp-type` rich-rule match are supported; zone-level ICMP blocks and other
+policy semantics abort import.
+UFW import uses tuple-marked `user.rules`/`user6.rules` and policy settings;
+raw iptables commands and `before*.rules`/`after*.rules` hooks are not
+translated and are reported as a migration warning.
+iptables-persistent reads `rules.v4`/`rules.v6` filter-table rules; non-filter
+tables with rules or non-ACCEPT policies on those tables, reachable
+user-chain jumps, unsupported match modules, negations, ICMP code qualifiers,
+and targets bfw cannot express abort import.
+Native nftables import supports simple filter base chains and exact matches;
+NAT, sets/maps, jumps, negations, ICMP codes, and other unsupported
+expressions abort import rather than being broadened or dropped.
+
+Preview first, then migrate and hand off explicitly:
+
+```sh
+sudo bfw --dry-run migrate --from auto --replace
+sudo bfw migrate --from auto --replace --takeover
+```
+
+Without `--replace`, imported rules merge into the existing bfw state.
+`--takeover` prompts before stopping/disabling the source manager and enabling
+bfw; `--force` skips that prompt. If applying bfw fails, the previous bfw
+state is restored and the command attempts to re-enable the source manager.
+Source configuration is not deleted. Stopping a manager does not guarantee
+that every foreign or manually-installed kernel rule is removed; inspect the
+live ruleset before and after handoff.
+Identifiable unsupported enforcement semantics abort import. Unparsed UFW tuple
+records, raw UFW rules/hooks, and non-enforcement metadata/accounting produce
+warnings; inspect them and dry-run output before takeover.
+This migrates supported rules; it does not emulate firewalld, iptables, or
+nftables command-line interfaces.
+
+The compiled `bfw` binary does not need Python. Reading saved UFW files also
+does not run Python; `--takeover` invokes the installed `ufw` command to stop
+UFW.
 
 ### Global flags
 
 | Flag | Effect |
 |---|---|
-| `--dry-run` | Render/validate without touching kernel or disk |
-| `--force`, `-f` | Skip interactive prompts (e.g. `reset`, `panic` over ssh) |
+| `--dry-run` | Preview rules; do not apply them to the kernel |
+| `--force`, `-f` | Skip interactive prompts, including `migrate --takeover` |
 | `--json` | JSON output where supported |
 | `--version` | Print version |
 
@@ -205,7 +268,7 @@ internal/backend   backend interface (atomic apply, read-back, fragments)
 internal/backend/nft   nftables compiler/renderer via google/nftables netlink
 internal/appprof   INI application-profile parsing/expansion
 internal/sysstate  sysctl writes, modprobe, ssh detection, mutating flock
-internal/impexp    export/import + ufw migration
+internal/impexp    state export/import and firewall migration
 internal/defaults  embedded default profiles/sysctl, lazily materialized
 internal/report    `show` reports
 internal/services  service-name → port resolution

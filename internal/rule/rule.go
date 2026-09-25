@@ -81,7 +81,8 @@ type Rule struct {
 	RouteDir  string   `json:"route_dir,omitempty"` // in|out for routed rules (ufw keeps direction alongside forward)
 	IfaceIn   string   `json:"iface_in,omitempty"`
 	IfaceOut  string   `json:"iface_out,omitempty"`
-	Proto     string   `json:"proto"` // tcp|udp|ah|esp|gre|vrrp|ipv6|igmp|icmp|icmpv6|any
+	Proto     string   `json:"proto"`               // tcp|udp|ah|esp|gre|vrrp|ipv6|igmp|icmp|icmpv6|any
+	ICMPType  string   `json:"icmp_type,omitempty"` // decimal ICMP type; empty means any type
 	Src       AddrSpec `json:"src"`
 	Dst       AddrSpec `json:"dst"`
 	Dapp      string   `json:"dapp,omitempty"`
@@ -129,8 +130,8 @@ func (r *Rule) TupleKey() string {
 	if r.Forward() && r.RouteDir != "" {
 		dir = r.RouteDir
 	}
-	fmt.Fprintf(&b, "dir=%s fwd=%v proto=%s ifin=%s ifout=%s v6=%v\n",
-		dir, r.Forward(), r.Proto, r.IfaceIn, r.IfaceOut, r.v6)
+	fmt.Fprintf(&b, "dir=%s fwd=%v proto=%s icmp_type=%s ifin=%s ifout=%s v6=%v\n",
+		dir, r.Forward(), r.Proto, r.ICMPType, r.IfaceIn, r.IfaceOut, r.v6)
 	fmt.Fprintf(&b, "src=%s|%s dapp=%s sapp=%s\n", addrKey(r.Src), addrKey(r.Dst), r.Dapp, r.Sapp)
 	return b.String()
 }

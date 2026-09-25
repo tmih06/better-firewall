@@ -334,14 +334,14 @@ func parseRuleArgs(args []string) (*ParsedRuleOp, error) {
 		// Full form with PF-style key/value clauses.
 		if countTok(argv, "to") > 1 || countTok(argv, "from") > 1 ||
 			countTok(argv, "proto") > 1 || countTok(argv, "port") > 2 ||
-			countTok(argv, "in") > 1 || countTok(argv, "out") > 1 ||
-			countTok(argv, "app") > 2 ||
+			countTok(argv, "type") > 1 || countTok(argv, "in") > 1 ||
+			countTok(argv, "out") > 1 || countTok(argv, "app") > 2 ||
 			(countTok(argv, "app") > 0 && countTok(argv, "proto") > 0) {
 			return nil, errors.New("Improper rule syntax")
 		}
 
 		keys := map[string]bool{
-			"proto": true, "from": true, "to": true, "port": true,
+			"proto": true, "type": true, "from": true, "to": true, "port": true,
 			"app": true, "in": true, "out": true,
 		}
 		loc := ""
@@ -358,6 +358,16 @@ func parseRuleArgs(args []string) (*ParsedRuleOp, error) {
 				if err := setProto(r, argv[i+1]); err != nil {
 					return nil, err
 				}
+			case "type":
+				protoIndex := indexTok(argv, "proto")
+				if i+1 >= nargs || protoIndex < 0 || protoIndex >= i {
+					return nil, errors.New("Invalid 'type' clause")
+				}
+				typ, err := rule.ICMPTypeNumber(r.Proto, argv[i+1])
+				if err != nil {
+					return nil, fmt.Errorf("Invalid ICMP type '%s'", argv[i+1])
+				}
+				r.ICMPType = typ
 			case "in", "out":
 				if i+1 >= nargs {
 					return nil, fmt.Errorf("Invalid '%s' clause", arg)
@@ -467,8 +477,15 @@ func parseRuleArgs(args []string) (*ParsedRuleOp, error) {
 			return nil, fmt.Errorf("Protocol mismatch with specified protocol %s", r.Proto)
 		}
 	}
+	if r.Proto == "icmpv6" {
+		if ipType == "both" {
+			ipType = "v6"
+		} else if ipType == "v4" {
+			return nil, errors.New("Invalid IPv4 address with protocol 'icmpv6'")
+		}
+	}
 
-	// ipv6/igmp are IPv4-only protocols.
+	// ipv6, igmp and icmp are IPv4-only; icmpv6 is IPv6-only.
 	if services.IPv4OnlyProtocol(r.Proto) && ipType == "both" {
 		ipType = "v4"
 	}

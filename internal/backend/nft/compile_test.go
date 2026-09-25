@@ -242,6 +242,43 @@ func TestCompileIPv6Disabled(t *testing.T) {
 	}
 }
 
+func TestCompileICMPType(t *testing.T) {
+	st := store.Defaults()
+	st.IPv6 = true
+	st.Rules6 = []rule.Rule{{
+		ID: "nd", Action: rule.ActionAllow, Direction: rule.DirIn,
+		Proto: "icmpv6", ICMPType: "135",
+		Src: rule.AddrSpec{IP: "any"}, Dst: rule.AddrSpec{IP: "any"},
+	}}
+	text, err := RenderText(st, nil)
+	if err != nil {
+		t.Fatalf("RenderText: %v", err)
+	}
+	if !strings.Contains(text, "icmpv6 type neighbour-solicitation counter accept") {
+		t.Fatalf("rendered ruleset omitted exact ICMPv6 type match:\n%s", text)
+	}
+
+	st.Rules4 = []rule.Rule{{
+		ID: "bad-family", Action: rule.ActionAllow, Direction: rule.DirIn,
+		Proto: "icmpv6", ICMPType: "135",
+		Src: rule.AddrSpec{IP: "any"}, Dst: rule.AddrSpec{IP: "any"},
+	}}
+	if _, err := RenderText(st, nil); err == nil {
+		t.Fatal("RenderText accepted an IPv6-only ICMP type in Rules4")
+	}
+
+	st.Rules4 = nil
+	st.Rules6[0].Proto = "tcp"
+	if _, err := RenderText(st, nil); err == nil {
+		t.Fatal("RenderText accepted an ICMP type with TCP")
+	}
+	st.Rules6[0].Proto = "icmpv6"
+	st.Rules6[0].Dst.Ports = []rule.PortRange{{Lo: 80, Hi: 80, Proto: "tcp"}}
+	if _, err := RenderText(st, nil); err == nil {
+		t.Fatal("RenderText accepted ports on an ICMP rule")
+	}
+}
+
 func TestCompileLoggingOff(t *testing.T) {
 	st := store.Defaults()
 	st.Logging = "off"

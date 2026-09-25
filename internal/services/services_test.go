@@ -140,15 +140,15 @@ func TestFallbackTable(t *testing.T) {
 }
 
 func TestProtocolHelpers(t *testing.T) {
-	for _, p := range []string{"tcp", "udp", "ipv6", "esp", "ah", "igmp", "gre", "vrrp"} {
+	for _, p := range []string{"tcp", "udp", "ipv6", "esp", "ah", "igmp", "gre", "vrrp", "icmp", "icmpv6"} {
 		if !SupportedProtocol(p) {
 			t.Fatalf("SupportedProtocol(%s) = false", p)
 		}
 	}
-	if SupportedProtocol("icmp") || SupportedProtocol("bogus") {
+	if SupportedProtocol("bogus") {
 		t.Fatal("SupportedProtocol accepted unsupported protocol")
 	}
-	for _, p := range []string{"ipv6", "esp", "ah", "igmp", "gre", "vrrp"} {
+	for _, p := range []string{"ipv6", "esp", "ah", "igmp", "gre", "vrrp", "icmp", "icmpv6"} {
 		if !PortlessProtocol(p) {
 			t.Fatalf("PortlessProtocol(%s) = false", p)
 		}
@@ -156,10 +156,10 @@ func TestProtocolHelpers(t *testing.T) {
 	if PortlessProtocol("tcp") {
 		t.Fatal("PortlessProtocol(tcp) = true")
 	}
-	if !IPv4OnlyProtocol("ipv6") || !IPv4OnlyProtocol("igmp") {
-		t.Fatal("IPv4OnlyProtocol rejected ipv6/igmp")
+	if !IPv4OnlyProtocol("ipv6") || !IPv4OnlyProtocol("igmp") || !IPv4OnlyProtocol("icmp") {
+		t.Fatal("IPv4OnlyProtocol rejected ipv6/igmp/icmp")
 	}
-	if IPv4OnlyProtocol("esp") {
-		t.Fatal("IPv4OnlyProtocol(esp) = true")
+	if IPv4OnlyProtocol("esp") || IPv4OnlyProtocol("icmpv6") {
+		t.Fatal("IPv4OnlyProtocol accepted esp/icmpv6")
 	}
 }

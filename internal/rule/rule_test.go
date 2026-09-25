@@ -120,6 +120,7 @@ func TestTupleKeyDistinguishesMatchFields(t *testing.T) {
 		{"direction", func(r *Rule) { r.Direction = DirOut }},
 		{"routed", func(r *Rule) { r.Direction = DirRouted }},
 		{"proto", func(r *Rule) { r.Proto = "udp" }},
+		{"icmp type", func(r *Rule) { r.ICMPType = "135" }},
 		{"iface in", func(r *Rule) { r.IfaceIn = "eth1" }},
 		{"iface out", func(r *Rule) { r.IfaceOut = "eth0" }},
 		{"src ip", func(r *Rule) { r.Src.IP = "10.0.0.0/16" }},
@@ -467,5 +468,29 @@ func TestNewIDFormat(t *testing.T) {
 	}
 	if _, err := hex.DecodeString(id); err != nil {
 		t.Errorf("NewID %q is not lowercase hex: %v", id, err)
+	}
+}
+func TestICMPTypeNumber(t *testing.T) {
+	cases := []struct {
+		proto, token, want string
+	}{
+		{"icmp", "echo-request", "8"},
+		{"icmp", "008", "8"},
+		{"icmpv6", "neighbour-solicitation", "135"},
+		{"icmpv6", "neighbor-advertisement", "136"},
+		{"icmpv6", "mld2-listener-report", "143"},
+	}
+	for _, c := range cases {
+		got, err := ICMPTypeNumber(c.proto, c.token)
+		if err != nil || got != c.want {
+			t.Errorf("ICMPTypeNumber(%q, %q) = %q, %v; want %q", c.proto, c.token, got, err, c.want)
+		}
+	}
+	for _, c := range []struct{ proto, token string }{
+		{"tcp", "80"}, {"icmp", "256"}, {"icmpv6", "unknown"},
+	} {
+		if _, err := ICMPTypeNumber(c.proto, c.token); err == nil {
+			t.Errorf("ICMPTypeNumber(%q, %q) unexpectedly succeeded", c.proto, c.token)
+		}
 	}
 }

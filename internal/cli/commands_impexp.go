@@ -215,6 +215,9 @@ func impexpDescribeRule(r *rule.Rule, v6 bool) string {
 		s += " " + r.Log
 	}
 	s += fmt.Sprintf(" proto %s from %s to %s", r.Proto, impexpDescribeAddr(&r.Src), impexpDescribeAddr(&r.Dst))
+	if r.ICMPType != "" {
+		s += " type " + r.ICMPType
+	}
 	if r.Dapp != "" {
 		s += " dapp " + r.Dapp
 	}

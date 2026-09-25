@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.x'
+      - name: Verify release source
+        run: |
+          go test ./...
+          go vet ./...
+      - name: Smoke-test installer and package staging
+        run: make package
+      - name: Build portable Linux bundles
+        run: |
+          set -euo pipefail
+          version="$GITHUB_REF_NAME"
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            stage="$(mktemp -d)"
+            GOOS=linux GOARCH="$arch" CGO_ENABLED=0 go build -trimpath \
+              -ldflags "-s -w -X main.version=$version" \
+              -o "$stage/bfw" ./cmd/bfw
+            mkdir -p "$stage/packaging"
+            cp packaging/better-firewall.service \
+              packaging/better-firewall-sweep.service \
+              packaging/better-firewall-sweep.timer "$stage/packaging/"
+            tar -C "$stage" -czf "dist/better-firewall-linux-$arch.tar.gz" bfw packaging
+            rm -rf "$stage"
+          done
+          cp scripts/install.sh dist/install.sh
+          (cd dist && sha256sum better-firewall-linux-*.tar.gz > SHA256SUMS)
+      - name: Publish GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/better-firewall-linux-*.tar.gz dist/SHA256SUMS dist/install.sh --clobber
+          else
+            gh release create "$tag" dist/better-firewall-linux-*.tar.gz dist/SHA256SUMS dist/install.sh \
+              --verify-tag --generate-notes
+          fi

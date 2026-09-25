@@ -154,7 +154,7 @@ func Exists(name string) bool {
 // SupportedProtocol reports whether p is a protocol ufw accepts in rules.
 func SupportedProtocol(p string) bool {
 	switch p {
-	case "tcp", "udp", "ipv6", "esp", "ah", "igmp", "gre", "vrrp":
+	case "tcp", "udp", "ipv6", "esp", "ah", "igmp", "gre", "vrrp", "icmp", "icmpv6":
 		return true
 	}
 	return false
@@ -164,7 +164,7 @@ func SupportedProtocol(p string) bool {
 // portless_protocols).
 func PortlessProtocol(p string) bool {
 	switch p {
-	case "ipv6", "esp", "ah", "igmp", "gre", "vrrp":
+	case "ipv6", "esp", "ah", "igmp", "gre", "vrrp", "icmp", "icmpv6":
 		return true
 	}
 	return false
@@ -173,5 +173,5 @@ func PortlessProtocol(p string) bool {
 // IPv4OnlyProtocol reports whether p is restricted to IPv4 rules (ufw
 // ipv4_only_protocols).
 func IPv4OnlyProtocol(p string) bool {
-	return p == "ipv6" || p == "igmp"
+	return p == "ipv6" || p == "igmp" || p == "icmp"
 }

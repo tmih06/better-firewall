@@ -35,7 +35,7 @@ const (
 // ParseRuleArgs parses the full ufw rule grammar:
 //
 //	[rule] [route] [delete|insert NUM|prepend] ACTION [in|out [on IFACE]]
-//	  [log|log-all] [proto PROTO] [from ADDR [port PORT|app NAME]]
+//	  [log|log-all] [proto PROTO [type TYPE]] [from ADDR [port PORT|app NAME]]
 //	  [to ADDR [port PORT|app NAME]] [comment COMMENT] [expires DUR]
 //	ACTION PORT[/PROTO] | ACTION APPNAME | ACTION in|out PORT[/PROTO]|APPNAME
 //

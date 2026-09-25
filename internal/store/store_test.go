@@ -77,7 +77,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	st.Policies = Policies{Input: "reject", Output: "deny", Forward: "allow"}
 	st.Rules4 = []rule.Rule{{ID: "r4", Action: "allow", Direction: "in",
 		Proto: "tcp", Dst: rule.AddrSpec{IP: "any", Ports: []rule.PortRange{{Lo: 22, Hi: 22, Proto: "tcp"}}}}}
-	st.Rules6 = []rule.Rule{{ID: "r6", Action: "deny", Direction: "out", Proto: "any"}}
+	st.Rules6 = []rule.Rule{{ID: "r6", Action: "deny", Direction: "out", Proto: "icmpv6", ICMPType: "135"}}
 	st.Sets = []IPSet{{Name: "blocklist", Family: "inet", Elements: []string{"10.0.0.0/8", "192.168.0.0/16"}}}
 	st.NAT = []NATRule{{Kind: "masquerade", IfaceOut: "eth0", Src: "10.9.0.0/24"},
 		{Kind: "dnat", Proto: "tcp", Dst: "203.0.113.5", Dport: 8080, ToDest: "10.0.0.8:80"}}

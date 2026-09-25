@@ -117,4 +117,14 @@ func TestGetCommand(t *testing.T) {
 	if got := GetCommand(r6); got != "route allow in on eth0 out on eth1" {
 		t.Errorf("route = %q", got)
 	}
+	r7 := mkExtRule("allow", "in", "icmpv6", "any", "any")
+	r7.ICMPType = "135"
+	if got := GetCommand(r7); got != "allow to any proto icmpv6 type 135" {
+		t.Errorf("ICMP command = %q", got)
+	}
+	r7.SetV6(true)
+	to, _, _, _ := RuleLine(r7, false, false)
+	if !strings.Contains(to, "type 135") {
+		t.Errorf("status omitted ICMP type: To=%q", to)
+	}
 }

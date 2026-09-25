@@ -163,6 +163,27 @@ func TestProtoRestrictions(t *testing.T) {
 	parseErr(t, "allow", "to", "10.0.0.1", "proto", "esp", "port", "80")
 }
 
+func TestICMPType(t *testing.T) {
+	v6 := parse(t, "allow", "to", "any", "proto", "icmpv6", "type", "neighbor-solicitation")
+	if v6.Rule.Proto != "icmpv6" || v6.Rule.ICMPType != "135" || v6.IPType != "v6" {
+		t.Fatalf("IPv6 ICMP rule = %+v, family %q", v6.Rule, v6.IPType)
+	}
+	v4 := parse(t, "allow", "to", "any", "proto", "icmp", "type", "echo-request")
+	if v4.Rule.Proto != "icmp" || v4.Rule.ICMPType != "8" || v4.IPType != "v4" {
+		t.Fatalf("IPv4 ICMP rule = %+v, family %q", v4.Rule, v4.IPType)
+	}
+	for _, args := range [][]string{
+		{"allow", "to", "any", "type", "135", "proto", "icmpv6"},
+		{"allow", "to", "any", "proto", "tcp", "type", "80"},
+		{"allow", "to", "any", "proto", "icmpv6", "type", "256"},
+		{"allow", "to", "any", "proto", "icmpv6", "type", "135", "port", "80"},
+		{"allow", "to", "192.0.2.1", "proto", "icmpv6", "type", "135"},
+		{"allow", "to", "2001:db8::1", "proto", "icmp", "type", "8"},
+	} {
+		parseErr(t, args...)
+	}
+}
+
 func TestErrors(t *testing.T) {
 	// ufw accepts "insert 0" as append (position 0); only non-numeric or
 	// negative positions error. "insert -1" is rejected by the regex.

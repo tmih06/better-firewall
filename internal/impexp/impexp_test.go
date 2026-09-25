@@ -235,7 +235,7 @@ DEFAULT_FORWARD_POLICY="REJECT"
 		t.Errorf("dual rule IDs differ: %q vs %q", merged.Rules4[0].ID, merged.Rules6[0].ID)
 	}
 	// Malformed tuple skipped with a warning; ENABLED=yes warns too.
-	var sawMalformed, sawEnabled bool
+	var sawMalformed, sawEnabled, sawRawRules bool
 	for _, w := range warnings {
 		if strings.Contains(w, "bad action") {
 			sawMalformed = true
@@ -243,12 +243,18 @@ DEFAULT_FORWARD_POLICY="REJECT"
 		if strings.Contains(w, "ufw was enabled") {
 			sawEnabled = true
 		}
+		if strings.Contains(w, "raw rules in user.rules/user6.rules") {
+			sawRawRules = true
+		}
 	}
 	if !sawMalformed {
 		t.Errorf("missing malformed-tuple warning in %v", warnings)
 	}
 	if !sawEnabled {
 		t.Errorf("missing enabled warning in %v", warnings)
+	}
+	if !sawRawRules {
+		t.Errorf("missing unsupported raw-rules warning in %v", warnings)
 	}
 	// Policies + logging from ufw files.
 	if merged.Policies.Input != "deny" || merged.Policies.Output != "allow" || merged.Policies.Forward != "reject" {

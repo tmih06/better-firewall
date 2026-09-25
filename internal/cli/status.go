@@ -215,6 +215,9 @@ func GetCommand(r *rule.Rule) string {
 		if r.Proto != "" && r.Proto != "any" && r.Dapp == "" && r.Sapp == "" {
 			res += " proto " + r.Proto
 		}
+		if r.ICMPType != "" {
+			res += " type " + r.ICMPType
+		}
 		if r.Comment != "" {
 			res += " comment '" + r.Comment + "'"
 		}
@@ -321,6 +324,9 @@ func RuleLine(r *rule.Rule, verbose, numbered bool) (to, action, from, attribs s
 				loc[i] += " on " + r.IfaceOut
 			}
 		}
+	}
+	if r.ICMPType != "" {
+		loc[0] += " type " + r.ICMPType
 	}
 
 	var attrs []string

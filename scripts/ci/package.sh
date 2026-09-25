@@ -189,4 +189,50 @@ for p in "${host_paths[@]}"; do
 done
 
 
+# -------------------------------------------------- release installer smoke
+log "building local release fixture for the checksum-verified installer"
+RELEASE_ROOT="$STAGE/release-root"
+RELEASE_DIR="$RELEASE_ROOT/download/vtest"
+PAYLOAD="$STAGE/release-payload"
+INSTALL_STAGE="$STAGE/installer-stage"
+mkdir -p "$RELEASE_DIR" "$PAYLOAD/packaging"
+cp packaging/better-firewall.service \
+    packaging/better-firewall-sweep.service \
+    packaging/better-firewall-sweep.timer "$PAYLOAD/packaging/"
+for arch in amd64 arm64; do
+    GOOS=linux GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -o "$PAYLOAD/bfw" ./cmd/bfw
+    ASSET="better-firewall-linux-$arch.tar.gz"
+    tar -C "$PAYLOAD" -czf "$RELEASE_DIR/$ASSET" bfw packaging
+done
+(cd "$RELEASE_DIR" && sha256sum better-firewall-linux-*.tar.gz > SHA256SUMS)
+case "$(uname -m)" in
+    x86_64|amd64) ASSET=better-firewall-linux-amd64.tar.gz ;;
+    aarch64|arm64) ASSET=better-firewall-linux-arm64.tar.gz ;;
+    *) die "unsupported package smoke architecture: $(uname -m)" ;;
+esac
+log "smoke: scripts/install.sh from local checksum-verified bundle"
+BFW_RELEASE_BASE="file://$RELEASE_ROOT" BFW_VERSION=vtest DESTDIR="$INSTALL_STAGE" \
+    sh scripts/install.sh || die "release installer smoke failed"
+for p in \
+    "$INSTALL_STAGE/usr/sbin/bfw" \
+    "$INSTALL_STAGE/etc/systemd/system/better-firewall.service" \
+    "$INSTALL_STAGE/etc/systemd/system/better-firewall-sweep.service" \
+    "$INSTALL_STAGE/etc/systemd/system/better-firewall-sweep.timer" \
+    "$INSTALL_STAGE/etc/better-firewall/applications.d"; do
+    [ -e "$p" ] || die "release installer did not create $p"
+done
+BFW_PREFIX="$INSTALL_STAGE" "$INSTALL_STAGE/usr/sbin/bfw" --version >/dev/null \
+    || die "installed release binary did not run"
+BAD_STAGE="$STAGE/installer-bad-stage"
+printf '%064d  %s\n' 0 "$ASSET" > "$RELEASE_DIR/SHA256SUMS"
+if BFW_RELEASE_BASE="file://$RELEASE_ROOT" BFW_VERSION=vtest DESTDIR="$BAD_STAGE" \
+    sh scripts/install.sh > "$STAGE/install-bad.log" 2>&1; then
+    die "release installer accepted an incorrect checksum"
+fi
+grep -q "release checksum verification failed" "$STAGE/install-bad.log" \
+    || die "release installer failed for an unexpected reason with a bad checksum"
+[ ! -e "$BAD_STAGE/usr/sbin/bfw" ] || die "release installer wrote files before verifying the checksum"
+
+log "release installer smoke passed"
+
 log "packaging check passed — staged install, unit verify, uninstall (stage: $STAGE, removed on exit)"
