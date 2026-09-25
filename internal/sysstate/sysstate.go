@@ -88,6 +88,13 @@ func ApplySysctlFile(path string) error {
 			errs = append(errs, fmt.Errorf("sysctl: malformed line %q", line))
 			continue
 		}
+		// Validate the key BEFORE the dot→slash rewrite: after ReplaceAll
+		// a ".." element is indistinguishable from a "net..x" collapse, and
+		// "net/../x" would otherwise resolve to a different sysctl path.
+		if !validSysctlKey(key) {
+			errs = append(errs, fmt.Errorf("sysctl: unsafe key %q", key))
+			continue
+		}
 		rel := strings.ReplaceAll(key, ".", "/")
 		if strings.Contains(rel, "..") || strings.HasPrefix(rel, "/") {
 			errs = append(errs, fmt.Errorf("sysctl: unsafe key %q", key))
@@ -99,6 +106,38 @@ func ApplySysctlFile(path string) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// validSysctlKey reports whether key is safe to map under /proc/sys:
+// a dot- or slash-separated path of [A-Za-z0-9_-] elements — no ".."
+// traversal, no leading/trailing/adjacent separators, no whitespace or
+// shell metachars. Rejects "net/../x" (resolves to /proc/sys/x) and
+// "a..b", "net//x", "net/./x" (each gains an empty element after the
+// dot→slash rewrite, which filepath.Join would clean to another key).
+func validSysctlKey(key string) bool {
+	if key == "" ||
+		strings.HasPrefix(key, ".") || strings.HasPrefix(key, "/") ||
+		strings.HasSuffix(key, ".") || strings.HasSuffix(key, "/") {
+		return false
+	}
+	prevSep := false
+	for _, c := range key {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
+			c == '_' || c == '-':
+			prevSep = false
+		case c == '.' || c == '/':
+			// Adjacent separators ("..", "//", "./", "/.") produce an
+			// empty path element after the dot→slash rewrite.
+			if prevSep {
+				return false
+			}
+			prevSep = true
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Modprobe loads each space-separated module in modules, mirroring ufw's

@@ -41,6 +41,10 @@ func (e *Env) dispatch(args []string) int {
 		return e.cmdSweep(args[1:])
 	case "logs":
 		return e.cmdLogs(args[1:])
+	case "version":
+		// `bfw version` — ufw parity; same output as --version.
+		e.Msg("%s %s", e.Prog, e.Version)
+		return 0
 	case "rule":
 		// 'rule enable|disable NUM' is the bfw toggle extension; any other
 		// 'rule …' is the ufw optional keyword → fall through to rule ops.

@@ -192,7 +192,11 @@ func TestSSHAllowsPort(t *testing.T) {
 		{"allow 80/tcp only", mkExtRule("allow", "in", "tcp", "any", "any", rule.PortRange{Lo: 80, Hi: 80, Proto: "tcp"}), false},
 		{"allow 20:25/tcp covers", mkExtRule("allow", "in", "tcp", "any", "any", rule.PortRange{Lo: 20, Hi: 25, Proto: "tcp"}), true},
 		{"udp 22 does not count", mkExtRule("allow", "in", "udp", "any", "any", rule.PortRange{Lo: 22, Hi: 22, Proto: "udp"}), false},
-		{"disabled rule ignored", func() *rule.Rule { r := mkExtRule("allow", "in", "tcp", "any", "any", tcp22); r.Disabled = true; return r }(), false},
+		{"disabled rule ignored", func() *rule.Rule {
+			r := mkExtRule("allow", "in", "tcp", "any", "any", tcp22)
+			r.Disabled = true
+			return r
+		}(), false},
 		{"expired rule ignored", func() *rule.Rule {
 			r := mkExtRule("allow", "in", "tcp", "any", "any", tcp22)
 			r.ExpiresAt = now - 1

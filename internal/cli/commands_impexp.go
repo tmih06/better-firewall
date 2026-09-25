@@ -139,8 +139,10 @@ func (e *Env) cmdImportUFW(args []string) int {
 	if err != nil {
 		return e.Errorf("%s", err)
 	}
-	if fc := snap.ForeignChains("ufw-"); len(fc) > 0 {
-		return e.Errorf("ufw chains are loaded; run 'ufw disable' first")
+	if snap != nil {
+		if fc := snap.ForeignChains("ufw-"); len(fc) > 0 {
+			return e.Errorf("ufw chains are loaded; run 'ufw disable' first")
+		}
 	}
 
 	if e.DryRun {

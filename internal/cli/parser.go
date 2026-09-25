@@ -237,7 +237,6 @@ func parseRuleArgs(args []string) (*ParsedRuleOp, error) {
 	if logIdx > 0 {
 		logtype = strings.ToLower(argv[logIdx])
 		argv = append(argv[:logIdx], argv[logIdx+1:]...)
-		nargs = len(argv)
 	}
 	if indexTok(argv, "log") >= 0 {
 		return nil, errors.New("Option 'log' not allowed here")
@@ -258,7 +257,6 @@ func parseRuleArgs(args []string) (*ParsedRuleOp, error) {
 			return nil, ErrSyntax
 		}
 		argv = append(argv[:i], argv[i+2:]...)
-		nargs = len(argv)
 	}
 
 	// bfw extension: expires clause.
@@ -273,7 +271,6 @@ func parseRuleArgs(args []string) (*ParsedRuleOp, error) {
 		}
 		expiresAt = time.Now().Unix() + d
 		argv = append(argv[:i], argv[i+2:]...)
-		nargs = len(argv)
 	}
 
 	// bfw extension: 'from set NAME' / 'to set NAME' — fold the set name

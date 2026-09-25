@@ -54,13 +54,6 @@ func canonAddr(a rule.AddrSpec, v6 bool) string {
 	return a.IP
 }
 
-func wildcardAddr(v6 bool) string {
-	if v6 {
-		return "::/0"
-	}
-	return "0.0.0.0/0"
-}
-
 // portStr renders a port list the way ufw renders dport/sport ("any",
 // "80", "80,443", "8080:8090"). The protocol is appended by the caller
 // from r.Proto, mirroring ufw.

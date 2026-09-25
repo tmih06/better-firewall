@@ -223,14 +223,72 @@ second transaction (rolling back core on failure), then applies
 ## Development
 
 ```sh
-make test               # go test ./...
-make test-integration   # go test -tags=integration ./tests/...
-go build ./...
+make build              # go build -o bfw ./cmd/bfw
+make test               # go test ./...            (unit; no root needed)
+make check              # gofmt, module tidy check, vet, staticcheck, actionlint, shellcheck, govulncheck
+make package            # staged install + systemd verify + staged uninstall (no root/systemctl)
+make test-integration   # privileged: real nftables inside disposable namespaces (see below)
 ```
 
-CLI internals are dependency-injected (`hookGeteuid`, `hookUnderSSH`,
+Unit tests are dependency-injected (`hookGeteuid`, `hookUnderSSH`,
 `hookLockFile`, `hookRunCmd`, replaceable backend constructor) so the command
 surface is testable without root or a kernel.
+
+### Privileged testing — read before running
+
+Never run the privileged integration tests or performance harness on this
+workstation or any production host. They require root and a real nftables
+backend; direct execution could change firewall state and interrupt network
+or SSH access. CI runs them only on a disposable GitHub-hosted runner through
+`scripts/ci/isolate.sh`, which:
+
+- **fails closed outside CI**; no local override is provided;
+- requires **root**, then re-executes under
+  `unshare --mount --net --pid --fork`;
+- inside the namespaces, mounts tmpfs over `/etc/bfirewall`,
+  `/etc/default/bfirewall`, `/etc/ufw`, `/run`, brings `lo` up with **no
+  external networking**, shadows `modprobe`, makes host `/proc/sys` subtrees
+  read-only, and exports `BFW_ISOLATED=1` + `BFW_ORIGINAL_NET_NS` so tests
+  prove they are not using the host network namespace.
+
+`make test-integration` is CI-only. Never run `go test -tags=integration`
+directly as root, and never spoof the CI guard to run it locally. The standard
+`make test` and `make check` remain unprivileged.
+
+### Performance comparison (k6)
+
+`scripts/perf/run.sh` (entry point; `scripts/perf/firewall.js` is the k6
+workload) benchmarks `bfw` vs `ufw` — rule apply timing plus real HTTP
+traffic through veth pairs — inside the same isolated namespaces. Reports
+land in `artifacts/performance/` (`summary.md`, `summary.json`, `raw/*.json`).
+
+Fairness/variance caveats: both firewalls see identical traffic, alternate
+execution order, and get warmup + repeated runs, but hosted-runner numbers
+are noisy (shared CPU, nested virt) — treat results as indicative of relative
+overhead, not as absolute throughput guarantees.
+
+### CI
+
+`.github/workflows/ci.yml` runs on **every push, every pull request, and
+manual dispatch** (`Actions → CI → Run workflow`). Actions are pinned to
+commit SHAs; all privileged work is confined to the disposable runner via
+`scripts/ci/isolate.sh`. Coverage intent (not a claim every behavior is
+proven):
+
+| Repo area | CI job(s) |
+|---|---|
+| Go source (all `internal/*`, `cmd/bfw`) | `lint` (gofmt, module tidiness, vet/staticcheck), `build` (Go 1.22.x min + 1.26.x + 1.27.x stable, linux/amd64 + linux/arm64), `unit-test` (race + coverage artifact), `vuln` (govulncheck), `security-codeql` |
+| `etc/bfirewall/*`, `etc/default/*`, embedded defaults | `unit-test` (materialization, overrides, preservation) and `package` (staged configuration tree) |
+| `tests/`, nft backend (`internal/backend/nft` integration tests) | `integration` — isolated namespaces, `BFW_ISOLATED`-gated |
+| `packaging/*` systemd units, install layout | `package` — staged install + `systemd-analyze verify` + staged uninstall; systemctl stubbed |
+| bfw vs ufw performance | `performance` — k6, `needs: build`, uploads `artifacts/performance/` |
+| `.github/workflows/*.yml`, `scripts/**/*.sh` | `lint` — actionlint + shellcheck |
+| Secrets in git history | `secrets` — gitleaks, full history (`fetch-depth: 0`, `--all`) |
+
+Local equivalents: `make check` = lint + vuln (tools pinned in the workflow;
+install hints in `scripts/ci/check.sh`), `make package` = the `package` job.
+The `integration` and `performance` jobs require root + namespaces and should
+not be approximated outside `isolate.sh`.
 
 ## License
 

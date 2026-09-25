@@ -77,7 +77,7 @@ func (a AddrSpec) Any() bool { return a.IP == "" || a.IP == "any" }
 type Rule struct {
 	ID        string   `json:"id"` // shared by v4/v6 halves of a dual rule
 	Action    string   `json:"action"`
-	Direction string   `json:"direction"` // in|out|routed
+	Direction string   `json:"direction"`           // in|out|routed
 	RouteDir  string   `json:"route_dir,omitempty"` // in|out for routed rules (ufw keeps direction alongside forward)
 	IfaceIn   string   `json:"iface_in,omitempty"`
 	IfaceOut  string   `json:"iface_out,omitempty"`
@@ -236,6 +236,15 @@ func (r *Rule) Normalize() bool {
 		changed = true
 	}
 	for _, ports := range [][]PortRange{r.Src.Ports, r.Dst.Ports} {
+		// Record whether the in-place sort changes list order as part of the
+		// Normalize contract; address-only changes are not the only mutation.
+		for i := 1; i < len(ports); i++ {
+			prev, current := ports[i-1], ports[i]
+			if current.Lo < prev.Lo || (current.Lo == prev.Lo && current.Proto < prev.Proto) {
+				changed = true
+				break
+			}
+		}
 		sort.SliceStable(ports, func(i, j int) bool {
 			if ports[i].Lo != ports[j].Lo {
 				return ports[i].Lo < ports[j].Lo

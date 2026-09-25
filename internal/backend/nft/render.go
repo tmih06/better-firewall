@@ -767,4 +767,3 @@ func renderNAT(regs map[uint32]pend, x *expr.NAT) string {
 	}
 	return fmt.Sprintf("snat to %s%s", addr, port)
 }
-

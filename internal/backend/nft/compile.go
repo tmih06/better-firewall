@@ -510,9 +510,9 @@ func (c *compiled) compileNamedSets(st *store.State) error {
 		c.sets = append(c.sets, v4, v6)
 		var iv4, iv6 [][2][]byte // [start, endExclusive)
 		for _, e := range s.Elements {
-			ip, ipnet, err := net.ParseCIDR(e)
+			_, ipnet, err := net.ParseCIDR(e)
 			if err != nil {
-				ip = net.ParseIP(e)
+				ip := net.ParseIP(e)
 				if ip == nil {
 					return fmt.Errorf("set %s: bad element %q", s.Name, e)
 				}
@@ -1039,9 +1039,9 @@ func addrMatch(which, cidr string, v6 bool) []expr.Any {
 			off = 24
 		}
 	}
-	ip, ipnet, err := net.ParseCIDR(cidr)
+	_, ipnet, err := net.ParseCIDR(cidr)
 	if err != nil {
-		ip = net.ParseIP(cidr)
+		ip := net.ParseIP(cidr)
 		if ip == nil {
 			// Fail closed: two contradictory cmps on reg 1 can never both
 			// hold, so the rule matches nothing rather than everything.

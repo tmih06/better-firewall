@@ -136,7 +136,11 @@ func (s *Store) Save(st *State) error {
 	if err := os.WriteFile(tmp, data, 0600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.RulesPath())
+	if err := os.Rename(tmp, s.RulesPath()); err != nil {
+		os.Remove(tmp) // don't leak the staged file on failure
+		return err
+	}
+	return nil
 }
 
 // Conf holds bfw.conf values.

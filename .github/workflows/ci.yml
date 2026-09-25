@@ -1,0 +1,284 @@
+# bfirewall CI — runs on every push, every pull request, and on manual
+# dispatch (Actions → CI → Run workflow). Actions are pinned to commit SHAs.
+#
+# Privileged work (integration tests, k6 perf comparison) is confined to the
+# disposable hosted ubuntu-24.04 runner and goes through
+# scripts/ci/isolate.sh, which unshares net/mount/pid namespaces and
+# fail-closes outside CI. Do NOT reproduce the privileged jobs locally — see
+# README §Development.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Keep the newest main/default-branch runs alive so every push there gets a
+  # full result; cancel superseded PR/branch runs.
+  cancel-in-progress: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
+
+env:
+  STATICCHECK_VERSION: '2026.2.1'
+  GOVULNCHECK_VERSION: 'v1.8.0'
+  ACTIONLINT_VERSION: 'v1.7.12'
+  GITLEAKS_VERSION: 'v8.30.1'
+  K6_VERSION: '2.3.0'
+  GO_STABLE: '1.27.x'
+  GO_OLD: '1.26.x'
+  GO_MIN: '1.22.x'
+
+jobs:
+  # ------------------------------------------------------------------ lint
+  # gofmt, module-file consistency, go vet, pinned staticcheck, actionlint
+  # (this workflow), shellcheck (scripts/**/*.sh). Mirrors check.sh minus vuln.
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_STABLE }}
+      - name: Install pinned tools
+        run: |
+          go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}"
+          go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+      - name: gofmt + module tidy + vet + staticcheck + actionlint + shellcheck
+        run: scripts/ci/check.sh fmt modtidy vet staticcheck actionlint shellcheck
+
+  # ----------------------------------------------------------------- build
+  # Supported Go toolchain matrix (oldest supported per go.mod through the two
+  # current stable releases) x GOARCH matrix (amd64 + arm64, cross-compiled).
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.22.x', '1.26.x', '1.27.x']
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go }}
+      - name: Build all packages
+        run: go build ./...
+      - name: Build bfw (linux/${{ matrix.goarch }})
+        run: GOOS=linux GOARCH=${{ matrix.goarch }} go build -trimpath -o bfw ./cmd/bfw
+      - name: Upload bfw artifact
+        # Only the stable/amd64 artifact is consumed by the performance job.
+        if: matrix.goarch == 'amd64' && matrix.go == env.GO_STABLE
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bfw
+          path: bfw
+          retention-days: 7
+
+  # ------------------------------------------------------------- unit-test
+  # Race-enabled unit tests with coverage; artifacts uploaded for inspection.
+  # Tests are dependency-injected — no root, no kernel, no namespaces needed.
+  unit-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_STABLE }}
+      - name: go test -race -coverprofile
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unit-coverage
+          path: coverage.out
+          if-no-files-found: error
+          retention-days: 14
+
+  # ------------------------------------------------------------------ vuln
+  # Dependency + stdlib vulnerability scan via govulncheck.
+  vuln:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_STABLE }}
+      - run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+      - run: scripts/ci/check.sh vuln
+
+  # -------------------------------------------------------------- security
+  # CodeQL semantic analysis. Skipped for fork PRs: they get read-only
+  # tokens and cannot upload SARIF (the run would fail spuriously).
+  security-codeql:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    if: github.event.pull_request.head.repo.fork != true
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: go
+          build-mode: autobuild
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+
+  # --------------------------------------------------------------- secrets
+  # gitleaks over the full git history of every ref (fetch-depth 0 +
+  # --log-opts=--all, not just the pushed commits).
+  secrets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_STABLE }}
+      - name: Install pinned gitleaks
+        run: go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"
+      - name: Scan full history for secrets
+        run: gitleaks git --redact --verbose --log-opts="--all" .
+
+  # --------------------------------------------------------------- package
+  # Staged `make install DESTDIR=…` + systemd-analyze verify of the units.
+  # Fully unprivileged: writes only to a mktemp dir, never runs systemctl.
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_STABLE }}
+      - run: scripts/ci/package.sh
+
+  # ------------------------------------------------------------ integration
+  # Real-kernel integration tests (nftables backend, sets, NAT, panic, …)
+  # inside disposable net+mount+pid namespaces created by isolate.sh.
+  # Anything below runs as root on a throwaway hosted runner only.
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: build
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_STABLE }}
+      - name: Install nftables tooling
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq nftables iproute2
+      - name: Pre-warm module cache for the isolated step
+        # The isolated net namespace has no external connectivity, so all Go
+        # modules must already be in the cache (at the same GOMODCACHE the
+        # root child will use) before entering.
+        env:
+          GOCACHE: /tmp/bfw-gocache
+          GOPATH: /tmp/bfw-gopath
+          GOMODCACHE: /tmp/bfw-gopath/pkg/mod
+        run: |
+          mkdir -p "$GOCACHE" "$GOMODCACHE"
+          go mod download
+          chmod -R a+rwX /tmp/bfw-gopath
+      - name: Isolated integration tests
+        # isolate.sh refuses to run unisolated or outside CI; sudo needs an
+        # explicit PATH so `go` (installed under /opt) and go caches are found.
+        env:
+          GOCACHE: /tmp/bfw-gocache
+          GOPATH: /tmp/bfw-gopath
+          GOMODCACHE: /tmp/bfw-gopath/pkg/mod
+        run: >
+          sudo env "PATH=$PATH" "HOME=$HOME" "CI=$CI"
+          "GITHUB_ACTIONS=$GITHUB_ACTIONS" "GOCACHE=$GOCACHE" "GOPATH=$GOPATH"
+          "GOMODCACHE=$GOMODCACHE"
+          scripts/ci/isolate.sh
+          go test -count=1 -tags=integration ./tests/... ./internal/backend/nft/...
+
+  # ------------------------------------------------------------ performance
+  # k6 throughput/latency comparison of bfw vs ufw inside the same isolated
+  # namespace wrapper. Results are indicative, not hardware-guaranteed — see
+  # README §Development for variance caveats.
+  performance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: build
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_STABLE }}
+      - name: Download bfw artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bfw
+          path: .
+      - run: chmod +x bfw
+      - uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
+        with:
+          k6-version: ${{ env.K6_VERSION }}
+      - name: Install ufw + net tooling (comparison baseline)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ufw iproute2 iptables nftables
+      - name: Pre-warm module cache (fallback build inside the namespace)
+        # run.sh only builds bfw if BFW_BIN is missing, but the isolated netns
+        # has no network — keep the module cache warm under a root-writable
+        # GOMODCACHE so a fallback `go build` can never hit the network.
+        env:
+          GOCACHE: /tmp/bfw-gocache
+          GOPATH: /tmp/bfw-gopath
+          GOMODCACHE: /tmp/bfw-gopath/pkg/mod
+        run: |
+          mkdir -p "$GOCACHE" "$GOMODCACHE"
+          go mod download
+          chmod -R a+rwX /tmp/bfw-gopath
+      - name: Run k6 firewall comparison (isolated)
+        # sudo env forwards CI/GITHUB_ACTIONS so isolate.sh's guard passes
+        # without relying on sudoers env_keep policy; env restores PATH for
+        # the unshare'd child (go, k6, python3, nft, ufw), hands run.sh the
+        # bfw binary path, and points the go caches at the pre-warmed
+        # root-writable dirs.
+        env:
+          BFW_BIN: ./bfw
+          GOCACHE: /tmp/bfw-gocache
+          GOPATH: /tmp/bfw-gopath
+          GOMODCACHE: /tmp/bfw-gopath/pkg/mod
+        run: >
+          sudo env "PATH=$PATH" "HOME=$HOME" "CI=$CI"
+          "GITHUB_ACTIONS=$GITHUB_ACTIONS" "BFW_BIN=$BFW_BIN"
+          "GOCACHE=$GOCACHE" "GOPATH=$GOPATH" "GOMODCACHE=$GOMODCACHE"
+          scripts/ci/isolate.sh scripts/perf/run.sh
+      - name: Upload performance artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: performance
+          path: artifacts/performance/**
+          if-no-files-found: error
+          retention-days: 30

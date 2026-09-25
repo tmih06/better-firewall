@@ -19,6 +19,7 @@ import (
 	"bfirewall/internal/report"
 	"bfirewall/internal/rule"
 )
+
 // cmdShow implements `bfw show <report>`.
 func (e *Env) cmdShow(args []string) int {
 	if len(args) != 1 {
@@ -110,11 +111,11 @@ func loggingChainNames() map[string]bool {
 	return map[string]bool{
 		"bfw-before-logging-input": true, "bfw-before-logging-output": true,
 		"bfw-before-logging-forward": true,
-		"bfw-user-logging-input": true, "bfw-user-logging-output": true,
+		"bfw-user-logging-input":     true, "bfw-user-logging-output": true,
 		"bfw-user-logging-forward": true,
-		"bfw-after-logging-input": true, "bfw-after-logging-output": true,
+		"bfw-after-logging-input":  true, "bfw-after-logging-output": true,
 		"bfw-after-logging-forward": true,
-		"bfw-logging-allow": true, "bfw-logging-deny": true,
+		"bfw-logging-allow":         true, "bfw-logging-deny": true,
 	}
 }
 
@@ -432,4 +433,3 @@ func getIfFromIP(addr string) string {
 	}
 	return ""
 }
-

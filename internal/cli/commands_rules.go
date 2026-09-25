@@ -7,7 +7,6 @@ package cli
 
 import (
 	"errors"
-	"strconv"
 	"os"
 	"strings"
 	"time"
@@ -175,12 +174,12 @@ func (e *Env) runRuleOp(op *ParsedRuleOp) int {
 			}
 			res = e.applyHalf(st, nr, p, false, op.Kind)
 		case "v6":
-		if !st.IPv6 {
-			return e.Errorf("IPv6 support not enabled")
-		}
-		if !ipv6Available() {
-			return e.Errorf("IPv6 support not enabled") // kernel lacks ipv6
-		}
+			if !st.IPv6 {
+				return e.Errorf("IPv6 support not enabled")
+			}
+			if !ipv6Available() {
+				return e.Errorf("IPv6 support not enabled") // kernel lacks ipv6
+			}
 			p, err2 := v6Position(pos, count, numV4, numV6)
 			if err2 != "" {
 				return e.Errorf("%s%d'", err2, pos)
@@ -574,36 +573,6 @@ func findOtherPosition(st *store.State, position int, v6 bool) int {
 		count++
 	}
 	return 0
-}
-
-// profilePorts flattens a profile's port items into PortRanges, matching
-// the parser's setApp expansion: "any" items wildcard the endpoint.
-func profilePorts(p *appprof.Profile) []rule.PortRange {
-	var ranges []rule.PortRange
-	for _, spec := range p.Expand() {
-		if spec.Ports == "any" {
-			return nil
-		}
-		for _, item := range strings.Split(spec.Ports, ",") {
-			item = strings.TrimSpace(item)
-			if item == "" {
-				continue
-			}
-			lo, hi := item, item
-			if i := strings.Index(item, ":"); i >= 0 {
-				lo, hi = item[:i], item[i+1:]
-			}
-			l, err1 := strconv.Atoi(lo)
-			h, err2 := strconv.Atoi(hi)
-			if err1 != nil || err2 != nil || l < 1 || h > 65535 || l > h {
-				continue
-			}
-			ranges = append(ranges, rule.PortRange{
-				Lo: uint16(l), Hi: uint16(h), Proto: spec.Proto,
-			})
-		}
-	}
-	return ranges
 }
 
 // expandAppRules regenerates the per-item rule list for an app-rule add:

@@ -1,3 +1,6 @@
 /bfw
 *.test
 /dist/
+/artifacts/performance/
+__pycache__/
+*.py[cod]

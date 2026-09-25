@@ -7,6 +7,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -31,9 +32,12 @@ func validProfileName(name string) bool {
 }
 
 // loadProfiles loads profiles from the store dir plus the ufw-compat
-// fallback dir, warning about /etc/services collisions.
+// fallback dir (<prefix>/etc/ufw/applications.d so BFW_PREFIX-rooted trees
+// see the same files import-ufw and the parser use), warning about
+// /etc/services collisions.
 func (e *Env) loadProfiles() []*appprof.Profile {
-	profiles, skipped, err := appprof.LoadAll(e.Store.AppDir(), "/etc/ufw/applications.d")
+	ufwDir := filepath.Join(filepath.Dir(e.Store.Dir), "ufw", "applications.d")
+	profiles, skipped, err := appprof.LoadAll(e.Store.AppDir(), ufwDir)
 	if err != nil {
 		e.Warnf("%s", err)
 	}
@@ -189,7 +193,6 @@ func (e *Env) appUpdate(name string, addNew bool) int {
 					tmp += "\n"
 				}
 				rstr += tmp
-				triggerReload = true
 			}
 		}
 	} else {
@@ -199,6 +202,10 @@ func (e *Env) appUpdate(name string, addNew bool) int {
 			rstr += "\n"
 		}
 		triggerReload = found
+		if !found && appprof.Find(profiles, name) == nil && !(addNew && st.AppPolicy == "skip") {
+			// ufw raises "Could not find a profile matching '<name>'".
+			return e.Errorf("Could not find a profile matching '%s'", name)
+		}
 	}
 
 	if triggerReload {
