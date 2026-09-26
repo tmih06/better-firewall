@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
+	"golang.org/x/sys/unix"
 
 	"github.com/tmih06/better-firewall/internal/rule"
 	"github.com/tmih06/better-firewall/internal/store"
@@ -349,6 +350,73 @@ func TestCompileThreatBansUseMergedAddressSetsBeforeEstablishedTraffic(t *testin
 	}
 	if strings.Contains(text, "192.0.2.77") {
 		t.Fatalf("expired threat address was compiled:\n%s", text)
+	}
+}
+
+func TestCompileLimitUsesFamilySpecificRegisters(t *testing.T) {
+	st := store.Defaults()
+	st.Rules4 = []rule.Rule{{
+		ID: "four", Action: rule.ActionLimit, Direction: rule.DirIn, Proto: "tcp",
+		Src: rule.AddrSpec{IP: "any"},
+		Dst: rule.AddrSpec{IP: "any", Ports: []rule.PortRange{{Lo: 443, Hi: 443, Proto: "tcp"}}},
+	}}
+	st.Rules6 = []rule.Rule{{
+		ID: "six", Action: rule.ActionLimit, Direction: rule.DirIn, Proto: "tcp",
+		Src: rule.AddrSpec{IP: "any"},
+		Dst: rule.AddrSpec{IP: "any", Ports: []rule.PortRange{{Lo: 443, Hi: 443, Proto: "tcp"}}},
+	}}
+	c, err := compile(st, nil)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+
+	want := map[string]struct {
+		sreg, preg     uint32
+		offset, length uint32
+	}{
+		"bfw_limit_four": {sreg: unix.NFT_REG32_00, preg: unix.NFT_REG32_01, offset: 12, length: 4},
+		"bfw_limit_six6": {sreg: unix.NFT_REG_1, preg: unix.NFT_REG_2, offset: 8, length: 16},
+	}
+	found := map[string]bool{}
+	for _, compiledRule := range c.rules {
+		if compiledRule.Chain.Name != "bfw-user-input" {
+			continue
+		}
+		for _, raw := range compiledRule.Exprs {
+			dyn, ok := raw.(*expr.Dynset)
+			if !ok {
+				continue
+			}
+			w, ok := want[dyn.SetName]
+			if !ok {
+				t.Fatalf("unexpected limit set %q", dyn.SetName)
+			}
+			if dyn.SrcRegKey != w.sreg {
+				t.Errorf("%s source register = %d, want %d", dyn.SetName, dyn.SrcRegKey, w.sreg)
+			}
+			hasAddress, hasPort := false, false
+			for _, expression := range compiledRule.Exprs {
+				p, ok := expression.(*expr.Payload)
+				if !ok {
+					continue
+				}
+				if p.Base == expr.PayloadBaseNetworkHeader && p.Offset == w.offset && p.Len == w.length && p.DestRegister == w.sreg {
+					hasAddress = true
+				}
+				if p.Base == expr.PayloadBaseTransportHeader && p.Offset == 2 && p.Len == 2 && p.DestRegister == w.preg {
+					hasPort = true
+				}
+			}
+			if !hasAddress || !hasPort {
+				t.Errorf("%s missing family-specific key payloads: address=%v port=%v", dyn.SetName, hasAddress, hasPort)
+			}
+			found[dyn.SetName] = true
+		}
+	}
+	for name := range want {
+		if !found[name] {
+			t.Errorf("missing compiled limit set %q", name)
+		}
 	}
 }
 
