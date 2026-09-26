@@ -143,7 +143,9 @@ object order and output text deterministic.
 
 `BenchmarkRuleMatch1000` covers the duplicate/update scan used by CLI rule
 mutations. Comparing 1,000 candidates now takes about 58 µs with zero heap
-bytes and zero allocations per operation.
+bytes and zero allocations per operation. `BenchmarkTupleKey1000`, used by
+import/export indexing, takes about 0.25 ms, 116,000 B/op, and 2,000
+allocations/op for the same 1,000-rule workload.
 
 ## Firewall comparison and resource usage
 
