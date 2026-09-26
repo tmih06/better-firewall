@@ -10,7 +10,6 @@ package rule
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"net"
 	"sort"
 	"strconv"
@@ -130,18 +129,70 @@ func (r *Rule) TupleKey() string {
 	if r.Forward() && r.RouteDir != "" {
 		dir = r.RouteDir
 	}
-	fmt.Fprintf(&b, "dir=%s fwd=%v proto=%s icmp_type=%s ifin=%s ifout=%s v6=%v\n",
-		dir, r.Forward(), r.Proto, r.ICMPType, r.IfaceIn, r.IfaceOut, r.v6)
-	fmt.Fprintf(&b, "src=%s|%s dapp=%s sapp=%s\n", addrKey(r.Src), addrKey(r.Dst), r.Dapp, r.Sapp)
+	b.Grow(96 + len(dir) + len(r.Proto) + len(r.ICMPType) + len(r.IfaceIn) + len(r.IfaceOut) +
+		len(r.Src.IP) + len(r.Src.Set) + len(r.Dst.IP) + len(r.Dst.Set) + len(r.Dapp) + len(r.Sapp))
+	b.WriteString("dir=")
+	b.WriteString(dir)
+	b.WriteString(" fwd=")
+	writeBool(&b, r.Forward())
+	b.WriteString(" proto=")
+	b.WriteString(r.Proto)
+	b.WriteString(" icmp_type=")
+	b.WriteString(r.ICMPType)
+	b.WriteString(" ifin=")
+	b.WriteString(r.IfaceIn)
+	b.WriteString(" ifout=")
+	b.WriteString(r.IfaceOut)
+	b.WriteString(" v6=")
+	writeBool(&b, r.v6)
+	b.WriteByte('\n')
+	b.WriteString("src=")
+	writeAddrKey(&b, r.Src)
+	b.WriteByte('|')
+	writeAddrKey(&b, r.Dst)
+	b.WriteString(" dapp=")
+	b.WriteString(r.Dapp)
+	b.WriteString(" sapp=")
+	b.WriteString(r.Sapp)
+	b.WriteByte('\n')
 	return b.String()
 }
 
-func addrKey(a AddrSpec) string {
-	var ps []string
-	for _, p := range a.Ports {
-		ps = append(ps, p.String())
+func writeBool(b *strings.Builder, value bool) {
+	if value {
+		b.WriteString("true")
+		return
 	}
-	return a.IP + "/" + a.Set + "{" + strings.Join(ps, ",") + "}"
+	b.WriteString("false")
+}
+
+func writeAddrKey(b *strings.Builder, a AddrSpec) {
+	b.WriteString(a.IP)
+	b.WriteByte('/')
+	b.WriteString(a.Set)
+	b.WriteByte('{')
+	for i, p := range a.Ports {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		writeUint16(b, p.Lo)
+		if p.Hi != p.Lo {
+			b.WriteByte(':')
+			writeUint16(b, p.Hi)
+		}
+		if p.Proto != "" && p.Proto != "any" {
+			b.WriteByte('/')
+			b.WriteString(p.Proto)
+		}
+	}
+	b.WriteByte('}')
+}
+
+// writeUint16 formats a port through a stack buffer so builders do not pay
+// strconv.Itoa's heap allocation for ports ≥ 100.
+func writeUint16(b *strings.Builder, port uint16) {
+	var tmp [5]byte
+	b.Write(strconv.AppendUint(tmp[:0], uint64(port), 10))
 }
 
 // MatchCode mirrors ufw UFWRule.match return codes.
@@ -156,7 +207,7 @@ const (
 
 // Match compares two rules per ufw semantics.
 func (r *Rule) Match(o *Rule) MatchCode {
-	if r.TupleKey() != o.TupleKey() {
+	if !sameTuple(r, o) {
 		return MatchNone
 	}
 	if r.Action == o.Action && r.Log == o.Log && r.Comment == o.Comment {
@@ -166,6 +217,49 @@ func (r *Rule) Match(o *Rule) MatchCode {
 		return MatchComment
 	}
 	return MatchAction
+}
+
+// sameTuple compares the fields represented by TupleKey without constructing
+// either formatted key. Keep the normalization rules in sync with addrKey and
+// TupleKey: an empty or explicit "any" port protocol has no serialized suffix
+// and therefore compares equal.
+func sameTuple(r, o *Rule) bool {
+	routeDir := r.Direction
+	if r.Forward() && r.RouteDir != "" {
+		routeDir = r.RouteDir
+	}
+	oRouteDir := o.Direction
+	if o.Forward() && o.RouteDir != "" {
+		oRouteDir = o.RouteDir
+	}
+	if routeDir != oRouteDir || r.Forward() != o.Forward() ||
+		r.Proto != o.Proto || r.ICMPType != o.ICMPType ||
+		r.IfaceIn != o.IfaceIn || r.IfaceOut != o.IfaceOut || r.v6 != o.v6 ||
+		r.Dapp != o.Dapp || r.Sapp != o.Sapp {
+		return false
+	}
+	return sameAddrTuple(r.Src, o.Src) && sameAddrTuple(r.Dst, o.Dst)
+}
+
+func sameAddrTuple(a, b AddrSpec) bool {
+	if a.IP != b.IP || a.Set != b.Set || len(a.Ports) != len(b.Ports) {
+		return false
+	}
+	for i := range a.Ports {
+		left, right := a.Ports[i], b.Ports[i]
+		if left.Lo != right.Lo || left.Hi != right.Hi ||
+			normalizedPortProto(left.Proto) != normalizedPortProto(right.Proto) {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizedPortProto(proto string) string {
+	if proto == "" || proto == "any" {
+		return ""
+	}
+	return proto
 }
 
 // AppTuple groups rules expanded from one app-profile application; ufw
@@ -180,25 +274,38 @@ func (r *Rule) AppTuple() string {
 	dst := canonWild(r.Dst.IP, r.v6)
 	src := canonWild(r.Src.IP, r.v6)
 	dside := r.Dapp
-	if dside == "" {
-		dside = portListStr(r.Dst.Ports)
-	}
 	sside := r.Sapp
-	if sside == "" {
-		sside = portListStr(r.Src.Ports)
+	var b strings.Builder
+	b.Grow(len(dside) + len(dst) + len(sside) + len(src) + 32)
+	if dside != "" {
+		b.WriteString(dside)
+	} else {
+		writePortList(&b, r.Dst.Ports)
 	}
-	tupl := fmt.Sprintf("%s %s %s %s", dside, dst, sside, src)
+	b.WriteByte(' ')
+	b.WriteString(dst)
+	b.WriteByte(' ')
+	if sside != "" {
+		b.WriteString(sside)
+	} else {
+		writePortList(&b, r.Src.Ports)
+	}
+	b.WriteByte(' ')
+	b.WriteString(src)
 	if r.IfaceIn == "" && r.IfaceOut == "" {
-		tupl += " " + r.Direction
+		b.WriteByte(' ')
+		b.WriteString(r.Direction)
 	} else {
 		if r.IfaceIn != "" {
-			tupl += " in_" + r.IfaceIn
+			b.WriteString(" in_")
+			b.WriteString(r.IfaceIn)
 		}
 		if r.IfaceOut != "" {
-			tupl += " out_" + r.IfaceOut
+			b.WriteString(" out_")
+			b.WriteString(r.IfaceOut)
 		}
 	}
-	return tupl
+	return b.String()
 }
 
 // canonWild maps a stored endpoint to the family-canonical wildcard so
@@ -213,17 +320,25 @@ func canonWild(ip string, v6 bool) string {
 	return ip
 }
 
-// portListStr renders a port list the way ufw's dport/sport strings look
-// ("any", "80", "80,443", "8080:8090").
-func portListStr(ports []PortRange) string {
+func writePortList(b *strings.Builder, ports []PortRange) {
 	if len(ports) == 0 {
-		return "any"
+		b.WriteString("any")
+		return
 	}
-	var ps []string
-	for _, p := range ports {
-		ps = append(ps, p.String())
+	for i, p := range ports {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		writeUint16(b, p.Lo)
+		if p.Hi != p.Lo {
+			b.WriteByte(':')
+			writeUint16(b, p.Hi)
+		}
+		if p.Proto != "" && p.Proto != "any" {
+			b.WriteByte('/')
+			b.WriteString(p.Proto)
+		}
 	}
-	return strings.Join(ps, ",")
 }
 
 // Normalize canonicalizes addresses and port lists in place, returning true

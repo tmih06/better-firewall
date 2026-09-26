@@ -1,0 +1,37 @@
+go test ./internal/protect ./internal/backend/nft ./internal/rule -run '^$' -bench 'Benchmark(JournalFailureDetection|CrowdSecDecisionDecode|ThreatBanSetCompile|RulesetCompile|LimitRulesetCompile|RulesetRender|LimitRulesetRender|RuleMatch1000|TupleKey1000|AppTuple1000)$' -benchmem
+goos: linux
+goarch: amd64
+pkg: github.com/tmih06/better-firewall/internal/protect
+cpu: AMD EPYC 9V74 80-Core Processor                
+BenchmarkJournalFailureDetection-4   	 1360497	       878.9 ns/op	     122 B/op	       2 allocs/op
+BenchmarkCrowdSecDecisionDecode-4    	   21127	     56634 ns/op	 217.29 MB/s	   26085 B/op	     119 allocs/op
+PASS
+ok  	github.com/tmih06/better-firewall/internal/protect	3.866s
+goos: linux
+goarch: amd64
+pkg: github.com/tmih06/better-firewall/internal/backend/nft
+cpu: AMD EPYC 9V74 80-Core Processor                
+BenchmarkThreatBanSetCompile/100-4         	   40993	     29278 ns/op	   92348 B/op	      91 allocs/op
+BenchmarkThreatBanSetCompile/1000-4        	    8970	    128123 ns/op	  390252 B/op	      93 allocs/op
+BenchmarkThreatBanSetCompile/10000-4       	    1016	   1254899 ns/op	 3349137 B/op	     115 allocs/op
+BenchmarkRulesetCompile/10-4               	   41724	     28102 ns/op	  128932 B/op	      85 allocs/op
+BenchmarkRulesetCompile/100-4              	   32971	     37086 ns/op	  137892 B/op	      85 allocs/op
+BenchmarkRulesetCompile/500-4              	   16482	     72773 ns/op	  191444 B/op	      87 allocs/op
+BenchmarkRulesetCompile/1000-4             	    8895	    137606 ns/op	  321589 B/op	      92 allocs/op
+BenchmarkLimitRulesetCompile/100-4         	   21187	     58014 ns/op	  199565 B/op	     198 allocs/op
+BenchmarkLimitRulesetCompile/1000-4        	    2620	    455580 ns/op	 1090304 B/op	    1135 allocs/op
+BenchmarkRulesetRender/100-4               	   19113	     62839 ns/op	   85572 B/op	      67 allocs/op
+BenchmarkRulesetRender/1000-4              	    3236	    361602 ns/op	  384683 B/op	      72 allocs/op
+BenchmarkLimitRulesetRender/100-4          	    8241	    130788 ns/op	  214726 B/op	      76 allocs/op
+BenchmarkLimitRulesetRender/1000-4         	     808	   1551408 ns/op	 2000363 B/op	      93 allocs/op
+PASS
+ok  	github.com/tmih06/better-firewall/internal/backend/nft	18.892s
+goos: linux
+goarch: amd64
+pkg: github.com/tmih06/better-firewall/internal/rule
+cpu: AMD EPYC 9V74 80-Core Processor                
+BenchmarkRuleMatch1000-4   	   43969	     28741 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTupleKey1000-4    	   10000	    102292 ns/op	  112000 B/op	    1000 allocs/op
+BenchmarkAppTuple1000-4    	   28460	     42383 ns/op	   64000 B/op	    1000 allocs/op
+PASS
+ok  	github.com/tmih06/better-firewall/internal/rule	4.214s

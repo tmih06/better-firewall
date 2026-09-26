@@ -67,3 +67,31 @@ func BenchmarkRulesetCompile(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkLimitRulesetCompile exercises the dynamic-set lookup path. Limit
+// rules used to scan every previously-created set, making a large policy
+// needlessly quadratic during apply.
+func BenchmarkLimitRulesetCompile(b *testing.B) {
+	for _, count := range []int{100, 1000} {
+		b.Run(strconv.Itoa(count), func(b *testing.B) {
+			st := store.Defaults()
+			st.Rules4 = make([]rule.Rule, count)
+			for i := range st.Rules4 {
+				st.Rules4[i] = rule.Rule{
+					ID: "limit" + strconv.Itoa(i+1), Action: rule.ActionLimit,
+					Direction: rule.DirIn, Proto: "tcp",
+					Src: rule.AddrSpec{IP: "any"},
+					Dst: rule.AddrSpec{IP: "any", Ports: []rule.PortRange{{Lo: uint16(10000 + i%50000), Hi: uint16(10000 + i%50000), Proto: "tcp"}}},
+				}
+			}
+			b.ReportAllocs()
+			b.ReportMetric(float64(count), "rules/op")
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := compile(st, nil); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}

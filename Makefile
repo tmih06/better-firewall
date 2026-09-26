@@ -4,7 +4,7 @@ SYSCONFDIR ?= /etc
 UNITDIR ?= $(SYSCONFDIR)/systemd/system
 BFW_BIN ?= bfw
 
-.PHONY: build install uninstall test test-integration check benchmark-protect package clean
+.PHONY: build install uninstall test test-integration check benchmark-protect charts package clean
 
 build:
 	go build -o "$(BFW_BIN)" ./cmd/bfw
@@ -33,8 +33,11 @@ endif
 test:
 	go test ./...
 
+charts:
+	python3 scripts/charts/charts.py
+
 benchmark-protect:
-	go test ./internal/protect ./internal/backend/nft -run '^$$' -bench 'Benchmark(JournalFailureDetection|CrowdSecDecisionDecode|ThreatBanSetCompile|RulesetCompile)$$' -benchmem
+	go test ./internal/protect ./internal/backend/nft ./internal/rule -run '^$$' -bench 'Benchmark(JournalFailureDetection|CrowdSecDecisionDecode|ThreatBanSetCompile|RulesetCompile|LimitRulesetCompile|RulesetRender|LimitRulesetRender|RuleMatch1000|TupleKey1000|AppTuple1000)$$' -benchmem
 
 # Privileged tests run only on disposable GitHub-hosted CI runners through the
 # fail-closed namespace wrapper. Never run them locally; the wrapper refuses

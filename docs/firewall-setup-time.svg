@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1120" height="560" viewBox="0 0 1120 560" role="img" aria-labelledby="title desc">
   <title id="title">Rule setup + firewall enable time</title>
-  <desc id="desc">Grouped horizontal bar chart of the mean wall-clock seconds to add the rules and enable the firewall, one bfw bar and one UFW bar for each of the 10, 100, 500, and 1,000 rule counts. bfw takes 0.0494 seconds at 10 rules, 0.4113 seconds at 100 rules, 2.4647 seconds at 500 rules, 9.7789 seconds at 1000 rules; UFW takes 1.6382 seconds, 12.0659 seconds, 60.0879 seconds, 168.6403 seconds. The axis is linear and starts at zero, so bar length is proportional to the value; the speed-up figure under each row label carries the comparison that the bar lengths cannot show at this range.</desc>
+  <desc id="desc">Grouped horizontal bar chart of the mean wall-clock seconds to add the rules and enable the firewall, one bfw bar and one UFW bar per rule count at 10, 100, 500, and 1,000 rules. The axis is linear and starts at zero so bar length is proportional to time; the speed-up under each label carries the comparison bar lengths cannot show at this range.</desc>
   <style>
     text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #172554; }
     .muted { fill: #64748b; }
@@ -12,6 +12,7 @@
     .bfw { fill: #0f9d8a; }
     .ufw { fill: #3b82f6; }
     .peak { fill-opacity: 0.42; }
+    .prev { fill: #cbd5e1; }
   </style>
   <rect width="1120" height="560" fill="#f1f5f9"/>
   <text x="32" y="38" font-size="24" font-weight="700">Rule setup + firewall enable time</text>
@@ -27,29 +28,29 @@
   <text x="980.0" y="440" text-anchor="end" font-size="11" class="muted">180</text>
   <line class="axis" x1="300" y1="142" x2="300" y2="422"/>
   <text x="52" y="187.0" font-size="14" font-weight="650">10 rules</text>
-  <text x="52" y="204.0" font-size="11" class="muted">33.2× faster with bfw</text>
-  <rect class="bfw" x="300" y="163.0" width="1.5" height="18" rx="4"/>
-  <text x="308.2" y="177.0" font-size="11" font-weight="650" fill="#0f9d8a">0.0494 s</text>
-  <rect class="ufw" x="300" y="187.0" width="6.2" height="18" rx="4"/>
-  <text x="314.2" y="201.0" font-size="11" font-weight="650" fill="#3b82f6">1.6382 s</text>
+  <text x="52" y="204.0" font-size="11" class="muted">31.8× faster with bfw</text>
+  <rect class="bfw" x="300" y="163" width="1.2" height="18" rx="4"/>
+  <text x="307.9" y="177.0" font-size="11" font-weight="650" fill="#0f9d8a">0.0505 s</text>
+  <rect class="ufw" x="300" y="187" width="6.1" height="18" rx="4"/>
+  <text x="314.1" y="201.0" font-size="11" font-weight="650" fill="#3b82f6">1.6041 s</text>
   <text x="52" y="257.0" font-size="14" font-weight="650">100 rules</text>
-  <text x="52" y="274.0" font-size="11" class="muted">29.3× faster with bfw</text>
-  <rect class="bfw" x="300" y="233.0" width="1.6" height="18" rx="4"/>
-  <text x="309.6" y="247.0" font-size="11" font-weight="650" fill="#0f9d8a">0.4113 s</text>
-  <rect class="ufw" x="300" y="257.0" width="45.6" height="18" rx="4"/>
-  <text x="353.6" y="271.0" font-size="11" font-weight="650" fill="#3b82f6">12.0659 s</text>
+  <text x="52" y="274.0" font-size="11" class="muted">24.5× faster with bfw</text>
+  <rect class="bfw" x="300" y="233" width="1.5" height="18" rx="4"/>
+  <text x="308.2" y="247.0" font-size="11" font-weight="650" fill="#0f9d8a">0.3927 s</text>
+  <rect class="ufw" x="300" y="257" width="36.3" height="18" rx="4"/>
+  <text x="344.3" y="271.0" font-size="11" font-weight="650" fill="#3b82f6">9.6219 s</text>
   <text x="52" y="327.0" font-size="14" font-weight="650">500 rules</text>
-  <text x="52" y="344.0" font-size="11" class="muted">24.4× faster with bfw</text>
-  <rect class="bfw" x="300" y="303.0" width="9.3" height="18" rx="4"/>
-  <text x="317.3" y="317.0" font-size="11" font-weight="650" fill="#0f9d8a">2.4647 s</text>
-  <rect class="ufw" x="300" y="327.0" width="227.0" height="18" rx="4"/>
-  <text x="535.0" y="341.0" font-size="11" font-weight="650" fill="#3b82f6">60.0879 s</text>
+  <text x="52" y="344.0" font-size="11" class="muted">19.4× faster with bfw</text>
+  <rect class="bfw" x="300" y="303" width="12.2" height="18" rx="4"/>
+  <text x="318.9" y="317.0" font-size="11" font-weight="650" fill="#0f9d8a">3.2203 s</text>
+  <rect class="ufw" x="300" y="327" width="236.6" height="18" rx="4"/>
+  <text x="544.6" y="341.0" font-size="11" font-weight="650" fill="#3b82f6">62.6207 s</text>
   <text x="52" y="397.0" font-size="14" font-weight="650">1,000 rules</text>
-  <text x="52" y="414.0" font-size="11" class="muted">17.2× faster with bfw</text>
-  <rect class="bfw" x="300" y="373.0" width="36.9" height="18" rx="4"/>
-  <text x="344.9" y="387.0" font-size="11" font-weight="650" fill="#0f9d8a">9.7789 s</text>
-  <rect class="ufw" x="300" y="397.0" width="637.1" height="18" rx="4"/>
-  <text x="945.1" y="411.0" font-size="11" font-weight="650" fill="#3b82f6">168.6403 s</text>
+  <text x="52" y="414.0" font-size="11" class="muted">18.0× faster with bfw</text>
+  <rect class="bfw" x="300" y="373" width="32.8" height="18" rx="4"/>
+  <text x="339.5" y="387.0" font-size="11" font-weight="650" fill="#0f9d8a">8.6695 s</text>
+  <rect class="ufw" x="300" y="397" width="590.6" height="18" rx="4"/>
+  <text x="898.6" y="411.0" font-size="11" font-weight="650" fill="#3b82f6">156.3283 s</text>
   <text x="640" y="452" text-anchor="middle" font-size="11" class="muted">Mean seconds to add the rules and enable the firewall</text>
   <text x="300" y="506" font-size="11" class="muted">Configuration and apply time only; this is not packet-processing latency.</text>
   <text x="300" y="524" font-size="11" class="muted">Linear axis from zero: bfw's bars are short because bfw is fast, not because the scale flatters it.</text>

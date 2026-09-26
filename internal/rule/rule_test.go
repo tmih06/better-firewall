@@ -142,6 +142,14 @@ func TestTupleKeyDistinguishesMatchFields(t *testing.T) {
 	}
 }
 
+func TestTupleKeyCanonicalFormat(t *testing.T) {
+	want := "dir=in fwd=false proto=tcp icmp_type= ifin=eth0 ifout= v6=false\n" +
+		"src=10.0.0.0/8/{1000:2000/tcp}|192.168.1.1/{80/tcp} dapp= sapp=\n"
+	if got := matchBase().TupleKey(); got != want {
+		t.Fatalf("TupleKey = %q, want %q", got, want)
+	}
+}
+
 func TestTupleKeyDistinguishesFamily(t *testing.T) {
 	base := matchBase()
 	v6 := base.Clone()
@@ -248,6 +256,16 @@ func TestMatch(t *testing.T) {
 	}
 }
 
+func TestMatchNormalizesPortProtocolAliases(t *testing.T) {
+	base := matchBase()
+	base.Src.Ports = []PortRange{{Lo: 22, Hi: 22, Proto: ""}}
+	other := base.Clone()
+	other.Src.Ports[0].Proto = "any"
+	if got := base.Match(other); got != MatchExact {
+		t.Fatalf("empty and any port protocols: got %v, want MatchExact", got)
+	}
+}
+
 func TestAppTupleEmptyWithoutApps(t *testing.T) {
 	r := matchBase()
 	if got := r.AppTuple(); got != "" {
@@ -291,21 +309,17 @@ func TestAppTuplePortFallbackAndAppPrecedence(t *testing.T) {
 		}},
 	}
 	got := r.AppTuple()
-	if !strings.Contains(got, "53/tcp,5353/udp") {
-		t.Errorf("port fallback missing rendered port list: %q", got)
-	}
-	if !strings.Contains(got, "DNS") || !strings.Contains(got, "10.0.0.1") {
-		t.Errorf("tuple missing app/address fields: %q", got)
-	}
-	if !strings.HasSuffix(got, " "+DirIn) {
-		t.Errorf("no-interface tuple missing direction suffix: %q", got)
+	want := "53/tcp,5353/udp 0.0.0.0/0 DNS 10.0.0.1 in"
+	if got != want {
+		t.Errorf("port fallback tuple = %q, want %q", got, want)
 	}
 
 	// A bare side with neither app nor ports renders "any".
 	r2 := &Rule{Direction: DirOut, Dapp: "OpenSSH"}
 	got = r2.AppTuple()
-	if !strings.Contains(got, " any 0.0.0.0/0") {
-		t.Errorf("portless app-less side not rendered as any: %q", got)
+	want = "OpenSSH 0.0.0.0/0 any 0.0.0.0/0 out"
+	if got != want {
+		t.Errorf("portless app-less tuple = %q, want %q", got, want)
 	}
 
 	// App name wins over ports on the same side.
@@ -315,8 +329,9 @@ func TestAppTuplePortFallbackAndAppPrecedence(t *testing.T) {
 		Dst:       AddrSpec{IP: "any", Ports: []PortRange{{Lo: 80, Hi: 80, Proto: "tcp"}}},
 	}
 	got = r3.AppTuple()
-	if !strings.HasPrefix(got, "Nginx ") {
-		t.Errorf("app name did not take precedence over ports: %q", got)
+	want = "Nginx 0.0.0.0/0 any 0.0.0.0/0 in"
+	if got != want {
+		t.Errorf("app precedence tuple = %q, want %q", got, want)
 	}
 }
 
@@ -328,11 +343,9 @@ func TestAppTupleInterfaceSuppressesDirection(t *testing.T) {
 		Dapp:      "OpenSSH",
 	}
 	got := r.AppTuple()
-	if !strings.Contains(got, "in_eth0") || !strings.Contains(got, "out_eth1") {
-		t.Errorf("tuple missing interface markers: %q", got)
-	}
-	if strings.HasSuffix(got, " "+DirIn) {
-		t.Errorf("interface tuple keeps direction suffix: %q", got)
+	want := "OpenSSH 0.0.0.0/0 any 0.0.0.0/0 in_eth0 out_eth1"
+	if got != want {
+		t.Errorf("interface tuple = %q, want %q", got, want)
 	}
 }
 

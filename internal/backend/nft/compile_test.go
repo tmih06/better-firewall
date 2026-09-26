@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
+	"golang.org/x/sys/unix"
 
 	"github.com/tmih06/better-firewall/internal/rule"
 	"github.com/tmih06/better-firewall/internal/store"
@@ -60,6 +61,29 @@ func rulesIn(c *compiled, chain string) []*nftables.Rule {
 		}
 	}
 	return out
+}
+
+func TestUserChainMapping(t *testing.T) {
+	cases := []struct {
+		direction string
+		user      string
+		logging   string
+	}{
+		{direction: rule.DirIn, user: "bfw-user-input", logging: "bfw-user-logging-input"},
+		{direction: rule.DirOut, user: "bfw-user-output", logging: "bfw-user-logging-output"},
+		{direction: rule.DirRouted, user: "bfw-user-forward", logging: "bfw-user-logging-forward"},
+		{direction: "unexpected", user: "bfw-user-input", logging: "bfw-user-logging-input"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.direction, func(t *testing.T) {
+			if got := userChainFor(tc.direction); got != tc.user {
+				t.Errorf("userChainFor(%q) = %q, want %q", tc.direction, got, tc.user)
+			}
+			if got := userLoggingChainFor(tc.direction); got != tc.logging {
+				t.Errorf("userLoggingChainFor(%q) = %q, want %q", tc.direction, got, tc.logging)
+			}
+		})
+	}
 }
 
 func TestCompileStructure(t *testing.T) {
@@ -179,6 +203,9 @@ func TestCompileStructure(t *testing.T) {
 	if anon.ID == 0 || anon.Name == "" {
 		t.Error("anonymous set missing pre-assigned ID/name")
 	}
+	if c.setIndex[anon.ID] != anon {
+		t.Error("anonymous set ID index does not point to the compiled set")
+	}
 
 	// NAT tables
 	if len(c.natTables) != 2 {
@@ -240,6 +267,24 @@ func TestCompileIPv6Disabled(t *testing.T) {
 	}
 	if !found {
 		t.Error("no v6 drop rule in input base chain")
+	}
+}
+
+func TestOverridePolicyPreservesUnknownValues(t *testing.T) {
+	for _, tc := range []struct {
+		raw, want string
+	}{
+		{raw: "ACCEPT", want: "allow"},
+		{raw: "allow", want: "allow"},
+		{raw: "DROP", want: "deny"},
+		{raw: "deny", want: "deny"},
+		{raw: "REJECT", want: "reject"},
+		{raw: "unexpected", want: "original"},
+		{raw: "", want: "original"},
+	} {
+		if got := overridePolicy("original", tc.raw); got != tc.want {
+			t.Errorf("overridePolicy(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
 	}
 }
 
@@ -331,6 +376,141 @@ func TestCompileThreatBansUseMergedAddressSetsBeforeEstablishedTraffic(t *testin
 	}
 }
 
+func TestCompileLimitUsesFamilySpecificRegisters(t *testing.T) {
+	st := store.Defaults()
+	st.Rules4 = []rule.Rule{{
+		ID: "four", Action: rule.ActionLimit, Direction: rule.DirIn, Proto: "tcp",
+		Src: rule.AddrSpec{IP: "any"},
+		Dst: rule.AddrSpec{IP: "any", Ports: []rule.PortRange{{Lo: 443, Hi: 443, Proto: "tcp"}}},
+	}}
+	st.Rules6 = []rule.Rule{{
+		ID: "six", Action: rule.ActionLimit, Direction: rule.DirIn, Proto: "tcp",
+		Src: rule.AddrSpec{IP: "any"},
+		Dst: rule.AddrSpec{IP: "any", Ports: []rule.PortRange{{Lo: 443, Hi: 443, Proto: "tcp"}}},
+	}}
+	c, err := compile(st, nil)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+
+	want := map[string]struct {
+		sreg, preg     uint32
+		offset, length uint32
+	}{
+		"bfw_limit_four": {sreg: unix.NFT_REG32_00, preg: unix.NFT_REG32_01, offset: 12, length: 4},
+		"bfw_limit_six6": {sreg: unix.NFT_REG_1, preg: unix.NFT_REG_2, offset: 8, length: 16},
+	}
+	found := map[string]bool{}
+	for _, compiledRule := range c.rules {
+		if compiledRule.Chain.Name != "bfw-user-input" {
+			continue
+		}
+		for _, raw := range compiledRule.Exprs {
+			dyn, ok := raw.(*expr.Dynset)
+			if !ok {
+				continue
+			}
+			w, ok := want[dyn.SetName]
+			if !ok {
+				t.Fatalf("unexpected limit set %q", dyn.SetName)
+			}
+			if dyn.SrcRegKey != w.sreg {
+				t.Errorf("%s source register = %d, want %d", dyn.SetName, dyn.SrcRegKey, w.sreg)
+			}
+			hasAddress, hasPort := false, false
+			for _, expression := range compiledRule.Exprs {
+				p, ok := expression.(*expr.Payload)
+				if !ok {
+					continue
+				}
+				if p.Base == expr.PayloadBaseNetworkHeader && p.Offset == w.offset && p.Len == w.length && p.DestRegister == w.sreg {
+					hasAddress = true
+				}
+				if p.Base == expr.PayloadBaseTransportHeader && p.Offset == 2 && p.Len == 2 && p.DestRegister == w.preg {
+					hasPort = true
+				}
+			}
+			if !hasAddress || !hasPort {
+				t.Errorf("%s missing family-specific key payloads: address=%v port=%v", dyn.SetName, hasAddress, hasPort)
+			}
+			found[dyn.SetName] = true
+		}
+	}
+	for name := range want {
+		if !found[name] {
+			t.Errorf("missing compiled limit set %q", name)
+		}
+	}
+}
+
+func TestRuleArenaKeepsPointersStableAcrossChunks(t *testing.T) {
+	table := &nftables.Table{Name: "arena"}
+	chain := &nftables.Chain{Name: "input", Table: table}
+	c := &compiled{
+		table:   table,
+		rules:   make([]*nftables.Rule, 0, 128),
+		ruleCap: 2,
+	}
+	for i := 0; i < 100; i++ {
+		c.addRuleObject(table, chain, []expr.Any{&expr.Counter{}})
+	}
+	if len(c.ruleArenas) < 2 {
+		t.Fatalf("rule arena did not exercise chunk rollover: got %d chunks", len(c.ruleArenas))
+	}
+	for i, r := range c.rules {
+		if r.Table != table || r.Chain != chain {
+			t.Errorf("rule %d points at the wrong table or chain", i)
+		}
+		if len(r.Exprs) != 1 {
+			t.Errorf("rule %d expression count = %d, want 1", i, len(r.Exprs))
+		}
+	}
+}
+
+func TestExprArenaKeepsSlicesDisjointAcrossChunks(t *testing.T) {
+	c := &compiled{}
+	first := c.exprSlice(2)
+	first = append(first, &expr.Counter{}, &expr.Verdict{Kind: expr.VerdictAccept})
+	second := c.exprSlice(2)
+	second = append(second, &expr.Counter{}, &expr.Verdict{Kind: expr.VerdictDrop})
+	if len(c.exprArenas) != 1 {
+		t.Fatalf("expr arena count = %d, want one chunk", len(c.exprArenas))
+	}
+	if first[0] == second[0] || first[1] == second[1] {
+		t.Fatal("expression slices unexpectedly alias")
+	}
+	if first[1].(*expr.Verdict).Kind != expr.VerdictAccept {
+		t.Fatal("first expression slice was overwritten")
+	}
+	if second[1].(*expr.Verdict).Kind != expr.VerdictDrop {
+		t.Fatal("second expression slice was not retained")
+	}
+
+	// Force a new chunk and verify the first chunk remains address-stable.
+	old := &first[0]
+	_ = c.exprSlice(4096)
+	if old != &first[0] {
+		t.Fatal("expression arena moved a retained slice")
+	}
+}
+
+func TestPortDataUsesBigEndianEncoding(t *testing.T) {
+	for _, tc := range []struct {
+		port uint16
+		want []byte
+	}{
+		{0, []byte{0, 0}},
+		{1, []byte{0, 1}},
+		{0x1234, []byte{0x12, 0x34}},
+		{0xffff, []byte{0xff, 0xff}},
+	} {
+		got := portData(tc.port)
+		if len(got) != len(tc.want) || got[0] != tc.want[0] || got[1] != tc.want[1] {
+			t.Errorf("portData(%d) = %v, want %v", tc.port, got, tc.want)
+		}
+	}
+}
+
 func TestCompileLoggingOff(t *testing.T) {
 	st := store.Defaults()
 	st.Logging = "off"
@@ -350,6 +530,45 @@ func TestCompileLoggingOff(t *testing.T) {
 	// after-logging chains stay empty
 	if n := len(rulesIn(c, "bfw-after-logging-input")); n != 0 {
 		t.Errorf("after-logging-input has %d rules with logging off", n)
+	}
+}
+
+func TestCompileLoggedRuleKeepsIndependentTerminalRules(t *testing.T) {
+	st := store.Defaults()
+	st.Rules4 = []rule.Rule{{
+		ID: "logged", Action: rule.ActionAllow, Direction: rule.DirIn,
+		Proto: "tcp", Log: rule.LogAll,
+		Src: rule.AddrSpec{IP: "any"},
+		Dst: rule.AddrSpec{IP: "any", Ports: []rule.PortRange{{Lo: 443, Hi: 443, Proto: "tcp"}}},
+	}}
+	c, err := compile(st, nil)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+
+	logging := rulesIn(c, "bfw-user-logging-input")
+	if len(logging) != 2 {
+		t.Fatalf("logged chain has %d rules, want log + return", len(logging))
+	}
+	last := func(r *nftables.Rule) expr.Any {
+		return r.Exprs[len(r.Exprs)-1]
+	}
+	if _, ok := last(logging[0]).(*expr.Log); !ok {
+		t.Fatalf("first logged rule was overwritten: last expression is %T", last(logging[0]))
+	}
+	if v, ok := last(logging[1]).(*expr.Verdict); !ok || v.Kind != expr.VerdictReturn {
+		t.Fatalf("logged return rule = %T %+v, want return verdict", last(logging[1]), last(logging[1]))
+	}
+
+	user := rulesIn(c, "bfw-user-input")
+	if len(user) < 2 {
+		t.Fatalf("user chain has %d rules, want logging jump + accept", len(user))
+	}
+	if v, ok := last(user[len(user)-2]).(*expr.Verdict); !ok || v.Kind != expr.VerdictJump || v.Chain != "bfw-user-logging-input" {
+		t.Fatalf("logging jump missing: %T %+v", last(user[len(user)-2]), last(user[len(user)-2]))
+	}
+	if v, ok := last(user[len(user)-1]).(*expr.Verdict); !ok || v.Kind != expr.VerdictAccept {
+		t.Fatalf("terminal accept missing: %T %+v", last(user[len(user)-1]), last(user[len(user)-1]))
 	}
 }
 

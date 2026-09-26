@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -45,6 +46,54 @@ func TestStatusNumbered(t *testing.T) {
 		"[ 1] 192.168.0.1 25/tcp         DENY IN     10.0.0.0/8                "
 	if got != want {
 		t.Errorf("status numbered:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestStatusLineFormattingMatchesFmt(t *testing.T) {
+	cases := []struct {
+		name                    string
+		to, action, from, attrs string
+		suffix                  string
+	}{
+		{name: "empty", to: "", action: "", from: "", attrs: "", suffix: ""},
+		{name: "ordinary", to: "80/tcp", action: "ALLOW IN", from: "Anywhere", attrs: " (log)", suffix: " # web"},
+		{name: "unicode", to: "界", action: "拒否", from: "источник", attrs: "", suffix: ""},
+		{name: "invalid utf8", to: string([]byte{0xff, 'x'}), action: "ALLOW", from: "", attrs: "", suffix: ""},
+		{name: "wide", to: strings.Repeat("x", 30), action: "ALLOW", from: strings.Repeat("y", 31), attrs: "", suffix: " (disabled)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			want := fmt.Sprintf("%-26s %-12s%-26s%s%s", tc.to, tc.action, tc.from, tc.attrs, tc.suffix)
+			if got := statusLine(tc.to, tc.action, tc.from, tc.attrs, tc.suffix); got != want {
+				t.Errorf("statusLine = %q, want %q", got, want)
+			}
+		})
+	}
+	for _, number := range []int{1, 9, 10, 99, 100, 1000} {
+		want := fmt.Sprintf("[%2d] %-26s %-12s%-26s%s%s", number, "80/tcp", "ALLOW IN", "Anywhere", "", "")
+		if got := numberedStatusLine(number, "80/tcp", "ALLOW IN", "Anywhere", "", ""); got != want {
+			t.Errorf("number %d: numberedStatusLine = %q, want %q", number, got, want)
+		}
+	}
+}
+
+func TestPortStrFormatting(t *testing.T) {
+	cases := []struct {
+		name  string
+		ports []rule.PortRange
+		want  string
+	}{
+		{name: "any", want: "any"},
+		{name: "single", ports: []rule.PortRange{{Lo: 22, Hi: 22}}, want: "22"},
+		{name: "range", ports: []rule.PortRange{{Lo: 8080, Hi: 8090}}, want: "8080:8090"},
+		{name: "mixed", ports: []rule.PortRange{{Lo: 80, Hi: 80}, {Lo: 443, Hi: 443}, {Lo: 1000, Hi: 1002}}, want: "80,443,1000:1002"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := portStr(tc.ports); got != tc.want {
+				t.Errorf("portStr = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
