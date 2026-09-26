@@ -640,7 +640,12 @@ func (c *compiled) compileAddressSet(name4, name6, source string, elements []str
 	}
 	c.addSet(v4, nil)
 	c.addSet(v6, nil)
-	var iv4, iv6 [][2][]byte // [start, endExclusive)
+	// Reserve the input cardinality for both families. Most installations use
+	// IPv4 bans, but reserving both keeps mixed-family named sets from paying
+	// repeated slice-growth copies; the interval payloads themselves remain
+	// owned by the parsed addresses below.
+	iv4 := make([][2][]byte, 0, len(elements)) // [start, endExclusive)
+	iv6 := make([][2][]byte, 0, len(elements))
 	for _, element := range elements {
 		_, ipnet, err := net.ParseCIDR(element)
 		if err != nil {
@@ -663,14 +668,23 @@ func (c *compiled) compileAddressSet(name4, name6, source string, elements []str
 		}
 	}
 	// Overlapping intervals make the kernel reject the whole batch
-	// (__nft_rbtree_insert ENOTEMPTY); merge like nft does.
-	for set, intervals := range map[*nftables.Set][][2][]byte{v4: iv4, v6: iv6} {
-		for _, interval := range mergeIntervals(intervals) {
-			c.elems[set] = append(c.elems[set],
+	// (__nft_rbtree_insert ENOTEMPTY); merge like nft does. Build the final
+	// element slices with their exact size so large ban lists do not repeatedly
+	// grow and copy the map values.
+	setIntervals := func(set *nftables.Set, intervals [][2][]byte) {
+		merged := mergeIntervals(intervals)
+		elems := make([]nftables.SetElement, 0, len(merged)*2)
+		for _, interval := range merged {
+			elems = append(elems,
 				nftables.SetElement{Key: interval[0]},
 				nftables.SetElement{Key: interval[1], IntervalEnd: true})
 		}
+		if len(elems) != 0 {
+			c.elems[set] = elems
+		}
 	}
+	setIntervals(v4, iv4)
+	setIntervals(v6, iv6)
 	return v4, v6, nil
 }
 
@@ -683,7 +697,10 @@ func mergeIntervals(ivs [][2][]byte) [][2][]byte {
 	sort.Slice(ivs, func(i, j int) bool {
 		return bytes.Compare(ivs[i][0], ivs[j][0]) < 0
 	})
-	out := [][2][]byte{ivs[0]}
+	// Compact in the caller-owned interval backing array. The range below
+	// reads each source element before any append can overwrite that same
+	// position, so no second interval slice is needed.
+	out := ivs[:1]
 	for _, iv := range ivs[1:] {
 		last := &out[len(out)-1]
 		// iv.start <= last.end → overlap or adjacency: extend end.
