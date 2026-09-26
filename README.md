@@ -101,18 +101,11 @@ Set `"jails": []` if you want CrowdSec only. Only IP and range bans are enforced
 
 ## Benchmark evidence
 
-Measured by the `protection-benchmarks` CI job (`make benchmark-protect`) on
-**Linux x86_64, Go 1.27.x, AMD EPYC**; the job's raw output is in the
-`protection-benchmarks` artifact. One sample per case, and times vary by
-machine.
-
-The three measures span several orders of magnitude, so each panel plots
-position-encoded dots on a linear axis from zero rather than bars: a bar's
-length has to be proportional to a total, and these totals differ by four
-orders of magnitude, so any single linear axis would flatten the small cases
-into invisible slivers. Every mark carries its exact value.
-These microbenchmarks do not measure firewall packet throughput or a
-protection-disabled baseline.
+Protection microbenchmarks from the `protection-benchmarks` CI job on Linux
+x86_64, Go 1.27.x, AMD EPYC. One sample per case; times vary by machine. Dots
+mark position on a linear axis from zero rather than bar length, because these
+measures span four orders of magnitude. Packet throughput and a
+protection-disabled baseline are not covered here.
 
 ![Time, heap bytes, and heap allocations per operation for journal failure detection, CrowdSec decoding, and nft ban-set compilation at 100, 1,000, and 10,000 bans](docs/protection-benchmark.svg)
 
@@ -126,42 +119,36 @@ protection-disabled baseline.
 
 ### Ruleset compilation cost
 
-`BenchmarkRulesetCompile` measures the configuration path that turns a rule list
-into an nftables ruleset, not packet filtering. Compiling 1,000 rules on Linux
-arm64 (Go 1.22.2, three runs of `-benchmem -benchtime=1s`):
+`BenchmarkRulesetCompile` covers configuration, not packet filtering. At 1,000
+rules on Linux arm64 (Go 1.22.2, `-benchmem -benchtime=1s`):
 
 | 1,000-rule compile | Allocations | Bytes |
 |---|---:|---:|
-| Before `0c98593` | 23,944 | 1,049,586 |
-| After `0c98593` | 21,944 | 1,009,581 |
+| Before `d6ac943` | 23,944 | 1,049,586 |
+| After `d6ac943` | 21,944 | 1,009,581 |
 
-That is 2,000 fewer allocations (−8.4%) and about 40 KB less per compile
-(−3.8%). Wall-clock time moved less than the run-to-run spread, so treat this as
-an allocation win rather than a claimed speedup. The hosted
-`protection-benchmarks` job reproduces the post-change figures on x86_64
-(21,945 allocs/op, 1,009,375 B/op). Filtering behaviour is unchanged and stays
-covered by the compiler tests.
+−2,000 allocations (−8.4%) and about 40 KB (−3.8%). Wall-clock moved less than
+run-to-run spread, so treat this as an allocation win, not a speedup. CI
+reproduces the post-change figures on x86_64 (21,945 allocs/op, 1,009,375 B/op).
 
 ## Firewall comparison and resource usage
 
-The protection microbenchmarks above do not measure packet handling. This
-separate hosted test compares no firewall, bfw, and UFW with 10, 100, 500, and
-1,000 rules under keep-alive, connection-churn, and mixed traffic (three
-repeats each). The snapshot below is from [CI run #14](https://github.com/tmih06/better-firewall/actions/runs/36213832378),
-commit `a558b00`: Linux 6.17 x86_64, bfw 0.1.0, UFW 0.36.2, and k6 2.3.0.
+The microbenchmarks above do not measure packet handling. This separate hosted
+test compares no firewall, bfw, and UFW at 10, 100, 500, and 1,000 rules under
+keep-alive, connection-churn, and mixed traffic, three repeats each. From
+[CI run #14](https://github.com/tmih06/better-firewall/actions/runs/36213832378),
+commit `a558b00`: Linux 6.17 x86_64, bfw 0.1.0, UFW 0.36.2, k6 2.3.0.
 
-**p95 latency** — direct measurements, not ratios, so the no-firewall container
-is visible as the reference point. Each panel has its own linear scale, so
-compare values inside a panel only. Rule counts are separate workloads, so the
-points are not joined by lines.
+**p95 latency** — absolute milliseconds, with the no-firewall container as a
+reference. Each panel has its own scale, and rule counts are separate
+workloads, so points are not joined.
 
 ![mean p95 latency for no firewall, bfw, and UFW at 10, 100, 500, and 1,000 rules under each traffic profile](docs/firewall-latency.svg)
 
-**Network throughput relative to UFW** — 1.000× means equal requests per
-second. The no-firewall point is included as a noise reference: it moves by a
-similar amount, which is what tells you a 1–2% gap is not a real difference.
-The churn profile is capped at 200 req/s by the load generator, so its
-throughput is pinned for every engine and cannot separate them.
+**Network throughput relative to UFW** — 1.000× means equal. The no-firewall
+point is a noise reference: it moves by a similar amount, which is what shows a
+1–2% gap is not real. Churn is capped at 200 req/s by the load generator, so it
+cannot separate engines.
 
 ![request throughput relative to UFW for all traffic profiles and rule counts](docs/firewall-throughput.svg)
 
@@ -173,21 +160,16 @@ At 1,000 rules, all three profiles had zero request errors:
 | Connection churn | 200.1 | 200.1 | 1.000× | 0.300 | 0.295 | 0.289 |
 | Mixed | 12,530.8 | 12,703.9 | 0.986× | 4.970 | 5.014 | 4.953 |
 
-**Rule setup + firewall enable** — one bfw bar and one UFW bar per rule count.
-The axis is linear and starts at zero, so bfw's bars really are that short; the
-speed-up figure under each rule count carries the comparison the bar lengths
-cannot show at this range. This is configuration/apply time, not
-packet-processing latency.
+**Rule setup + firewall enable** — one bfw and one UFW bar per rule count on a
+linear axis from zero; the speed-up figure carries the comparison the bar
+lengths cannot. Configuration and apply time, not packet latency. At 1,000
+rules: 9.7789 s for bfw, 168.6403 s for UFW.
 
 ![bfw and UFW time to add rules and enable the firewall](docs/firewall-setup-time.svg)
 
-At 1,000 rules, total setup took 9.7789 s for bfw and 168.6403 s for UFW
-(17.25× in this run).
-
-**Container resources** — defender container for the 1,000-rule mixed profile,
-sampled once per second (24 samples). A peak is the maximum of those samples,
-not an independent measurement, so the charts show average and peak as one
-filled/hollow pair per row.
+**Container resources** — defender container, 1,000-rule mixed profile, sampled
+once per second (24 samples). Peak is the maximum of those samples, not an
+independent measurement.
 
 ![Average and peak CPU and memory for the defender container under 1,000-rule mixed traffic](docs/firewall-resources.svg)
 
@@ -196,16 +178,6 @@ filled/hollow pair per row.
 | No firewall | 81.29 | 113.21 | 26.24 | 42.34 |
 | bfw | 76.57 | 111.71 | 29.69 | 43.92 |
 | UFW | 72.32 | 111.05 | 34.22 | 41.59 |
-
-These are single-run hosted-CI measurements; CPU scheduling noise makes small
-differences informational, not a general performance guarantee. Resource
-measurements do not gate CI. The full report includes all profiles/rule counts,
-the k6 attacker’s resource use, executable/package sizes, and CLI CPU/RSS
-measurements. Open the [report job for run #14](https://github.com/tmih06/better-firewall/actions/runs/36213832378/job/108329042753)
-or the [CI runs](https://github.com/tmih06/better-firewall/actions/workflows/ci.yml)
-for the latest report. The `better-firewall-performance` artifact contains
-`summary.md`, `summary.json`, and raw data for 30 days; new successful runs
-also publish the Markdown report in the job summary.
 
 ## Migrate an existing firewall
 
@@ -228,12 +200,9 @@ make benchmark-protect  # safe local protection microbenchmarks
 make charts             # regenerate the README benchmark charts
 ```
 
-The charts in this README are generated, not hand-drawn, so their values cannot
-drift from the runs they cite. `scripts/charts/charts.py` renders each SVG from
-a recorded snapshot in `scripts/charts/testdata/`, and `make check` fails if a
-committed chart no longer matches that data or if a chart in the README is
-missing. To publish a new run, replace the snapshot with the subset of that
-run's `summary.json`, then run `make charts` and commit the result.
+The README charts are generated by `scripts/charts/charts.py` from snapshots in
+`scripts/charts/testdata/`, and `make check` fails if a committed chart drifts
+from its data. To publish a new run, replace the snapshot and run `make charts`.
 
 CI runs build, race-test, package, security, and protection-benchmark jobs. Kernel integration tests and the UFW traffic benchmark run only on isolated GitHub-hosted runners. **Do not run those privileged workloads on a workstation or production host.** See [CI](.github/workflows/ci.yml).
 
