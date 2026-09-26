@@ -245,6 +245,31 @@ func baseFor(dir string) string {
 	}
 }
 
+// userChainFor returns the canonical user chain without constructing a new
+// string for every compiled rule. Unknown directions retain the existing
+// fail-closed mapping to the input chain used by baseFor.
+func userChainFor(dir string) string {
+	switch dir {
+	case "out":
+		return "bfw-user-output"
+	case "routed":
+		return "bfw-user-forward"
+	default:
+		return "bfw-user-input"
+	}
+}
+
+func userLoggingChainFor(dir string) string {
+	switch dir {
+	case "out":
+		return "bfw-user-logging-output"
+	case "routed":
+		return "bfw-user-logging-forward"
+	default:
+		return "bfw-user-logging-input"
+	}
+}
+
 func policyFor(p store.Policies, dir string) string {
 	switch dir {
 	case "out":
@@ -281,12 +306,22 @@ type compiled struct {
 	rules       []*nftables.Rule
 	ruleArenas  [][]nftables.Rule
 	ruleCap     int
+	exprArenas  []exprArena
 	cmpArenas   [][]expr.Cmp
 	rangeArenas [][]expr.Range
 	natTables   []*nftables.Table
 	setID       uint32
 	threatBans4 *nftables.Set
 	threatBans6 *nftables.Set
+}
+
+// exprArena owns disjoint capacity windows for match slices. Each returned
+// slice is capped at its reserved window so later rules cannot append over a
+// previous rule's expressions. The backing arrays remain stable for the life
+// of the compiled ruleset.
+type exprArena struct {
+	values []expr.Any
+	used   int
 }
 
 // newSetID pre-assigns kernel set IDs at compile time so Lookup/Dynset
@@ -309,6 +344,27 @@ func (c *compiled) chain(name string) *nftables.Chain {
 
 func (c *compiled) addRule(chain string, exprs ...expr.Any) {
 	c.addRuleObject(c.table, c.chain(chain), exprs)
+}
+
+func (c *compiled) exprSlice(capHint int) []expr.Any {
+	return c.exprSliceWithChunk(capHint, 4096)
+}
+
+func (c *compiled) exprSliceWithChunk(capHint, chunkCap int) []expr.Any {
+	if capHint <= 0 {
+		return nil
+	}
+	if len(c.exprArenas) == 0 || len(c.exprArenas[len(c.exprArenas)-1].values)-c.exprArenas[len(c.exprArenas)-1].used < capHint {
+		arenaCap := chunkCap
+		if capHint > arenaCap {
+			arenaCap = capHint
+		}
+		c.exprArenas = append(c.exprArenas, exprArena{values: make([]expr.Any, arenaCap)})
+	}
+	arena := &c.exprArenas[len(c.exprArenas)-1]
+	start := arena.used
+	arena.used += capHint
+	return arena.values[start : start : start+capHint]
 }
 
 // addRuleObject stores rule values in stable chunks before retaining pointers
@@ -488,11 +544,11 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 			// ufw IPV6=no: drop all v6 except loopback.
 			switch d.dir {
 			case "in":
-				c.addRule(d.base, join(nfproto(true), iif("lo"), ex(counter(), verdict(expr.VerdictAccept)))...)
+				c.addRule(d.base, c.join(nfproto(true), iif("lo"), ex(counter(), verdict(expr.VerdictAccept)))...)
 			case "out":
-				c.addRule(d.base, join(nfproto(true), oif("lo"), ex(counter(), verdict(expr.VerdictAccept)))...)
+				c.addRule(d.base, c.join(nfproto(true), oif("lo"), ex(counter(), verdict(expr.VerdictAccept)))...)
 			}
-			c.addRule(d.base, join(nfproto(true), ex(counter(), verdict(expr.VerdictDrop)))...)
+			c.addRule(d.base, c.join(nfproto(true), ex(counter(), verdict(expr.VerdictDrop)))...)
 		}
 
 		// ufw-init-functions jump order. The user jump lives in the base
@@ -538,7 +594,7 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 			// accept policy is conntrack-aware.
 			for _, proto := range []byte{unix.IPPROTO_TCP, unix.IPPROTO_UDP} {
 				c.addRule("bfw-track-"+d.base,
-					join(l4proto(proto), ctState(expr.CtStateBitNEW),
+					c.join(l4proto(proto), ctState(expr.CtStateBitNEW),
 						ex(counter(), verdict(expr.VerdictAccept)))...)
 			}
 		}
@@ -595,7 +651,7 @@ func (c *compiled) addThreatBanRules(chain string) {
 		if family.v6 {
 			offset, length = 8, 16
 		}
-		match := join(nfproto(family.v6), ex(
+		match := c.join(nfproto(family.v6), ex(
 			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: offset, Len: length},
 			&expr.Lookup{SourceRegister: 1, SetName: family.set.Name, SetID: family.set.ID},
 		), ex(counter(), verdict(expr.VerdictDrop)))
@@ -610,12 +666,12 @@ func (c *compiled) compileBefore() {
 	in, out, fwd := "bfw-before-input", "bfw-before-output", "bfw-before-forward"
 
 	// loopback
-	c.addRule(in, join(iif("lo"), ex(counter(), verdict(expr.VerdictAccept)))...)
-	c.addRule(out, join(oif("lo"), ex(counter(), verdict(expr.VerdictAccept)))...)
+	c.addRule(in, c.join(iif("lo"), ex(counter(), verdict(expr.VerdictAccept)))...)
+	c.addRule(out, c.join(oif("lo"), ex(counter(), verdict(expr.VerdictAccept)))...)
 
 	// RH0 drop (v6): rt type 0 = exthdr routing-header type byte (offset 2)
 	for _, ch := range []string{in, out, fwd} {
-		c.addRule(ch, join(nfproto(true), rhType(0), ex(counter(), verdict(expr.VerdictDrop)))...)
+		c.addRule(ch, c.join(nfproto(true), rhType(0), ex(counter(), verdict(expr.VerdictDrop)))...)
 	}
 
 	c.addThreatBanRules(in)
@@ -623,23 +679,23 @@ func (c *compiled) compileBefore() {
 
 	// established/related fast path
 	for _, ch := range []string{in, out, fwd} {
-		c.addRule(ch, join(ctState(expr.CtStateBitESTABLISHED|expr.CtStateBitRELATED),
+		c.addRule(ch, c.join(ctState(expr.CtStateBitESTABLISHED|expr.CtStateBitRELATED),
 			ex(counter(), verdict(expr.VerdictAccept)))...)
 	}
 
 	// v6 multicast ping replies arrive without conntrack state (rfc4890)
-	c.addRule(in, join(nfproto(true), l4proto(unix.IPPROTO_ICMPV6), icmpType(129),
+	c.addRule(in, c.join(nfproto(true), l4proto(unix.IPPROTO_ICMPV6), icmpType(129),
 		ex(counter(), verdict(expr.VerdictAccept)))...)
 
 	// INVALID → logging-deny then drop (ufw logs INVALID at medium+)
-	c.addRule(in, join(ctState(expr.CtStateBitINVALID), ex(counter(), jump(chLogDeny)))...)
-	c.addRule(in, join(ctState(expr.CtStateBitINVALID), ex(counter(), verdict(expr.VerdictDrop)))...)
+	c.addRule(in, c.join(ctState(expr.CtStateBitINVALID), ex(counter(), jump(chLogDeny)))...)
+	c.addRule(in, c.join(ctState(expr.CtStateBitINVALID), ex(counter(), verdict(expr.VerdictDrop)))...)
 
 	// ICMPv4 accepts (before.rules): destination-unreachable, time-exceeded,
 	// parameter-problem, echo-request. (ufw dropped source-quench in 0.36.)
 	for _, ch := range []string{in, fwd} {
 		for _, t := range []byte{3, 11, 12, 8} {
-			c.addRule(ch, join(nfproto(false), l4proto(unix.IPPROTO_ICMP), icmpType(t),
+			c.addRule(ch, c.join(nfproto(false), l4proto(unix.IPPROTO_ICMP), icmpType(t),
 				ex(counter(), verdict(expr.VerdictAccept)))...)
 		}
 	}
@@ -660,7 +716,7 @@ func (c *compiled) compileBefore() {
 	}
 	emit6 := func(ch string, list []ic6) {
 		for _, r := range list {
-			ex := join(nfproto(true), l4proto(unix.IPPROTO_ICMPV6), icmpType(r.typ))
+			ex := c.join(nfproto(true), l4proto(unix.IPPROTO_ICMPV6), icmpType(r.typ))
 			if r.srcCIDR != "" {
 				ex = append(ex, addrMatch("saddr", r.srcCIDR, true)...)
 			}
@@ -681,38 +737,38 @@ func (c *compiled) compileBefore() {
 	emit6(fwd, []ic6{{1, -1, ""}, {2, -1, ""}, {3, -1, ""}, {4, -1, ""}, {128, -1, ""}, {129, -1, ""}})
 	// HAAD/MPS/MPA (before6.rules places these on input)
 	for _, t := range []byte{144, 145, 146, 147} {
-		c.addRule(in, join(nfproto(true), l4proto(unix.IPPROTO_ICMPV6), icmpType(t),
+		c.addRule(in, c.join(nfproto(true), l4proto(unix.IPPROTO_ICMPV6), icmpType(t),
 			ex(counter(), verdict(expr.VerdictAccept)))...)
 	}
 
 	// DHCP client: v4 udp 67→68; v6 link-local 547→546
-	c.addRule(in, join(nfproto(false), l4proto(unix.IPPROTO_UDP),
+	c.addRule(in, c.join(nfproto(false), l4proto(unix.IPPROTO_UDP),
 		portEq("sport", 67), portEq("dport", 68),
 		ex(counter(), verdict(expr.VerdictAccept)))...)
-	c.addRule(in, join(nfproto(true), l4proto(unix.IPPROTO_UDP),
+	c.addRule(in, c.join(nfproto(true), l4proto(unix.IPPROTO_UDP),
 		addrMatch("saddr", "fe80::/10", true), portEq("sport", 547),
 		addrMatch("daddr", "fe80::/10", true), portEq("dport", 546),
 		ex(counter(), verdict(expr.VerdictAccept)))...)
 
 	// non-local drop (v4 only in ufw: before6.rules has no not-local chain)
-	c.addRule(in, join(nfproto(false), ex(counter(), jump(chNotLocal)))...)
+	c.addRule(in, c.join(nfproto(false), ex(counter(), jump(chNotLocal)))...)
 	for _, t := range []uint32{unix.RTN_LOCAL, unix.RTN_MULTICAST, unix.RTN_BROADCAST} {
-		c.addRule(chNotLocal, join(fibAddrType(t), ex(counter(), verdict(expr.VerdictReturn)))...)
+		c.addRule(chNotLocal, c.join(fibAddrType(t), ex(counter(), verdict(expr.VerdictReturn)))...)
 	}
 	c.addRule(chNotLocal, limit3(), counter(), jump(chLogDeny))
 	c.addRule(chNotLocal, counter(), verdict(expr.VerdictDrop))
 
 	// mDNS + UPnP multicast
-	c.addRule(in, join(nfproto(false), l4proto(unix.IPPROTO_UDP),
+	c.addRule(in, c.join(nfproto(false), l4proto(unix.IPPROTO_UDP),
 		addrMatch("daddr", "224.0.0.251", false), portEq("dport", 5353),
 		ex(counter(), verdict(expr.VerdictAccept)))...)
-	c.addRule(in, join(nfproto(true), l4proto(unix.IPPROTO_UDP),
+	c.addRule(in, c.join(nfproto(true), l4proto(unix.IPPROTO_UDP),
 		addrMatch("daddr", "ff02::fb", true), portEq("dport", 5353),
 		ex(counter(), verdict(expr.VerdictAccept)))...)
-	c.addRule(in, join(nfproto(false), l4proto(unix.IPPROTO_UDP),
+	c.addRule(in, c.join(nfproto(false), l4proto(unix.IPPROTO_UDP),
 		addrMatch("daddr", "239.255.255.250", false), portEq("dport", 1900),
 		ex(counter(), verdict(expr.VerdictAccept)))...)
-	c.addRule(in, join(nfproto(true), l4proto(unix.IPPROTO_UDP),
+	c.addRule(in, c.join(nfproto(true), l4proto(unix.IPPROTO_UDP),
 		addrMatch("daddr", "ff02::f", true), portEq("dport", 1900),
 		ex(counter(), verdict(expr.VerdictAccept)))...)
 }
@@ -725,23 +781,23 @@ func (c *compiled) compileAfter() {
 	skip := "bfw-skip-to-policy-input"
 
 	// v4: broadcast dest, NetBIOS/SMB, DHCP server+client ports.
-	c.addRule(in, join(nfproto(false), fibAddrType(unix.RTN_BROADCAST),
+	c.addRule(in, c.join(nfproto(false), fibAddrType(unix.RTN_BROADCAST),
 		ex(counter(), jump(skip)))...)
 	for _, p := range []uint16{137, 138} {
-		c.addRule(in, join(nfproto(false), l4proto(unix.IPPROTO_UDP), portEq("dport", p),
+		c.addRule(in, c.join(nfproto(false), l4proto(unix.IPPROTO_UDP), portEq("dport", p),
 			ex(counter(), jump(skip)))...)
 	}
 	for _, p := range []uint16{139, 445} {
-		c.addRule(in, join(nfproto(false), l4proto(unix.IPPROTO_TCP), portEq("dport", p),
+		c.addRule(in, c.join(nfproto(false), l4proto(unix.IPPROTO_TCP), portEq("dport", p),
 			ex(counter(), jump(skip)))...)
 	}
-	c.addRule(in, join(nfproto(false), l4proto(unix.IPPROTO_UDP),
+	c.addRule(in, c.join(nfproto(false), l4proto(unix.IPPROTO_UDP),
 		portEq("sport", 67), portEq("dport", 68),
 		ex(counter(), jump(skip)))...)
 
 	// v6: DHCPv6 server+client ports (after6.rules).
 	for _, p := range []uint16{546, 547} {
-		c.addRule(in, join(nfproto(true), l4proto(unix.IPPROTO_UDP), portEq("dport", p),
+		c.addRule(in, c.join(nfproto(true), l4proto(unix.IPPROTO_UDP), portEq("dport", p),
 			ex(counter(), jump(skip)))...)
 	}
 }
@@ -794,7 +850,7 @@ func (c *compiled) compileLoggingChains(level string, policies store.Policies) {
 			if level == "low" {
 				// ufw rate-limits the INVALID RETURN (limit_args appended):
 				// beyond 3/min INVALIDs fall through to the BLOCK log.
-				c.addRule(ch, join(ctState(expr.CtStateBitINVALID), limitExpr(),
+				c.addRule(ch, c.join(ctState(expr.CtStateBitINVALID), limitExpr(),
 					ex(counter(), verdict(expr.VerdictReturn)))...)
 			} else {
 				ex := ctState(expr.CtStateBitINVALID)
@@ -953,9 +1009,8 @@ func (c *compiled) compileRule(r *rule.Rule, v6 bool, now int64) error {
 	if r.Disabled || r.Expired(now) {
 		return nil
 	}
-	base := baseFor(r.Direction)
-	userChain := "bfw-user-" + base
-	logChain := "bfw-user-logging-" + base
+	userChain := userChainFor(r.Direction)
+	logChain := userLoggingChainFor(r.Direction)
 
 	variants, variantCount := protoVariants(r)
 	for _, proto := range variants[:variantCount] {
@@ -1138,7 +1193,7 @@ func (c *compiled) ruleMatch(r *rule.Rule, proto string, v6 bool) ([]expr.Any, e
 			capHint += 3 // ct state NEW
 		}
 	}
-	ex := make([]expr.Any, 0, capHint)
+	ex := c.exprSlice(capHint)
 	if v6 {
 		ex = append(ex, cachedNFProto[1]...)
 	} else {
@@ -1362,7 +1417,7 @@ func (c *compiled) compileNAT(st *store.State) error {
 
 func ex(exprs ...expr.Any) []expr.Any { return exprs }
 
-func join(lists ...[]expr.Any) []expr.Any {
+func (c *compiled) join(lists ...[]expr.Any) []expr.Any {
 	n := 0
 	for _, list := range lists {
 		n += len(list)
@@ -1370,7 +1425,7 @@ func join(lists ...[]expr.Any) []expr.Any {
 	if n == 0 {
 		return nil
 	}
-	out := make([]expr.Any, 0, n)
+	out := c.exprSliceWithChunk(n, 128)
 	for _, l := range lists {
 		out = append(out, l...)
 	}

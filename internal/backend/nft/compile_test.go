@@ -63,6 +63,29 @@ func rulesIn(c *compiled, chain string) []*nftables.Rule {
 	return out
 }
 
+func TestUserChainMapping(t *testing.T) {
+	cases := []struct {
+		direction string
+		user      string
+		logging   string
+	}{
+		{direction: rule.DirIn, user: "bfw-user-input", logging: "bfw-user-logging-input"},
+		{direction: rule.DirOut, user: "bfw-user-output", logging: "bfw-user-logging-output"},
+		{direction: rule.DirRouted, user: "bfw-user-forward", logging: "bfw-user-logging-forward"},
+		{direction: "unexpected", user: "bfw-user-input", logging: "bfw-user-logging-input"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.direction, func(t *testing.T) {
+			if got := userChainFor(tc.direction); got != tc.user {
+				t.Errorf("userChainFor(%q) = %q, want %q", tc.direction, got, tc.user)
+			}
+			if got := userLoggingChainFor(tc.direction); got != tc.logging {
+				t.Errorf("userLoggingChainFor(%q) = %q, want %q", tc.direction, got, tc.logging)
+			}
+		})
+	}
+}
+
 func TestCompileStructure(t *testing.T) {
 	c, err := compile(fixtureState(), nil)
 	if err != nil {
@@ -441,6 +464,33 @@ func TestRuleArenaKeepsPointersStableAcrossChunks(t *testing.T) {
 		if len(r.Exprs) != 1 {
 			t.Errorf("rule %d expression count = %d, want 1", i, len(r.Exprs))
 		}
+	}
+}
+
+func TestExprArenaKeepsSlicesDisjointAcrossChunks(t *testing.T) {
+	c := &compiled{}
+	first := c.exprSlice(2)
+	first = append(first, &expr.Counter{}, &expr.Verdict{Kind: expr.VerdictAccept})
+	second := c.exprSlice(2)
+	second = append(second, &expr.Counter{}, &expr.Verdict{Kind: expr.VerdictDrop})
+	if len(c.exprArenas) != 1 {
+		t.Fatalf("expr arena count = %d, want one chunk", len(c.exprArenas))
+	}
+	if first[0] == second[0] || first[1] == second[1] {
+		t.Fatal("expression slices unexpectedly alias")
+	}
+	if first[1].(*expr.Verdict).Kind != expr.VerdictAccept {
+		t.Fatal("first expression slice was overwritten")
+	}
+	if second[1].(*expr.Verdict).Kind != expr.VerdictDrop {
+		t.Fatal("second expression slice was not retained")
+	}
+
+	// Force a new chunk and verify the first chunk remains address-stable.
+	old := &first[0]
+	_ = c.exprSlice(4096)
+	if old != &first[0] {
+		t.Fatal("expression arena moved a retained slice")
 	}
 }
 
