@@ -84,6 +84,8 @@ def main():
             "nmap_window": nmap_stats(raw / f"nmap_window_{e}.txt"),
             "calm": load(raw, f"legit_calm_{e}.json"),
             "attacks": {},
+            "lapi": load(raw, f"dynamic_lapi_{e}.json"),
+            "jail": load(raw, f"dynamic_jail_{e}.json"),
         }
         for a in ATTACKS:
             entry["attacks"][a] = {
@@ -100,6 +102,20 @@ def main():
                 gates.append(f"{e}: service port 8080 was NOT reachable")
             if reach.get("open_8081") != 0:
                 gates.append(f"{e}: denied port 8081 was reachable (firewall leak)")
+        # Gate: with a protect mechanism, the attacker must actually get banned.
+        if e == "bfw":
+            jail = entry["jail"] or {}
+            if jail.get("jail_ban_s", -1) is not None and jail.get("jail_ban_s", -1) < 0:
+                gates.append("bfw: SSH brute-force did not produce a jail ban")
+            if jail.get("ssh_after") != 0:
+                gates.append("bfw: attacker still reached sshd after the jail ban")
+            if jail.get("legit_after") != 1:
+                gates.append("bfw: legit client was affected by the attacker ban")
+            lapi = entry["lapi"] or {}
+            if lapi.get("lapi_ban_s", -1) is not None and lapi.get("lapi_ban_s", -1) < 0:
+                gates.append("bfw: LAPI ban decision was not applied")
+            if lapi.get("lapi_unban_s", -1) is not None and lapi.get("lapi_unban_s", -1) < 0:
+                gates.append("bfw: LAPI unban did not remove the threat set entry")
         # Gate: legit traffic must complete during every attack.
         for a in ATTACKS:
             st = entry["attacks"][a]["legit"] or {}
@@ -167,6 +183,38 @@ def main():
     for e in ENGINES:
         s = engines[e]["setup"] or {}
         lines.append(f"| {e} | {s.get('rules','—')} | {s.get('setup_s','—')} |")
+
+    lines += ["", "### Dynamic protection (smart banning)", "",
+              "| Measure | none | bfw | ufw |", "|---|---:|---:|---:|"]
+
+    def dyn_cell(e, key):
+        d = engines[e].get(key) or {}
+        if not d:
+            return "n/a"
+        if d.get("mechanism") == "none":
+            return "no mechanism — attacker stays unbanned"
+        if key == "lapi":
+            parts = []
+            ban, unban = d.get("lapi_ban_s"), d.get("lapi_unban_s")
+            if ban is not None and ban >= 0:
+                parts.append(f"ban in {ban:.1f} s")
+            if unban is not None and unban >= 0:
+                parts.append(f"unban in {unban:.1f} s")
+            parts.append("blocked" if d.get("attacker_after_ban") == 0 else "NOT blocked")
+            parts.append("legit ok" if d.get("legit_after_ban") == 1 else "legit AFFECTED")
+            return "; ".join(parts)
+        parts = []
+        ban = d.get("jail_ban_s")
+        if ban is not None and ban >= 0:
+            parts.append(f"jail ban in {ban:.1f} s")
+        if "ssh_after" in d:
+            parts.append("ssh blocked" if d["ssh_after"] == 0 else "ssh STILL OPEN")
+        if "legit_after" in d:
+            parts.append("legit ok" if d["legit_after"] == 1 else "legit AFFECTED")
+        return "; ".join(parts)
+
+    lines.append(f"| SSH brute-force → journal jail | {dyn_cell('none','jail')} | {dyn_cell('bfw','jail')} | {dyn_cell('ufw','jail')} |")
+    lines.append(f"| CrowdSec-style LAPI ban/unban | {dyn_cell('none','lapi')} | {dyn_cell('bfw','lapi')} | {dyn_cell('ufw','lapi')} |")
 
     lines += ["", "### Calm baseline (no attack)", "",
               "| engine | ok | p50 ms | p95 ms |", "|---|---:|---:|---:|"]

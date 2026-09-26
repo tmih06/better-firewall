@@ -313,10 +313,9 @@ out = {
 }
 
 def attack_svg():
-    W, H = 1120, 730
+    W, H = 1120, 850
     eng = ATTACK["engines"]
     meta = ATTACK.get("metadata", {})
-    W, H = 1120, 700
     ENGINES = [("none", "No firewall", "#64748b"), ("bfw", "bfw", "#0f9d8a"), ("ufw", "UFW", "#3b82f6")]
     ATTACKS = [
         ("synflood_denied", "SYN flood → denied port"),
@@ -364,13 +363,43 @@ def attack_svg():
             fails = st.get("req_fail", 0) + st.get("connect_fail", 0)
             if fails:
                 s += f'  <text x="{x0 + bw + 160:.1f}" y="{y+13}" font-size="10.5" fill="#ef4444">{fails} failed</text>\n'
-    s += '  <rect x="24" y="700" width="12" height="12" rx="3" class="base"/>\n'
-    s += '  <text x="42" y="710" font-size="11">No firewall</text>\n'
-    s += '  <rect x="120" y="700" width="12" height="12" rx="3" class="bfw"/>\n'
-    s += '  <text x="138" y="710" font-size="11">bfw</text>\n'
-    s += '  <rect x="176" y="700" width="12" height="12" rx="3" class="ufw"/>\n'
-    s += '  <text x="194" y="710" font-size="11">UFW</text>\n'
-    s += '  <text x="240" y="710" font-size="10.5" class="muted">Bars: requests completed during the attack window · gates: denied port closed, service reachable, legit p95 &lt; 2 s</text>\n'
+    # Panel 5: dynamic smart banning (bfw protect). Rows show mechanism
+    # outcome per engine; ban latency drawn when measured.
+    dy = 284 + len(ATTACKS) * 144 + 6
+    s += f'  <rect class="panel" x="24" y="{dy}" width="1072" height="110" rx="14"/>\n'
+    s += f'  <text x="48" y="{dy+26}" font-size="14" font-weight="650">Dynamic bans — bfw protect (journal jail + CrowdSec LAPI)</text>\n'
+    dyn_rows = [
+        ("SSH brute-force → jail ban", "jail", "jail_ban_s"),
+        ("CrowdSec LAPI ban → unban", "lapi", "lapi_ban_s"),
+    ]
+    for ri, (rlabel, dkey, tkey) in enumerate(dyn_rows):
+        y = dy + 40 + ri * 32
+        s += f'  <text x="48" y="{y+13}" font-size="12" font-weight="650">{rlabel}</text>\n'
+        for i, (k, label, color) in enumerate(ENGINES):
+            d = eng[k].get(dkey) or {}
+            bx = 380 + i * 230
+            if not d:
+                s += f'  <text x="{bx}" y="{y+13}" font-size="11" class="muted">{label}: n/a</text>\n'
+                continue
+            if d.get("mechanism") == "none":
+                s += f'  <text x="{bx}" y="{y+13}" font-size="11" fill="{color}">{label}: no mechanism — attacker unbanned</text>\n'
+                continue
+            t = d.get(tkey)
+            txt = f"{label}: ban {t:.1f} s" if isinstance(t, (int, float)) and t >= 0 else f"{label}: ban pending"
+            extra = ""
+            if dkey == "jail" and d.get("ssh_after") is not None:
+                extra = " (ssh blocked)" if d["ssh_after"] == 0 else " (ssh OPEN)"
+            if dkey == "lapi" and d.get("lapi_unban_s") is not None and d.get("lapi_unban_s", -1) >= 0:
+                extra = f", unban {d['lapi_unban_s']:.1f} s"
+            s += f'  <text x="{bx}" y="{y+13}" font-size="11" font-weight="650" fill="{color}">{txt}{extra}</text>\n'
+    fy = dy + 118
+    s += f'  <rect x="24" y="{fy}" width="12" height="12" rx="3" class="base"/>\n'
+    s += f'  <text x="42" y="{fy+10}" font-size="11">No firewall</text>\n'
+    s += f'  <rect x="120" y="{fy}" width="12" height="12" rx="3" class="bfw"/>\n'
+    s += f'  <text x="138" y="{fy+10}" font-size="11">bfw</text>\n'
+    s += f'  <rect x="176" y="{fy}" width="12" height="12" rx="3" class="ufw"/>\n'
+    s += f'  <text x="194" y="{fy+10}" font-size="11">UFW</text>\n'
+    s += f'  <text x="240" y="{fy+10}" font-size="10.5" class="muted">Bars: requests completed during the attack window · gates: denied port closed, service reachable, legit p95 &lt; 2 s, attacker banned</text>\n'
     s += "</svg>\n"
     return s
 
