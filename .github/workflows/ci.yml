@@ -287,12 +287,12 @@ jobs:
   # ------------------------------------------------------------------ attack
   # Real-attack comparison: nmap recon plus hping3 SYN/connect floods against
   # the service while legit keep-alive traffic runs, for bfw, ufw, and a
-  # no-firewall baseline. Same isolation model as the performance job:
-  # internal-only network, NET_ADMIN confined to the defender's netns.
+  # no-firewall baseline. Kept short (10 rules, 6s floods) so it can run on
+  # every push; PERF_ATTACK_* env vars allow deeper manual runs.
   attack:
     name: attack-lab (bfw vs ufw)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     needs: build
     permissions:
       contents: read
