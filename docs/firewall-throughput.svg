@@ -1,48 +1,41 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="650" viewBox="0 0 1120 650" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="560" viewBox="0 0 1120 560" role="img" aria-labelledby="title desc">
   <title id="title">bfw versus UFW request throughput</title>
-  <desc id="desc">Hosted CI traffic comparison across keepalive, connection churn, and mixed profiles at 10, 100, 500, and 1,000 rules. The plotted ratio is bfw requests per second divided by UFW requests per second; parity is 1.0. Across all twelve cases ratios range from 0.986 to 1.005.</desc>
+  <desc id="desc">Line graph of bfw divided by UFW requests per second across 10, 100, 500, and 1,000 rules. Separate lines show keep-alive, connection-churn, and mixed profiles. Parity is 1.0; the vertical axis is zoomed from 0.98 to 1.01. Ratios range from 0.986 to 1.005.</desc>
   <style>
     text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #172554; }
     .muted { fill: #64748b; }
     .panel { fill: #fff; stroke: #dbe4f0; stroke-width: 1; }
     .grid { stroke: #e2e8f0; stroke-width: 1; }
-    .parity { stroke: #334155; stroke-width: 2; stroke-dasharray: 5 4; }
-    .keep { fill: #0f9d8a; }
-    .churn { fill: #8b5cf6; }
-    .mixed { fill: #f97316; }
+    .parity { stroke: #334155; stroke-width: 1.6; stroke-dasharray: 5 4; }
+    .line { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
   </style>
-  <rect width="1120" height="650" fill="#f1f5f9"/>
+  <rect width="1120" height="560" fill="#f1f5f9"/>
   <text x="32" y="36" font-size="24" font-weight="700">Traffic throughput: bfw / UFW</text>
-  <text x="32" y="60" font-size="13" class="muted">Requests per second · 3 CI repeats · parity at 1.000× · zoomed ratio axis</text>
-  <rect class="panel" x="24" y="80" width="1072" height="520" rx="14"/>
-  <line class="grid" x1="390" y1="130" x2="390" y2="545"/>
-  <line class="grid" x1="510" y1="130" x2="510" y2="545"/>
-  <line class="grid" x1="630" y1="130" x2="630" y2="545"/>
-  <line class="parity" x1="710" y1="125" x2="710" y2="545"/>
-  <line class="grid" x1="830" y1="130" x2="830" y2="545"/>
-  <line class="grid" x1="950" y1="130" x2="950" y2="545"/>
-  <text x="52" y="115" font-size="12" font-weight="650" class="muted">PROFILE · RULES</text>
-  <text x="710" y="115" font-size="11" text-anchor="middle" font-weight="650">1.000× PARITY</text>
-  <text x="52" y="153" font-size="12" font-weight="650" class="keep">KEEP-ALIVE</text>
-  <text x="52" y="177" font-size="12" class="muted">10 rules</text><rect class="keep" x="658" y="164" width="52" height="10" rx="4"/><text x="720" y="174" font-size="12" font-weight="650">0.987×</text>
-  <text x="52" y="207" font-size="12" class="muted">100 rules</text><rect class="keep" x="678" y="194" width="32" height="10" rx="4"/><text x="720" y="204" font-size="12" font-weight="650">0.992×</text>
-  <text x="52" y="237" font-size="12" class="muted">500 rules</text><rect class="keep" x="690" y="224" width="20" height="10" rx="4"/><text x="720" y="234" font-size="12" font-weight="650">0.995×</text>
-  <text x="52" y="267" font-size="12" class="muted">1,000 rules</text><rect class="keep" x="670" y="254" width="40" height="10" rx="4"/><text x="720" y="264" font-size="12" font-weight="650">0.990×</text>
-  <text x="52" y="303" font-size="12" font-weight="650" class="churn">CONNECTION CHURN</text>
-  <text x="52" y="327" font-size="12" class="muted">10 rules</text><circle class="churn" cx="710" cy="320" r="6"/><text x="724" y="324" font-size="12" font-weight="650">1.000×</text>
-  <text x="52" y="357" font-size="12" class="muted">100 rules</text><circle class="churn" cx="710" cy="350" r="6"/><text x="724" y="354" font-size="12" font-weight="650">1.000×</text>
-  <text x="52" y="387" font-size="12" class="muted">500 rules</text><circle class="churn" cx="710" cy="380" r="6"/><text x="724" y="384" font-size="12" font-weight="650">1.000×</text>
-  <text x="52" y="417" font-size="12" class="muted">1,000 rules</text><circle class="churn" cx="710" cy="410" r="6"/><text x="724" y="414" font-size="12" font-weight="650">1.000×</text>
-  <text x="52" y="453" font-size="12" font-weight="650" class="mixed">MIXED LOAD</text>
-  <text x="52" y="477" font-size="12" class="muted">10 rules</text><rect class="mixed" x="678" y="464" width="32" height="10" rx="4"/><text x="720" y="474" font-size="12" font-weight="650">0.992×</text>
-  <text x="52" y="507" font-size="12" class="muted">100 rules</text><rect class="mixed" x="686" y="494" width="24" height="10" rx="4"/><text x="720" y="504" font-size="12" font-weight="650">0.994×</text>
-  <text x="52" y="537" font-size="12" class="muted">500 rules</text><rect class="mixed" x="710" y="524" width="20" height="10" rx="4"/><text x="738" y="534" font-size="12" font-weight="650">1.005×</text>
-  <text x="52" y="567" font-size="12" class="muted">1,000 rules</text><rect class="mixed" x="654" y="554" width="56" height="10" rx="4"/><text x="720" y="564" font-size="12" font-weight="650">0.986×</text>
-  <line x1="390" y1="545" x2="950" y2="545" stroke="#94a3b8"/>
-  <text x="390" y="570" font-size="11" text-anchor="middle" class="muted">0.920×</text>
-  <text x="510" y="570" font-size="11" text-anchor="middle" class="muted">0.950×</text>
-  <text x="630" y="570" font-size="11" text-anchor="middle" class="muted">0.980×</text>
-  <text x="710" y="570" font-size="11" text-anchor="middle" class="muted">1.000×</text>
-  <text x="830" y="570" font-size="11" text-anchor="middle" class="muted">1.030×</text>
-  <text x="950" y="570" font-size="11" text-anchor="middle" class="muted">1.060×</text>
+  <text x="32" y="60" font-size="13" class="muted">Ratio across rule-count scenarios · 3 repeats · 1.000× means equal requests/s</text>
+  <rect class="panel" x="24" y="80" width="1072" height="440" rx="14"/>
+  <line class="grid" x1="160" y1="140" x2="800" y2="140"/>
+  <line class="grid" x1="160" y1="236.7" x2="800" y2="236.7"/>
+  <line class="grid" x1="160" y1="333.3" x2="800" y2="333.3"/>
+  <line class="grid" x1="160" y1="430" x2="800" y2="430"/>
+  <line class="parity" x1="160" y1="236.7" x2="800" y2="236.7"/>
+  <text x="145" y="144" text-anchor="end" font-size="11" class="muted">1.010×</text>
+  <text x="145" y="241" text-anchor="end" font-size="11" font-weight="650">1.000×</text>
+  <text x="145" y="338" text-anchor="end" font-size="11" class="muted">0.990×</text>
+  <text x="145" y="434" text-anchor="end" font-size="11" class="muted">0.980×</text>
+  <text x="160" y="456" text-anchor="middle" font-size="11" class="muted">10</text>
+  <text x="373.3" y="456" text-anchor="middle" font-size="11" class="muted">100</text>
+  <text x="586.7" y="456" text-anchor="middle" font-size="11" class="muted">500</text>
+  <text x="800" y="456" text-anchor="middle" font-size="11" class="muted">1,000</text>
+  <text x="480" y="482" text-anchor="middle" font-size="12" class="muted">Rules</text>
+  <polyline class="line" stroke="#0f9d8a" points="160,362.3 373.3,314 586.7,285 800,333.3"/>
+  <circle cx="160" cy="362.3" r="5" fill="#0f9d8a"/><circle cx="373.3" cy="314" r="5" fill="#0f9d8a"/><circle cx="586.7" cy="285" r="5" fill="#0f9d8a"/><circle cx="800" cy="333.3" r="5" fill="#0f9d8a"/>
+  <polyline class="line" stroke="#8b5cf6" points="160,236.7 373.3,236.7 586.7,236.7 800,236.7"/>
+  <circle cx="160" cy="236.7" r="5" fill="#8b5cf6"/><circle cx="373.3" cy="236.7" r="5" fill="#8b5cf6"/><circle cx="586.7" cy="236.7" r="5" fill="#8b5cf6"/><circle cx="800" cy="236.7" r="5" fill="#8b5cf6"/>
+  <polyline class="line" stroke="#f97316" points="160,314 373.3,294.7 586.7,188.3 800,372"/>
+  <circle cx="160" cy="314" r="5" fill="#f97316"/><circle cx="373.3" cy="294.7" r="5" fill="#f97316"/><circle cx="586.7" cy="188.3" r="5" fill="#f97316"/><circle cx="800" cy="372" r="5" fill="#f97316"/>
+  <line x1="850" y1="175" x2="880" y2="175" stroke="#0f9d8a" stroke-width="3"/><circle cx="865" cy="175" r="5" fill="#0f9d8a"/><text x="891" y="179" font-size="12">Keep-alive</text>
+  <line x1="850" y1="210" x2="880" y2="210" stroke="#8b5cf6" stroke-width="3"/><circle cx="865" cy="210" r="5" fill="#8b5cf6"/><text x="891" y="214" font-size="12">Connection churn</text>
+  <line x1="850" y1="245" x2="880" y2="245" stroke="#f97316" stroke-width="3"/><circle cx="865" cy="245" r="5" fill="#f97316"/><text x="891" y="249" font-size="12">Mixed</text>
+  <text x="850" y="300" font-size="11" class="muted">Above 1.0:</text><text x="850" y="317" font-size="11" class="muted">bfw higher</text><text x="850" y="334" font-size="11" class="muted">throughput.</text>
+  <text x="52" y="503" font-size="11" class="muted">Zoomed vertical axis: 0.980×–1.010×. Full scenario counts and request rates are in the report.</text>
 </svg>
