@@ -75,27 +75,43 @@ func renderNATTable(b *strings.Builder, c *compiled, t *nftables.Table) {
 }
 
 func renderSet(b *strings.Builder, c *compiled, s *nftables.Set) {
-	fmt.Fprintf(b, "\tset %s {\n", s.Name)
-	fmt.Fprintf(b, "\t\ttype %s\n", renderSetType(s.KeyType))
+	b.WriteString("\tset ")
+	b.WriteString(s.Name)
+	b.WriteString(" {\n")
+	b.WriteString("\t\ttype ")
+	b.WriteString(renderSetType(s.KeyType))
+	b.WriteString("\n")
 	// nft prints `size N` (before flags) for sets with an explicit size.
 	if s.Size != 0 {
-		fmt.Fprintf(b, "\t\tsize %d\n", s.Size)
+		b.WriteString("\t\tsize ")
+		writeUint(b, uint64(s.Size))
+		b.WriteString("\n")
 	}
-	var flags []string
-	if s.Interval {
-		flags = append(flags, "interval")
-	}
-	if s.Dynamic {
-		flags = append(flags, "dynamic")
-	}
-	if s.HasTimeout {
-		flags = append(flags, "timeout")
-	}
-	if len(flags) > 0 {
-		fmt.Fprintf(b, "\t\tflags %s\n", strings.Join(flags, ","))
+	if s.Interval || s.Dynamic || s.HasTimeout {
+		b.WriteString("\t\tflags ")
+		firstFlag := true
+		writeFlag := func(name string) {
+			if !firstFlag {
+				b.WriteByte(',')
+			}
+			b.WriteString(name)
+			firstFlag = false
+		}
+		if s.Interval {
+			writeFlag("interval")
+		}
+		if s.Dynamic {
+			writeFlag("dynamic")
+		}
+		if s.HasTimeout {
+			writeFlag("timeout")
+		}
+		b.WriteByte('\n')
 	}
 	if s.HasTimeout && s.Timeout != 0 {
-		fmt.Fprintf(b, "\t\ttimeout %s\n", renderDuration(s.Timeout))
+		b.WriteString("\t\ttimeout ")
+		b.WriteString(renderDuration(s.Timeout))
+		b.WriteByte('\n')
 	}
 	if elems := c.elems[s]; len(elems) > 0 {
 		b.WriteString("\t\telements = { ")
@@ -152,6 +168,12 @@ func hookName(h nftables.ChainHook) string {
 }
 
 func renderSetType(t nftables.SetDatatype) string {
+	// SetDatatype.Name is already the canonical nft spelling, including
+	// concatenation separators. Avoid decomposing it through the nftables
+	// helper, which allocates a slice and joins it again for every set.
+	if t.Name != "" {
+		return t.Name
+	}
 	parts := nftables.ConcatSetTypeElements(t)
 	if len(parts) == 0 {
 		return t.Name
