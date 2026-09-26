@@ -45,9 +45,13 @@ ax() { compose exec --no-TTY attacker "$@"; }
 
 HTTP_PORT=8080
 DENIED_PORT=8081
-RULES="${PERF_ATTACK_RULES:-100}"
-FLOOD_S="${PERF_ATTACK_FLOOD_SECONDS:-8}"
-CALM_S=5
+# Runs on every push: keep the lab short. Rule scaling is already covered by
+# the k6 performance shards; here a small ruleset is enough to exercise the
+# real rule path during attacks. ufw rule-adds dominate wall time, so RULES
+# stays low by default (override with PERF_ATTACK_RULES for deeper runs).
+RULES="${PERF_ATTACK_RULES:-10}"
+FLOOD_S="${PERF_ATTACK_FLOOD_SECONDS:-6}"
+CALM_S=4
 DRIVERS=/lab/attack_drivers.py
 
 ARTIFACTS_DIR="$REPO_ROOT/artifacts/attack"
