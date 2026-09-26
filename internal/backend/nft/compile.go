@@ -53,6 +53,55 @@ var directions = []struct {
 	{"routed", "forward", nftables.ChainHookForward},
 }
 
+// These names are emitted for every compile. Keeping them as immutable
+// literals avoids rebuilding the same chain strings for each ruleset while
+// preserving ufw's declaration and jump order (input, output, forward).
+var baseJumpChains = [3][7]string{
+	{"bfw-before-logging-input", "bfw-before-input", "bfw-user-input", "bfw-after-input", "bfw-after-logging-input", "bfw-reject-input", "bfw-track-input"},
+	{"bfw-before-logging-output", "bfw-before-output", "bfw-user-output", "bfw-after-output", "bfw-after-logging-output", "bfw-reject-output", "bfw-track-output"},
+	{"bfw-before-logging-forward", "bfw-before-forward", "bfw-user-forward", "bfw-after-forward", "bfw-after-logging-forward", "bfw-reject-forward", "bfw-track-forward"},
+}
+
+var regularChainNames = [...]string{
+	"bfw-before-logging-input", "bfw-before-logging-output", "bfw-before-logging-forward",
+	"bfw-before-input", "bfw-before-output", "bfw-before-forward",
+	"bfw-user-input", "bfw-user-output", "bfw-user-forward",
+	"bfw-after-input", "bfw-after-output", "bfw-after-forward",
+	"bfw-after-logging-input", "bfw-after-logging-output", "bfw-after-logging-forward",
+	"bfw-user-logging-input", "bfw-user-logging-output", "bfw-user-logging-forward",
+	"bfw-reject-input", "bfw-reject-output", "bfw-reject-forward",
+	"bfw-track-input", "bfw-track-output", "bfw-track-forward",
+	"bfw-skip-to-policy-input", "bfw-skip-to-policy-output", "bfw-skip-to-policy-forward",
+}
+
+type icmpv6BeforeRule struct {
+	typ     byte
+	hl      int // -1 = no hop-limit match
+	srcCIDR string
+}
+
+var beforeICMPv6Rules = []icmpv6BeforeRule{
+	{1, -1, ""}, {2, -1, ""}, {3, -1, ""}, {4, -1, ""}, {128, -1, ""},
+	{133, 255, ""}, {134, 255, ""}, {135, 255, ""}, {136, 255, ""},
+	{141, 255, ""}, {142, 255, ""},
+	{130, -1, "fe80::/10"}, {131, -1, "fe80::/10"}, {132, -1, "fe80::/10"}, {143, -1, "fe80::/10"},
+	{148, 255, ""}, {149, 255, ""},
+	{151, 1, "fe80::/10"}, {152, 1, "fe80::/10"}, {153, 1, "fe80::/10"},
+}
+
+var beforeICMPv6OutputRules = func() []icmpv6BeforeRule {
+	out := make([]icmpv6BeforeRule, 0, len(beforeICMPv6Rules)+1)
+	out = append(out, beforeICMPv6Rules[:5]...)
+	out = append(out, icmpv6BeforeRule{129, -1, ""})
+	out = append(out, beforeICMPv6Rules[5:]...)
+	return out
+}()
+
+var beforeICMPv6ForwardRules = []icmpv6BeforeRule{
+	{1, -1, ""}, {2, -1, ""}, {3, -1, ""},
+	{4, -1, ""}, {128, -1, ""}, {129, -1, ""},
+}
+
 // Common protocol matches are immutable after construction. Rules receive a
 // fresh expression slice, but sharing these read-only expression objects avoids
 // allocating the same meta/cmp pair for every ordinary rule during a compile.
@@ -187,6 +236,27 @@ var cachedPortData = func() [1 << 16][2]byte {
 	return data
 }()
 
+type portEqCacheKey struct {
+	which string
+	port  uint16
+}
+
+var cachedStaticPortEq = func() map[portEqCacheKey][]expr.Any {
+	keys := []portEqCacheKey{
+		{which: "sport", port: 67}, {which: "dport", port: 68},
+		{which: "sport", port: 547}, {which: "dport", port: 546},
+		{which: "dport", port: 5353}, {which: "dport", port: 1900},
+		{which: "dport", port: 137}, {which: "dport", port: 138},
+		{which: "dport", port: 139}, {which: "dport", port: 445},
+		{which: "dport", port: 547},
+	}
+	out := make(map[portEqCacheKey][]expr.Any, len(keys))
+	for _, key := range keys {
+		out[key] = makePortEq(key.which, key.port)
+	}
+	return out
+}()
+
 // Address payloads differ only by family and endpoint. Named-set lookups and
 // literal address matches use the same network-header load shape.
 var cachedAddrPayload = [2][2]*expr.Payload{
@@ -199,6 +269,34 @@ var cachedAddrPayload = [2][2]*expr.Payload{
 		{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 24, Len: 16},
 	},
 }
+
+var cachedLoopbackIIF = appendIfaceMatch(nil, expr.MetaKeyIIFNAME, "lo")
+var cachedLoopbackOIF = appendIfaceMatch(nil, expr.MetaKeyOIFNAME, "lo")
+
+type addrMatchCacheKey struct {
+	which string
+	cidr  string
+	v6    bool
+}
+
+// These addresses are emitted repeatedly by the immutable before-rules. Keep
+// their parsed expression graphs once per process; arbitrary user and NAT
+// addresses still take the validating path below.
+var cachedStaticAddrMatches = func() map[addrMatchCacheKey][]expr.Any {
+	keys := []addrMatchCacheKey{
+		{which: "saddr", cidr: "fe80::/10", v6: true},
+		{which: "daddr", cidr: "fe80::/10", v6: true},
+		{which: "daddr", cidr: "224.0.0.251", v6: false},
+		{which: "daddr", cidr: "ff02::fb", v6: true},
+		{which: "daddr", cidr: "239.255.255.250", v6: false},
+		{which: "daddr", cidr: "ff02::f", v6: true},
+	}
+	out := make(map[addrMatchCacheKey][]expr.Any, len(keys))
+	for _, key := range keys {
+		out[key] = appendAddrMatch(nil, key.which, key.cidr, key.v6)
+	}
+	return out
+}()
 
 var cachedJumps = func() map[string]expr.Any {
 	chains := make(map[string]expr.Any, 32)
@@ -223,6 +321,7 @@ var cachedJumps = func() map[string]expr.Any {
 var cachedLimit3 expr.Any = &expr.Limit{
 	Type: expr.LimitTypePkts, Rate: 3, Unit: expr.LimitTimeMinute, Burst: 10,
 }
+var cachedLimit3Exprs = []expr.Any{cachedLimit3}
 
 // Built-in logging prefixes are immutable and recur on every compile.
 var cachedLogExpressions = map[string]expr.Any{
@@ -270,6 +369,17 @@ func userLoggingChainFor(dir string) string {
 	}
 }
 
+func afterLoggingChainFor(dir string) string {
+	switch dir {
+	case "out":
+		return "bfw-after-logging-output"
+	case "routed":
+		return "bfw-after-logging-forward"
+	default:
+		return "bfw-after-logging-input"
+	}
+}
+
 func policyFor(p store.Policies, dir string) string {
 	switch dir {
 	case "out":
@@ -298,6 +408,7 @@ func overridePolicy(current, raw string) string {
 type compiled struct {
 	table       *nftables.Table
 	chains      []*nftables.Chain
+	chainArenas [][]nftables.Chain
 	chainIndex  map[string]*nftables.Chain
 	sets        []*nftables.Set
 	elems       map[*nftables.Set][]nftables.SetElement
@@ -336,7 +447,12 @@ func (c *compiled) chain(name string) *nftables.Chain {
 	if ch, ok := c.chainIndex[name]; ok {
 		return ch
 	}
-	ch := &nftables.Chain{Name: name, Table: c.table}
+	if len(c.chainArenas) == 0 || len(c.chainArenas[len(c.chainArenas)-1]) == cap(c.chainArenas[len(c.chainArenas)-1]) {
+		c.chainArenas = append(c.chainArenas, make([]nftables.Chain, 0, 64))
+	}
+	arena := &c.chainArenas[len(c.chainArenas)-1]
+	*arena = append(*arena, nftables.Chain{Name: name, Table: c.table})
+	ch := &(*arena)[len(*arena)-1]
 	c.chains = append(c.chains, ch)
 	c.chainIndex[name] = ch
 	return ch
@@ -523,7 +639,7 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 	}
 
 	// ---- base chains -----------------------------------------------------
-	for _, d := range directions {
+	for i, d := range directions {
 		p := policyFor(pol, d.dir)
 		cp := nftables.ChainPolicyAccept
 		if p != "allow" {
@@ -555,20 +671,14 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 		// chain (not inside bfw-before-*) so before.rules fragments appended
 		// later still run before user rules, and a fragment `flush chain`
 		// can't delete the user jump.
-		for _, suffix := range []string{"before-logging-", "before-", "user-", "after-", "after-logging-", "reject-", "track-"} {
-			c.addRule(d.base, counter(), jump("bfw-"+suffix+d.base))
+		for _, target := range baseJumpChains[i] {
+			c.addRule(d.base, counter(), jump(target))
 		}
 	}
 	// Pre-create every regular chain (ufw creates them all even when
 	// empty) in ufw's declaration order.
-	for _, prefix := range []string{
-		"bfw-before-logging-", "bfw-before-", "bfw-user-", "bfw-after-",
-		"bfw-after-logging-", "bfw-user-logging-", "bfw-reject-",
-		"bfw-track-", "bfw-skip-to-policy-",
-	} {
-		for _, d := range directions {
-			c.chain(prefix + d.base)
-		}
+	for _, name := range regularChainNames {
+		c.chain(name)
 	}
 	for _, name := range []string{chNotLocal, chLogDeny, chLogAllow, chUserLimit, chUserLimitA, chUserEgress} {
 		c.chain(name)
@@ -701,40 +811,25 @@ func (c *compiled) compileBefore() {
 	}
 
 	// ICMPv6 accepts (before6.rules, rfc4890). hl = hop limit @ nh+1.
-	type ic6 struct {
-		typ     byte
-		hl      int // -1 = no hop-limit match
-		srcCIDR string
-	}
-	v6rules := []ic6{
-		{1, -1, ""}, {2, -1, ""}, {3, -1, ""}, {4, -1, ""}, {128, -1, ""},
-		{133, 255, ""}, {134, 255, ""}, {135, 255, ""}, {136, 255, ""},
-		{141, 255, ""}, {142, 255, ""},
-		{130, -1, "fe80::/10"}, {131, -1, "fe80::/10"}, {132, -1, "fe80::/10"}, {143, -1, "fe80::/10"},
-		{148, 255, ""}, {149, 255, ""},
-		{151, 1, "fe80::/10"}, {152, 1, "fe80::/10"}, {153, 1, "fe80::/10"},
-	}
-	emit6 := func(ch string, list []ic6) {
+	emit6 := func(ch string, list []icmpv6BeforeRule) {
 		for _, r := range list {
-			ex := c.join(nfproto(true), l4proto(unix.IPPROTO_ICMPV6), icmpType(r.typ))
+			var srcMatch, hopMatch []expr.Any
 			if r.srcCIDR != "" {
-				ex = append(ex, addrMatch("saddr", r.srcCIDR, true)...)
+				srcMatch = addrMatch("saddr", r.srcCIDR, true)
 			}
 			if r.hl >= 0 {
-				ex = append(ex, hopLimit(byte(r.hl))...)
+				hopMatch = hopLimit(byte(r.hl))
 			}
-			ex = append(ex, counter(), verdict(expr.VerdictAccept))
+			ex := c.join(nfproto(true), l4proto(unix.IPPROTO_ICMPV6), icmpType(r.typ),
+				srcMatch, hopMatch, ex(counter(), verdict(expr.VerdictAccept)))
 			c.addRule(ch, ex...)
 		}
 	}
-	emit6(in, v6rules)
+	emit6(in, beforeICMPv6Rules)
 	// output adds echo-reply after echo-request
-	out6 := append([]ic6{}, v6rules[:5]...)
-	out6 = append(out6, ic6{129, -1, ""})
-	out6 = append(out6, v6rules[5:]...)
-	emit6(out, out6)
+	emit6(out, beforeICMPv6OutputRules)
 	// forward: base set + echo-reply only (rfc4890 4.3.1)
-	emit6(fwd, []ic6{{1, -1, ""}, {2, -1, ""}, {3, -1, ""}, {4, -1, ""}, {128, -1, ""}, {129, -1, ""}})
+	emit6(fwd, beforeICMPv6ForwardRules)
 	// HAAD/MPS/MPA (before6.rules places these on input)
 	for _, t := range []byte{144, 145, 146, 147} {
 		c.addRule(in, c.join(nfproto(true), l4proto(unix.IPPROTO_ICMPV6), icmpType(t),
@@ -805,9 +900,9 @@ func (c *compiled) compileAfter() {
 // compileLoggingChains emits the level-dependent contents of the logging
 // chains, mirroring backend_iptables.py _get_logging_rules.
 func (c *compiled) compileLoggingChains(level string, policies store.Policies) {
-	userLogging := []string{}
-	for _, d := range directions {
-		userLogging = append(userLogging, "bfw-user-logging-"+d.base)
+	userLogging := [3]string{}
+	for i, d := range directions {
+		userLogging[i] = userLoggingChainFor(d.dir)
 	}
 
 	if level == "off" {
@@ -820,25 +915,25 @@ func (c *compiled) compileLoggingChains(level string, policies store.Policies) {
 	}
 
 	limited := level != "high" && level != "full"
-	limitExpr := func() []expr.Any {
-		if limited {
-			return []expr.Any{limit3()}
-		}
-		return nil
-	}
 
 	// low+: after-logging logs packets about to hit a deny/reject policy;
 	// medium+ also logs packets about to hit an accept policy.
 	for _, d := range directions {
-		ch := "bfw-after-logging-" + d.base
+		ch := afterLoggingChainFor(d.dir)
 		p := policyFor(policies, d.dir)
 		switch {
 		case p == "deny" || p == "reject":
-			ex := append(limitExpr(), logExpr("[BFW BLOCK] "))
-			c.addRule(ch, ex...)
+			if limited {
+				c.addRule(ch, limit3(), logExpr("[BFW BLOCK] "))
+			} else {
+				c.addRule(ch, logExpr("[BFW BLOCK] "))
+			}
 		case level != "low": // medium+
-			ex := append(limitExpr(), logExpr("[BFW ALLOW] "))
-			c.addRule(ch, ex...)
+			if limited {
+				c.addRule(ch, limit3(), logExpr("[BFW ALLOW] "))
+			} else {
+				c.addRule(ch, logExpr("[BFW ALLOW] "))
+			}
 		}
 	}
 
@@ -850,35 +945,37 @@ func (c *compiled) compileLoggingChains(level string, policies store.Policies) {
 			if level == "low" {
 				// ufw rate-limits the INVALID RETURN (limit_args appended):
 				// beyond 3/min INVALIDs fall through to the BLOCK log.
-				c.addRule(ch, c.join(ctState(expr.CtStateBitINVALID), limitExpr(),
+				c.addRule(ch, c.join(ctState(expr.CtStateBitINVALID), cachedLimit3Exprs,
 					ex(counter(), verdict(expr.VerdictReturn)))...)
 			} else {
-				ex := ctState(expr.CtStateBitINVALID)
-				ex = append(ex, limitExpr()...)
-				ex = append(ex, logExpr("[BFW AUDIT INVALID] "))
-				c.addRule(ch, ex...)
+				if limited {
+					c.addRule(ch, c.join(ctState(expr.CtStateBitINVALID), ex(limit3(), logExpr("[BFW AUDIT INVALID] ")))...)
+				} else {
+					c.addRule(ch, c.join(ctState(expr.CtStateBitINVALID), ex(logExpr("[BFW AUDIT INVALID] ")))...)
+				}
 			}
 		}
-		ex := limitExpr()
-		ex = append(ex, logExpr(prefix))
-		c.addRule(ch, ex...)
+		if limited {
+			c.addRule(ch, limit3(), logExpr(prefix))
+		} else {
+			c.addRule(ch, logExpr(prefix))
+		}
 	}
 
 	// medium+: before-logging audit chains.
 	if level != "low" {
 		for _, d := range directions {
 			ch := "bfw-before-logging-" + d.base
-			var ex []expr.Any
 			switch level {
 			case "medium": // new connections only, rate-limited
-				ex = append(ctState(expr.CtStateBitNEW), limit3())
+				c.addRule(ch, c.join(ctState(expr.CtStateBitNEW), ex(limit3(), logExpr("[BFW AUDIT] ")))...)
 			case "high": // all packets, rate-limited
-				ex = []expr.Any{limit3()}
+				c.addRule(ch, limit3(), logExpr("[BFW AUDIT] "))
 			case "full": // all packets, unlimited
-				ex = nil
+				c.addRule(ch, logExpr("[BFW AUDIT] "))
+			default:
+				c.addRule(ch, logExpr("[BFW AUDIT] "))
 			}
-			ex = append(ex, logExpr("[BFW AUDIT] "))
-			c.addRule(ch, ex...)
 		}
 	}
 }
@@ -1536,8 +1633,19 @@ func protoVariants(r *rule.Rule) ([2]string, int) {
 	return out, count
 }
 
-func iif(name string) []expr.Any { return ifaceMatch(expr.MetaKeyIIFNAME, name) }
-func oif(name string) []expr.Any { return ifaceMatch(expr.MetaKeyOIFNAME, name) }
+func iif(name string) []expr.Any {
+	if name == "lo" {
+		return cachedLoopbackIIF
+	}
+	return ifaceMatch(expr.MetaKeyIIFNAME, name)
+}
+
+func oif(name string) []expr.Any {
+	if name == "lo" {
+		return cachedLoopbackOIF
+	}
+	return ifaceMatch(expr.MetaKeyOIFNAME, name)
+}
 
 func ifaceMatch(key expr.MetaKey, name string) []expr.Any {
 	return appendIfaceMatch(nil, key, name)
@@ -1572,6 +1680,9 @@ func appendIfaceMatch(dst []expr.Any, key expr.MetaKey, name string) []expr.Any 
 // saddr/daddr. which is "saddr" or "daddr". Returns nil on unparseable
 // input (callers validate upstream).
 func addrMatch(which, cidr string, v6 bool) []expr.Any {
+	if cached, ok := cachedStaticAddrMatches[addrMatchCacheKey{which: which, cidr: cidr, v6: v6}]; ok {
+		return cached
+	}
 	return appendAddrMatch(nil, which, cidr, v6)
 }
 
@@ -1700,7 +1811,7 @@ func portIntervalElems(lo, hi uint16) []nftables.SetElement {
 	return []nftables.SetElement{start, {Key: portData(hi + 1), IntervalEnd: true}}
 }
 
-func portEq(which string, p uint16) []expr.Any {
+func makePortEq(which string, p uint16) []expr.Any {
 	load := cachedPortPayload[0]
 	if which == "dport" {
 		load = cachedPortPayload[1]
@@ -1709,6 +1820,13 @@ func portEq(which string, p uint16) []expr.Any {
 		load,
 		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: portData(p)},
 	}
+}
+
+func portEq(which string, p uint16) []expr.Any {
+	if cached, ok := cachedStaticPortEq[portEqCacheKey{which: which, port: p}]; ok {
+		return cached
+	}
+	return makePortEq(which, p)
 }
 
 func portData(port uint16) []byte { return cachedPortData[port][:] }
