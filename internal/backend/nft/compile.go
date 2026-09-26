@@ -73,6 +73,34 @@ var cachedL4Proto = func() [256][]expr.Any {
 	return out
 }()
 
+// Limit expressions have the same shape for every rule. The set name/ID and
+// protocol-family registers remain per-rule, while these zero-state matches
+// are safe to share because nftables only reads them while marshalling.
+var cachedLimitStateNew = ctState(expr.CtStateBitNEW)
+var cachedLimitOver = &expr.Limit{
+	Type: expr.LimitTypePkts, Rate: 6, Over: true, Unit: expr.LimitTimeMinute,
+}
+var cachedLimitOverExprs = []expr.Any{cachedLimitOver}
+var cachedLimitCounter expr.Any = &expr.Counter{}
+var cachedLimitJump expr.Any = &expr.Verdict{Kind: expr.VerdictJump, Chain: chUserLimit}
+var cachedLimitAcceptJump expr.Any = &expr.Verdict{Kind: expr.VerdictJump, Chain: chUserLimitA}
+var cachedLimitKeyTypes = [2]nftables.SetDatatype{
+	nftables.MustConcatSetType(nftables.TypeIPAddr, nftables.TypeInetService),
+	nftables.MustConcatSetType(nftables.TypeIP6Addr, nftables.TypeInetService),
+}
+var cachedLimitAddrPayload = [2]expr.Any{
+	&expr.Payload{DestRegister: unix.NFT_REG32_00, Base: expr.PayloadBaseNetworkHeader, Offset: 12, Len: 4},
+	&expr.Payload{DestRegister: unix.NFT_REG_1, Base: expr.PayloadBaseNetworkHeader, Offset: 8, Len: 16},
+}
+var cachedLimitPortPayload = [2]expr.Any{
+	&expr.Payload{DestRegister: unix.NFT_REG32_01, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2},
+	&expr.Payload{DestRegister: unix.NFT_REG_2, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2},
+}
+var cachedLimitPortImmediate = [2]expr.Any{
+	&expr.Immediate{Register: unix.NFT_REG32_01, Data: []byte{0, 0}},
+	&expr.Immediate{Register: unix.NFT_REG_2, Data: []byte{0, 0}},
+}
+
 func baseFor(dir string) string {
 	switch dir {
 	case "out":
@@ -808,9 +836,9 @@ func (c *compiled) compileRule(r *rule.Rule, v6 bool, now int64) error {
 // bfw-user-limit (log+reject), the rest fall through to
 // bfw-user-limit-accept. Approximates ufw's recent --seconds 30 --hitcount 6.
 func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []expr.Any, userChain string) error {
-	addrType := nftables.TypeIPAddr
+	family := 0
 	if v6 {
-		addrType = nftables.TypeIP6Addr
+		family = 1
 	}
 	name := "bfw_limit_" + r.ID
 	if v6 {
@@ -825,7 +853,7 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 			Table:         c.table,
 			Name:          name,
 			ID:            c.newSetID(),
-			KeyType:       nftables.MustConcatSetType(addrType, nftables.TypeInetService),
+			KeyType:       cachedLimitKeyTypes[family],
 			Concatenation: true,
 			Dynamic:       true,
 			HasTimeout:    true,
@@ -842,11 +870,9 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 	// Key registers: saddr then dport, contiguous in the kernel's reg32
 	// space. v4: NFT_REG32_00 (data[4]) + NFT_REG32_01 (data[5]).
 	// v6: NFT_REG_1 (data[4..7]) + NFT_REG_2 (data[8..11]).
-	sreg, preg := uint32(unix.NFT_REG32_00), uint32(unix.NFT_REG32_01)
-	saddrOff, saddrLen := uint32(12), uint32(4)
+	sreg := uint32(unix.NFT_REG32_00)
 	if v6 {
-		sreg, preg = unix.NFT_REG_1, unix.NFT_REG_2
-		saddrOff, saddrLen = 8, 16
+		sreg = unix.NFT_REG_1
 	}
 
 	// The first limit branch consumes match's backing array. The caller does
@@ -854,16 +880,12 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 	// path; the second branch clones only the original match prefix below.
 	baseLen := len(match)
 	ex := match
-	ex = append(ex,
-		ctState(expr.CtStateBitNEW)...,
-	)
-	ex = append(ex,
-		&expr.Payload{DestRegister: sreg, Base: expr.PayloadBaseNetworkHeader, Offset: saddrOff, Len: saddrLen},
-	)
+	ex = append(ex, cachedLimitStateNew...)
+	ex = append(ex, cachedLimitAddrPayload[family])
 	if proto == "tcp" || proto == "udp" {
-		ex = append(ex, &expr.Payload{DestRegister: preg, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2})
+		ex = append(ex, cachedLimitPortPayload[family])
 	} else {
-		ex = append(ex, &expr.Immediate{Register: preg, Data: []byte{0, 0}})
+		ex = append(ex, cachedLimitPortImmediate[family])
 	}
 	ex = append(ex,
 		&expr.Dynset{
@@ -872,16 +894,14 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 			SetID:     set.ID,
 			Operation: unix.NFT_DYNSET_OP_UPDATE,
 			Timeout:   30 * time.Second,
-			Exprs: []expr.Any{&expr.Limit{
-				Type: expr.LimitTypePkts, Rate: 6, Over: true, Unit: expr.LimitTimeMinute,
-			}},
+			Exprs:     cachedLimitOverExprs,
 		},
-		counter(),
-		jump(chUserLimit),
+		cachedLimitCounter,
+		cachedLimitJump,
 	)
 	c.addRule(userChain, ex...)
 	acceptMatch := append([]expr.Any(nil), match[:baseLen]...)
-	c.addRule(userChain, append(acceptMatch, counter(), jump(chUserLimitA))...)
+	c.addRule(userChain, append(acceptMatch, cachedLimitCounter, cachedLimitAcceptJump)...)
 	return nil
 }
 
