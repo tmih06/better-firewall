@@ -688,12 +688,19 @@ func (c *compiled) compileAddressSet(name4, name6, source string, elements []str
 	}
 	c.addSet(v4, nil)
 	c.addSet(v6, nil)
-	// Reserve the input cardinality for both families. Most installations use
-	// IPv4 bans, but reserving both keeps mixed-family named sets from paying
-	// repeated slice-growth copies; the interval payloads themselves remain
-	// owned by the parsed addresses below.
-	iv4 := make([][2][]byte, 0, len(elements)) // [start, endExclusive)
-	iv6 := make([][2][]byte, 0, len(elements))
+	// Reserve family-specific input cardinalities. Address text contains a
+	// colon for IPv6, so this avoids an unused full-size backing array for the
+	// common all-IPv4 ban list while keeping mixed-family sets growth-free.
+	v4Cap, v6Cap := 0, 0
+	for _, element := range elements {
+		if strings.IndexByte(element, ':') >= 0 {
+			v6Cap++
+		} else {
+			v4Cap++
+		}
+	}
+	iv4 := make([][2][]byte, 0, v4Cap) // [start, endExclusive)
+	iv6 := make([][2][]byte, 0, v6Cap)
 	for _, element := range elements {
 		_, ipnet, err := net.ParseCIDR(element)
 		if err != nil {
