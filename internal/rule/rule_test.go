@@ -248,6 +248,16 @@ func TestMatch(t *testing.T) {
 	}
 }
 
+func TestMatchNormalizesPortProtocolAliases(t *testing.T) {
+	base := matchBase()
+	base.Src.Ports = []PortRange{{Lo: 22, Hi: 22, Proto: ""}}
+	other := base.Clone()
+	other.Src.Ports[0].Proto = "any"
+	if got := base.Match(other); got != MatchExact {
+		t.Fatalf("empty and any port protocols: got %v, want MatchExact", got)
+	}
+}
+
 func TestAppTupleEmptyWithoutApps(t *testing.T) {
 	r := matchBase()
 	if got := r.AppTuple(); got != "" {
