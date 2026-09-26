@@ -73,15 +73,81 @@ var cachedL4Proto = func() [256][]expr.Any {
 	return out
 }()
 
+// ICMP type matches are also immutable; indexing all byte values avoids
+// rebuilding the payload/cmp pair for the built-in before-rules on every
+// compile and for repeated user rules.
+var cachedICMPType = func() [256][]expr.Any {
+	var out [256][]expr.Any
+	for i := range out {
+		out[i] = []expr.Any{
+			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 0, Len: 1},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{byte(i)}},
+		}
+	}
+	return out
+}()
+
+// IPv6 hop limit is byte 7 of the network header (nft's @nh,56,8 form).
+var cachedHopLimit = func() [256][]expr.Any {
+	var out [256][]expr.Any
+	for i := range out {
+		out[i] = []expr.Any{
+			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 7, Len: 1},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{byte(i)}},
+		}
+	}
+	return out
+}()
+
+var cachedRHType = func() [256][]expr.Any {
+	var out [256][]expr.Any
+	for i := range out {
+		out[i] = []expr.Any{
+			&expr.Exthdr{DestRegister: 1, Type: 43, Offset: 2, Len: 1, Op: expr.ExthdrOpIpv6},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{byte(i)}},
+		}
+	}
+	return out
+}()
+
+var cachedFibAddrType = func() [256][]expr.Any {
+	var out [256][]expr.Any
+	for i := range out {
+		out[i] = []expr.Any{
+			&expr.Fib{Register: 1, ResultADDRTYPE: true, FlagDADDR: true},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(uint32(i))},
+		}
+	}
+	return out
+}()
+
 // Limit expressions have the same shape for every rule. The set name/ID and
 // protocol-family registers remain per-rule, while these zero-state matches
 // are safe to share because nftables only reads them while marshalling.
-var cachedLimitStateNew = ctState(expr.CtStateBitNEW)
+var cachedCtState = func() [32][]expr.Any {
+	var out [32][]expr.Any
+	for i := range out {
+		out[i] = newCtState(uint32(i))
+	}
+	return out
+}()
+var cachedLimitStateNew = cachedCtState[expr.CtStateBitNEW]
 var cachedLimitOver = &expr.Limit{
 	Type: expr.LimitTypePkts, Rate: 6, Over: true, Unit: expr.LimitTimeMinute,
 }
 var cachedLimitOverExprs = []expr.Any{cachedLimitOver}
-var cachedLimitCounter expr.Any = &expr.Counter{}
+
+// These expressions contain no per-rule state. nftables serializes each
+// expression occurrence independently, so sharing the immutable Go objects
+// does not merge kernel counters or otherwise change rule behavior.
+var cachedCounter expr.Any = &expr.Counter{}
+var cachedAcceptVerdict expr.Any = &expr.Verdict{Kind: expr.VerdictAccept}
+var cachedDropVerdict expr.Any = &expr.Verdict{Kind: expr.VerdictDrop}
+var cachedReturnVerdict expr.Any = &expr.Verdict{Kind: expr.VerdictReturn}
+var cachedReject expr.Any = &expr.Reject{
+	Type: unix.NFT_REJECT_ICMPX_UNREACH, Code: unix.NFT_REJECT_ICMPX_PORT_UNREACH,
+}
+var cachedLimitCounter expr.Any = cachedCounter
 var cachedLimitJump expr.Any = &expr.Verdict{Kind: expr.VerdictJump, Chain: chUserLimit}
 var cachedLimitAcceptJump expr.Any = &expr.Verdict{Kind: expr.VerdictJump, Chain: chUserLimitA}
 var cachedLimitKeyTypes = [2]nftables.SetDatatype{
@@ -99,6 +165,73 @@ var cachedLimitPortPayload = [2]expr.Any{
 var cachedLimitPortImmediate = [2]expr.Any{
 	&expr.Immediate{Register: unix.NFT_REG32_01, Data: []byte{0, 0}},
 	&expr.Immediate{Register: unix.NFT_REG_2, Data: []byte{0, 0}},
+}
+
+// Transport-header loads are identical for every user rule. The endpoint
+// index is zero for sport and one for dport; the payload register is local to
+// each compiled rule and is therefore safe to reuse as an immutable value.
+var cachedPortPayload = [2]*expr.Payload{
+	{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 0, Len: 2},
+	{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2},
+}
+
+// Port values are always two-byte big-endian keys. Keeping the encodings in
+// one immutable table avoids a tiny heap allocation for every comparison and
+// interval element while retaining the exact binaryutil representation.
+var cachedPortData = func() [1 << 16][2]byte {
+	var data [1 << 16][2]byte
+	for i := range data {
+		data[i][0] = byte(i >> 8)
+		data[i][1] = byte(i)
+	}
+	return data
+}()
+
+// Address payloads differ only by family and endpoint. Named-set lookups and
+// literal address matches use the same network-header load shape.
+var cachedAddrPayload = [2][2]*expr.Payload{
+	{
+		{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 12, Len: 4},
+		{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
+	},
+	{
+		{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 8, Len: 16},
+		{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 24, Len: 16},
+	},
+}
+
+var cachedJumps = func() map[string]expr.Any {
+	chains := make(map[string]expr.Any, 32)
+	add := func(name string) { chains[name] = &expr.Verdict{Kind: expr.VerdictJump, Chain: name} }
+	for _, d := range directions {
+		for _, prefix := range []string{
+			"bfw-before-logging-", "bfw-before-", "bfw-user-", "bfw-after-",
+			"bfw-after-logging-", "bfw-user-logging-", "bfw-reject-", "bfw-track-",
+			"bfw-skip-to-policy-",
+		} {
+			add(prefix + d.base)
+		}
+	}
+	for _, name := range []string{
+		chNotLocal, chLogDeny, chLogAllow, chUserLimit, chUserLimitA, chUserEgress,
+	} {
+		add(name)
+	}
+	return chains
+}()
+
+var cachedLimit3 expr.Any = &expr.Limit{
+	Type: expr.LimitTypePkts, Rate: 3, Unit: expr.LimitTimeMinute, Burst: 10,
+}
+
+// Built-in logging prefixes are immutable and recur on every compile.
+var cachedLogExpressions = map[string]expr.Any{
+	"[BFW ALLOW] ":         &expr.Log{Key: 1 << unix.NFTA_LOG_PREFIX, Data: []byte("[BFW ALLOW] ")},
+	"[BFW BLOCK] ":         &expr.Log{Key: 1 << unix.NFTA_LOG_PREFIX, Data: []byte("[BFW BLOCK] ")},
+	"[BFW LIMIT] ":         &expr.Log{Key: 1 << unix.NFTA_LOG_PREFIX, Data: []byte("[BFW LIMIT] ")},
+	"[BFW AUDIT] ":         &expr.Log{Key: 1 << unix.NFTA_LOG_PREFIX, Data: []byte("[BFW AUDIT] ")},
+	"[BFW AUDIT INVALID] ": &expr.Log{Key: 1 << unix.NFTA_LOG_PREFIX, Data: []byte("[BFW AUDIT INVALID] ")},
+	"[BFW LIMIT BLOCK] ":   &expr.Log{Key: 1 << unix.NFTA_LOG_PREFIX, Data: []byte("[BFW LIMIT BLOCK] ")},
 }
 
 func baseFor(dir string) string {
@@ -146,6 +279,10 @@ type compiled struct {
 	setIndex    map[uint32]*nftables.Set
 	limitSets   map[string]*nftables.Set
 	rules       []*nftables.Rule
+	ruleArenas  [][]nftables.Rule
+	ruleCap     int
+	cmpArenas   [][]expr.Cmp
+	rangeArenas [][]expr.Range
 	natTables   []*nftables.Table
 	setID       uint32
 	threatBans4 *nftables.Set
@@ -171,9 +308,48 @@ func (c *compiled) chain(name string) *nftables.Chain {
 }
 
 func (c *compiled) addRule(chain string, exprs ...expr.Any) {
-	c.rules = append(c.rules, &nftables.Rule{
-		Table: c.table, Chain: c.chain(chain), Exprs: exprs,
-	})
+	c.addRuleObject(c.table, c.chain(chain), exprs)
+}
+
+// addRuleObject stores rule values in stable chunks before retaining pointers
+// to them. A single large ruleset otherwise allocates one nftables.Rule object
+// per rule; chunked storage keeps pointers stable without requiring a costly
+// exact count for every optional logging, limit, and NAT branch.
+func (c *compiled) addRuleObject(table *nftables.Table, chain *nftables.Chain, exprs []expr.Any) {
+	if len(c.ruleArenas) == 0 || len(c.ruleArenas[len(c.ruleArenas)-1]) == cap(c.ruleArenas[len(c.ruleArenas)-1]) {
+		capHint := c.ruleCap
+		if capHint == 0 || len(c.ruleArenas) != 0 {
+			capHint = 256
+		}
+		c.ruleArenas = append(c.ruleArenas, make([]nftables.Rule, 0, capHint))
+	}
+	arena := &c.ruleArenas[len(c.ruleArenas)-1]
+	*arena = append(*arena, nftables.Rule{Table: table, Chain: chain, Exprs: exprs})
+	r := &(*arena)[len(*arena)-1]
+	c.rules = append(c.rules, r)
+}
+
+// cmpEq allocates rule-specific port comparisons from stable chunks. The
+// comparison data is immutable after construction and points either to the
+// shared port table or to address bytes owned by the compiled expression.
+func (c *compiled) cmpEq(data []byte) *expr.Cmp {
+	if len(c.cmpArenas) == 0 || len(c.cmpArenas[len(c.cmpArenas)-1]) == cap(c.cmpArenas[len(c.cmpArenas)-1]) {
+		c.cmpArenas = append(c.cmpArenas, make([]expr.Cmp, 0, 256))
+	}
+	arena := &c.cmpArenas[len(c.cmpArenas)-1]
+	*arena = append(*arena, expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: data})
+	return &(*arena)[len(*arena)-1]
+}
+
+// portRange stores a rule-specific range expression in stable chunks so the
+// returned pointer remains valid until the compiled ruleset is discarded.
+func (c *compiled) portRange(from, to []byte) *expr.Range {
+	if len(c.rangeArenas) == 0 || len(c.rangeArenas[len(c.rangeArenas)-1]) == cap(c.rangeArenas[len(c.rangeArenas)-1]) {
+		c.rangeArenas = append(c.rangeArenas, make([]expr.Range, 0, 128))
+	}
+	arena := &c.rangeArenas[len(c.rangeArenas)-1]
+	*arena = append(*arena, expr.Range{Op: expr.CmpOpEq, Register: 1, FromData: from, ToData: to})
+	return &(*arena)[len(*arena)-1]
 }
 
 // addSet records a set in compile order and indexes anonymous sets by their
@@ -239,7 +415,8 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 		// logged/limited rules; the small pointer reserve is cheaper than the
 		// repeated growth and copying on the common large-ruleset path.
 		chains:     make([]*nftables.Chain, 0, 48),
-		rules:      make([]*nftables.Rule, 0, ruleReserve),
+		rules:      make([]*nftables.Rule, 0, ruleReserve+128+2*len(st.NAT)),
+		ruleCap:    ruleReserve + 128 + 2*len(st.NAT),
 		sets:       make([]*nftables.Set, 0, setReserve),
 		chainIndex: make(map[string]*nftables.Chain, 48),
 		elems:      make(map[*nftables.Set][]nftables.SetElement, setReserve),
@@ -925,7 +1102,43 @@ func (c *compiled) ruleMatch(r *rule.Rule, proto string, v6 bool) ([]expr.Any, e
 		(len(r.Src.Ports) != 0 || len(r.Dst.Ports) != 0) {
 		return nil, fmt.Errorf("rule %s: ICMP rules cannot include ports", r.ID)
 	}
-	ex := make([]expr.Any, 0, 16)
+	capHint := 4 // family match plus the common counter/verdict suffix
+	if r.IfaceIn != "" {
+		capHint += 3 // meta + optional prefix mask + cmp
+	}
+	if r.IfaceOut != "" {
+		capHint += 3
+	}
+	if proto != "any" {
+		capHint += 2 // l4 protocol meta + cmp
+	}
+	if r.ICMPType != "" {
+		capHint += 2
+	}
+	if !r.Src.Any() {
+		capHint += 3 // payload + optional CIDR bitwise + cmp
+	}
+	if !r.Dst.Any() {
+		capHint += 3
+	}
+	if proto == "tcp" || proto == "udp" {
+		if len(r.Src.Ports) != 0 {
+			capHint += 2 // payload + cmp/range/anonymous-set lookup
+		}
+		if len(r.Dst.Ports) != 0 {
+			capHint += 2
+		}
+	}
+	if r.Action == rule.ActionLimit {
+		capHint += 8 // state, key loads, dynset, counter, and jump
+	}
+	if r.Log != rule.LogNone {
+		capHint += 5 // rate limit, log, and the logging-rule suffix
+		if r.Log == rule.LogNew {
+			capHint += 3 // ct state NEW
+		}
+	}
+	ex := make([]expr.Any, 0, capHint)
 	if v6 {
 		ex = append(ex, cachedNFProto[1]...)
 	} else {
@@ -973,25 +1186,23 @@ func (c *compiled) appendEndpointAddr(dst []expr.Any, a *rule.AddrSpec, which st
 		if v6 {
 			name += "6"
 		}
-		off := uint32(12)
-		if which == "daddr" {
-			off = 16
-		}
+		family := 0
 		if v6 {
-			off = 8
-			if which == "daddr" {
-				off = 24
-			}
+			family = 1
+		}
+		endpoint := 0
+		if which == "daddr" {
+			endpoint = 1
 		}
 		return append(dst,
-			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: off, Len: addrLen(v6)},
+			cachedAddrPayload[family][endpoint],
 			&expr.Lookup{SourceRegister: 1, SetName: name},
 		)
 	}
 	if a.Any() {
 		return dst
 	}
-	return appendAddrMatch(dst, which, a.IP, v6)
+	return c.appendAddrMatch(dst, which, a.IP, v6)
 }
 
 // appendPortExprs emits sport/dport matches for the ranges of one proto
@@ -1010,20 +1221,15 @@ func (c *compiled) appendPortExprs(dst []expr.Any, ports []rule.PortRange, which
 	if matched == 0 {
 		return dst
 	}
-	offset := uint32(0)
+	load := cachedPortPayload[0]
 	if which == "dport" {
-		offset = 2
+		load = cachedPortPayload[1]
 	}
-	load := &expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: offset, Len: 2}
 	if matched == 1 {
 		if first.Lo == first.Hi {
-			return append(dst, load, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.BigEndian.PutUint16(first.Lo)})
+			return append(dst, load, c.cmpEq(portData(first.Lo)))
 		}
-		return append(dst, load, &expr.Range{
-			Op: expr.CmpOpEq, Register: 1,
-			FromData: binaryutil.BigEndian.PutUint16(first.Lo),
-			ToData:   binaryutil.BigEndian.PutUint16(first.Hi),
-		})
+		return append(dst, load, c.portRange(portData(first.Lo), portData(first.Hi)))
 	}
 
 	// Multiport rules need an anonymous set. Build its elements directly from
@@ -1051,7 +1257,7 @@ func (c *compiled) appendPortExprs(dst []expr.Any, ports []rule.PortRange, which
 		if interval {
 			elems = append(elems, portIntervalElems(p.Lo, p.Hi)...)
 		} else {
-			elems = append(elems, nftables.SetElement{Key: binaryutil.BigEndian.PutUint16(p.Lo)})
+			elems = append(elems, nftables.SetElement{Key: portData(p.Lo)})
 		}
 	}
 	c.addSet(set, elems)
@@ -1121,7 +1327,7 @@ func (c *compiled) compileNAT(st *store.State) error {
 		switch nr.Kind {
 		case "masquerade":
 			ex = append(ex, &expr.Masq{})
-			c.rules = append(c.rules, &nftables.Rule{Table: t, Chain: post[t], Exprs: ex})
+			c.addRuleObject(t, post[t], ex)
 		case "dnat":
 			host, portStr := splitToDest(nr.ToDest)
 			ip := net.ParseIP(host)
@@ -1139,10 +1345,10 @@ func (c *compiled) compileNAT(st *store.State) error {
 					return fmt.Errorf("nat rule %d: bad to-destination port %q", i, portStr)
 				}
 				nat.RegProtoMin = unix.NFT_REG_2
-				ex = append(ex, &expr.Immediate{Register: unix.NFT_REG_2, Data: binaryutil.BigEndian.PutUint16(uint16(p))})
+				ex = append(ex, &expr.Immediate{Register: unix.NFT_REG_2, Data: portData(uint16(p))})
 			}
 			ex = append(ex, nat)
-			c.rules = append(c.rules, &nftables.Rule{Table: t, Chain: pre[t], Exprs: ex})
+			c.addRuleObject(t, pre[t], ex)
 		default:
 			return fmt.Errorf("nat rule %d: unknown kind %q", i, nr.Kind)
 		}
@@ -1157,7 +1363,14 @@ func (c *compiled) compileNAT(st *store.State) error {
 func ex(exprs ...expr.Any) []expr.Any { return exprs }
 
 func join(lists ...[]expr.Any) []expr.Any {
-	var out []expr.Any
+	n := 0
+	for _, list := range lists {
+		n += len(list)
+	}
+	if n == 0 {
+		return nil
+	}
+	out := make([]expr.Any, 0, n)
 	for _, l := range lists {
 		out = append(out, l...)
 	}
@@ -1165,7 +1378,10 @@ func join(lists ...[]expr.Any) []expr.Any {
 }
 
 func nfproto(v6 bool) []expr.Any {
-	return appendNFProto(nil, v6)
+	if v6 {
+		return cachedNFProto[1]
+	}
+	return cachedNFProto[0]
 }
 
 func appendNFProto(dst []expr.Any, v6 bool) []expr.Any {
@@ -1180,7 +1396,7 @@ func appendNFProto(dst []expr.Any, v6 bool) []expr.Any {
 }
 
 func l4proto(num byte) []expr.Any {
-	return appendL4Proto(nil, num)
+	return cachedL4Proto[num]
 }
 
 func appendL4Proto(dst []expr.Any, num byte) []expr.Any {
@@ -1297,13 +1513,6 @@ func appendIfaceMatch(dst []expr.Any, key expr.MetaKey, name string) []expr.Any 
 	)
 }
 
-func addrLen(v6 bool) uint32 {
-	if v6 {
-		return 16
-	}
-	return 4
-}
-
 // addrMatch emits payload+bitwise+cmp (CIDR) or payload+cmp (host) for
 // saddr/daddr. which is "saddr" or "daddr". Returns nil on unparseable
 // input (callers validate upstream).
@@ -1315,22 +1524,24 @@ func addrMatch(which, cidr string, v6 bool) []expr.Any {
 // rules. It appends directly to dst while retaining addrMatch's fail-closed
 // behavior for malformed or family-mismatched addresses.
 func appendAddrMatch(dst []expr.Any, which, cidr string, v6 bool) []expr.Any {
-	off := uint32(12)
-	if which == "daddr" {
-		off = 16
-	}
-	if v6 {
-		off = 8
-		if which == "daddr" {
-			off = 24
-		}
-	}
+	return appendAddrMatchTo(dst, which, cidr, v6, nil)
+}
+
+func (c *compiled) appendAddrMatch(dst []expr.Any, which, cidr string, v6 bool) []expr.Any {
+	return appendAddrMatchTo(dst, which, cidr, v6, c)
+}
+
+func appendAddrMatchTo(dst []expr.Any, which, cidr string, v6 bool, c *compiled) []expr.Any {
 	_, ipnet, err := net.ParseCIDR(cidr)
 	if err != nil {
 		ip := net.ParseIP(cidr)
 		if ip == nil {
 			// Fail closed: two contradictory cmps on reg 1 can never both
 			// hold, so the rule matches nothing rather than everything.
+			if c != nil {
+				cmp := c.cmpEq([]byte{0})
+				return append(dst, cmp, c.cmpEq([]byte{1}))
+			}
 			return append(dst,
 				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0}},
 				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{1}},
@@ -1346,15 +1557,34 @@ func appendAddrMatch(dst []expr.Any, which, cidr string, v6 bool) []expr.Any {
 	// Family mismatch (v4 addr in a v6 rule or vice versa) would emit a
 	// wrong-length payload load — fail closed instead of a garbage match.
 	if (len(addr) == 16) != v6 {
+		if c != nil {
+			cmp := c.cmpEq([]byte{0})
+			return append(dst, cmp, c.cmpEq([]byte{1}))
+		}
 		return append(dst,
 			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0}},
 			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{1}},
 		)
 	}
-	load := &expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: off, Len: uint32(len(addr))}
+	family := 0
+	if v6 {
+		family = 1
+	}
+	endpoint := 0
+	if which == "daddr" {
+		endpoint = 1
+	}
+	load := cachedAddrPayload[family][endpoint]
 	ones, bits := ipnet.Mask.Size()
 	if ones == bits {
+		if c != nil {
+			return append(dst, load, c.cmpEq(addr))
+		}
 		return append(dst, load, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: addr})
+	}
+	var cmp expr.Any = &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: addr}
+	if c != nil {
+		cmp = c.cmpEq(addr)
 	}
 	return append(dst,
 		load,
@@ -1362,7 +1592,7 @@ func appendAddrMatch(dst []expr.Any, which, cidr string, v6 bool) []expr.Any {
 			SourceRegister: 1, DestRegister: 1, Len: uint32(len(addr)),
 			Mask: []byte(ipnet.Mask), Xor: make([]byte, len(addr)),
 		},
-		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: addr},
+		cmp,
 	)
 }
 
@@ -1408,50 +1638,41 @@ func addOne(ip net.IP) net.IP {
 // (start, end-exclusive) with the 65535 overflow handled via a 0 end
 // marker, matching kernel interval semantics.
 func portIntervalElems(lo, hi uint16) []nftables.SetElement {
-	start := nftables.SetElement{Key: binaryutil.BigEndian.PutUint16(lo)}
+	start := nftables.SetElement{Key: portData(lo)}
 	if hi == 0xffff {
-		return []nftables.SetElement{start, {Key: []byte{0, 0}, IntervalEnd: true}}
+		return []nftables.SetElement{start, {Key: portData(0), IntervalEnd: true}}
 	}
-	return []nftables.SetElement{start, {Key: binaryutil.BigEndian.PutUint16(hi + 1), IntervalEnd: true}}
+	return []nftables.SetElement{start, {Key: portData(hi + 1), IntervalEnd: true}}
 }
 
 func portEq(which string, p uint16) []expr.Any {
-	off := uint32(0)
+	load := cachedPortPayload[0]
 	if which == "dport" {
-		off = 2
+		load = cachedPortPayload[1]
 	}
 	return []expr.Any{
-		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: off, Len: 2},
-		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.BigEndian.PutUint16(p)},
+		load,
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: portData(p)},
 	}
 }
 
+func portData(port uint16) []byte { return cachedPortData[port][:] }
+
 func icmpType(t byte) []expr.Any {
-	return appendICMPType(nil, t)
+	return cachedICMPType[t]
 }
 
 func appendICMPType(dst []expr.Any, t byte) []expr.Any {
-	return append(dst,
-		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 0, Len: 1},
-		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{t}},
-	)
+	return append(dst, cachedICMPType[t]...)
 }
 
 func hopLimit(hl byte) []expr.Any {
-	// IPv6 Hop Limit is byte 7 of the header (nft encodes `ip6 hoplimit`
-	// as @nh,56,8). Offset 1 is Traffic Class/Flow Label — never matches.
-	return []expr.Any{
-		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 7, Len: 1},
-		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{hl}},
-	}
+	return cachedHopLimit[hl]
 }
 
 // rhType matches the routing-header type field (exthdr type 43, offset 2).
 func rhType(t byte) []expr.Any {
-	return []expr.Any{
-		&expr.Exthdr{DestRegister: 1, Type: 43, Offset: 2, Len: 1, Op: expr.ExthdrOpIpv6},
-		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{t}},
-	}
+	return cachedRHType[t]
 }
 
 // ctState matches any of the given state bits (nft's `ct state { ... }`
@@ -1460,6 +1681,13 @@ func rhType(t byte) []expr.Any {
 // state register is host-order, so the bitwise mask is native-endian
 // (big-endian here would read as bits 25/26 — the ENOBUFS-era bug).
 func ctState(bits uint32) []expr.Any {
+	if bits < uint32(len(cachedCtState)) {
+		return cachedCtState[bits]
+	}
+	return newCtState(bits)
+}
+
+func newCtState(bits uint32) []expr.Any {
 	return []expr.Any{
 		&expr.Ct{Key: expr.CtKeySTATE, Register: 1},
 		&expr.Bitwise{
@@ -1474,22 +1702,39 @@ func ctState(bits uint32) []expr.Any {
 // fibAddrType matches the destination address type (local/broadcast/…).
 // The fib result register is host-order → native-endian compare.
 func fibAddrType(rtn uint32) []expr.Any {
+	if rtn < uint32(len(cachedFibAddrType)) {
+		return cachedFibAddrType[rtn]
+	}
 	return []expr.Any{
 		&expr.Fib{Register: 1, ResultADDRTYPE: true, FlagDADDR: true},
 		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(rtn)},
 	}
 }
 
-func counter() expr.Any { return &expr.Counter{} }
+func counter() expr.Any { return cachedCounter }
 
-func verdict(k expr.VerdictKind) expr.Any { return &expr.Verdict{Kind: k} }
+func verdict(k expr.VerdictKind) expr.Any {
+	switch k {
+	case expr.VerdictAccept:
+		return cachedAcceptVerdict
+	case expr.VerdictDrop:
+		return cachedDropVerdict
+	case expr.VerdictReturn:
+		return cachedReturnVerdict
+	default:
+		return &expr.Verdict{Kind: k}
+	}
+}
 
 func jump(chain string) expr.Any {
+	if cached, ok := cachedJumps[chain]; ok {
+		return cached
+	}
 	return &expr.Verdict{Kind: expr.VerdictJump, Chain: chain}
 }
 
 func rejectExpr() expr.Any {
-	return &expr.Reject{Type: unix.NFT_REJECT_ICMPX_UNREACH, Code: unix.NFT_REJECT_ICMPX_PORT_UNREACH}
+	return cachedReject
 }
 
 func policyVerdict(policy string) expr.Any {
@@ -1505,10 +1750,13 @@ func policyVerdict(policy string) expr.Any {
 
 // limit3 is ufw's shared log rate limit: limit rate 3/minute burst 10.
 func limit3() expr.Any {
-	return &expr.Limit{Type: expr.LimitTypePkts, Rate: 3, Unit: expr.LimitTimeMinute, Burst: 10}
+	return cachedLimit3
 }
 
 func logExpr(prefix string) expr.Any {
+	if cached, ok := cachedLogExpressions[prefix]; ok {
+		return cached
+	}
 	return &expr.Log{Key: 1 << unix.NFTA_LOG_PREFIX, Data: []byte(prefix)}
 }
 

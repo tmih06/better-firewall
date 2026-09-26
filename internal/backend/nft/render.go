@@ -7,9 +7,11 @@ package nft
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
@@ -39,13 +41,15 @@ func renderTable(b *strings.Builder, c *compiled) {
 	fmt.Fprintf(b, "table inet %s {\n", c.table.Name)
 
 	// named sets first (nft -f style), deterministic by name
-	named := []*nftables.Set{}
+	var named []*nftables.Set
 	for _, s := range c.sets {
 		if !s.Anonymous {
 			named = append(named, s)
 		}
 	}
-	sort.Slice(named, func(i, j int) bool { return named[i].Name < named[j].Name })
+	if len(named) > 1 {
+		sort.Slice(named, func(i, j int) bool { return named[i].Name < named[j].Name })
+	}
 	for _, s := range named {
 		renderSet(b, c, s)
 	}
@@ -209,7 +213,9 @@ func writeElements(b *strings.Builder, s *nftables.Set, elems []nftables.SetElem
 func writeKey(b *strings.Builder, s *nftables.Set, key []byte) {
 	switch s.KeyType {
 	case nftables.TypeIPAddr, nftables.TypeIP6Addr:
-		b.WriteString(net.IP(key).String())
+		if writeIP(b, key) {
+			return
+		}
 	case nftables.TypeInetService:
 		if len(key) == 2 {
 			writeUint(b, uint64(binaryutil.BigEndian.Uint16(key)))
@@ -224,15 +230,21 @@ func writeKey(b *strings.Builder, s *nftables.Set, key []byte) {
 func writeRangeElem(b *strings.Builder, s *nftables.Set, start, endEx []byte) {
 	if s.KeyType == nftables.TypeIPAddr || s.KeyType == nftables.TypeIP6Addr {
 		if ones, ok := prefixLen(start, endEx); ok {
-			b.WriteString(net.IP(start).String())
+			if !writeIP(b, start) {
+				b.WriteString(net.IP(start).String())
+			}
 			b.WriteByte('/')
 			writeUint(b, uint64(ones))
 			return
 		}
 		end := decIP(endEx)
-		b.WriteString(net.IP(start).String())
+		if !writeIP(b, start) {
+			b.WriteString(net.IP(start).String())
+		}
 		b.WriteByte('-')
-		b.WriteString(net.IP(end).String())
+		if !writeIP(b, end) {
+			b.WriteString(net.IP(end).String())
+		}
 		return
 	}
 	if s.KeyType == nftables.TypeInetService && len(start) == 2 && len(endEx) == 2 {
@@ -254,6 +266,19 @@ func writeRangeElem(b *strings.Builder, s *nftables.Set, start, endEx []byte) {
 		return
 	}
 	fmt.Fprintf(b, "0x%x-0x%x", start, endEx)
+}
+
+// writeIP appends the canonical nft address spelling without creating the
+// temporary string returned by net.IP.String. Unmap preserves net.IP's
+// historical dotted-decimal rendering for IPv4-mapped IPv6 values.
+func writeIP(b *strings.Builder, data []byte) bool {
+	ip, ok := netip.AddrFromSlice(data)
+	if !ok {
+		return false
+	}
+	var buf [39]byte
+	b.Write(ip.Unmap().AppendTo(buf[:0]))
+	return true
 }
 
 // prefixLen reports the CIDR length when [start, endEx) is exactly one
@@ -604,8 +629,7 @@ func writeCmpValue(out *strings.Builder, p pend, data []byte) {
 			return
 		}
 	case "iifname", "oifname":
-		var quoted [64]byte
-		out.Write(strconv.AppendQuote(quoted[:0], strings.TrimRight(string(data), "\x00")))
+		writeQuotedBytes(out, data)
 		return
 	case "ct state":
 		// ct state matches encode as bitwise mask + cmp neq 0; the state
@@ -642,17 +666,25 @@ func writeCmpValue(out *strings.Builder, p pend, data []byte) {
 	case "ip saddr", "ip daddr", "ip6 saddr", "ip6 daddr":
 		if p.mask != nil {
 			if ones, ok := maskPrefix(p.mask); ok {
-				out.WriteString(net.IP(data).String())
+				if !writeIP(out, data) {
+					out.WriteString(net.IP(data).String())
+				}
 				out.WriteByte('/')
 				writeUint(out, uint64(ones))
 				return
 			}
-			out.WriteString(net.IP(data).String())
+			if !writeIP(out, data) {
+				out.WriteString(net.IP(data).String())
+			}
 			out.WriteString(" & ")
-			out.WriteString(net.IP(p.mask).String())
+			if !writeIP(out, p.mask) {
+				out.WriteString(net.IP(p.mask).String())
+			}
 			return
 		}
-		out.WriteString(net.IP(data).String())
+		if !writeIP(out, data) {
+			out.WriteString(net.IP(data).String())
+		}
 		return
 	default:
 		if strings.HasSuffix(p.text, "sport") || strings.HasSuffix(p.text, "dport") {
@@ -667,6 +699,64 @@ func writeCmpValue(out *strings.Builder, p pend, data []byte) {
 		}
 	}
 	fmt.Fprintf(out, "0x%x", data)
+}
+
+// writeQuotedBytes is the allocation-free fast path for nft interface names.
+// Kernel metadata is normally short printable ASCII; the fallback retains
+// strconv.Quote's exact handling for invalid UTF-8 and non-printable Unicode.
+func writeQuotedBytes(out *strings.Builder, data []byte) {
+	for len(data) > 0 && data[len(data)-1] == 0 {
+		data = data[:len(data)-1]
+	}
+	for i := 0; i < len(data); {
+		r, width := utf8.DecodeRune(data[i:])
+		if width == 1 && r == utf8.RuneError && data[i] >= utf8.RuneSelf {
+			var quoted [64]byte
+			out.Write(strconv.AppendQuote(quoted[:0], string(data)))
+			return
+		}
+		if r >= utf8.RuneSelf && !strconv.IsPrint(r) {
+			var quoted [64]byte
+			out.Write(strconv.AppendQuote(quoted[:0], string(data)))
+			return
+		}
+		i += width
+	}
+
+	const hex = "0123456789abcdef"
+	out.WriteByte('"')
+	for i := 0; i < len(data); {
+		r, width := utf8.DecodeRune(data[i:])
+		switch r {
+		case '"', '\\':
+			out.WriteByte('\\')
+			out.WriteByte(byte(r))
+		case '\a':
+			out.WriteString(`\a`)
+		case '\b':
+			out.WriteString(`\b`)
+		case '\f':
+			out.WriteString(`\f`)
+		case '\n':
+			out.WriteString(`\n`)
+		case '\r':
+			out.WriteString(`\r`)
+		case '\t':
+			out.WriteString(`\t`)
+		case '\v':
+			out.WriteString(`\v`)
+		default:
+			if r < ' ' || r == 0x7f {
+				out.WriteString(`\x`)
+				out.WriteByte(hex[byte(r)>>4])
+				out.WriteByte(hex[byte(r)&0xf])
+			} else {
+				out.Write(data[i : i+width])
+			}
+		}
+		i += width
+	}
+	out.WriteByte('"')
 }
 
 func writeUint(out *strings.Builder, n uint64) {
@@ -926,9 +1016,17 @@ func writeVerdict(out *strings.Builder, v *expr.Verdict) {
 }
 
 func writeNAT(out *strings.Builder, regs *renderRegs, x *expr.NAT) {
-	var addr string
+	var addr []byte
+	var addrBuf [39]byte
+	addrV6 := false
 	if p := regs.get(x.RegAddrMin); len(p.imm) > 0 {
-		addr = net.IP(p.imm).String()
+		if ip, ok := netip.AddrFromSlice(p.imm); ok {
+			ip = ip.Unmap()
+			addrV6 = ip.Is6()
+			addr = ip.AppendTo(addrBuf[:0])
+		} else {
+			addr = []byte(net.IP(p.imm).String())
+		}
 	}
 	var port uint16
 	hasPort := false
@@ -939,7 +1037,7 @@ func writeNAT(out *strings.Builder, regs *renderRegs, x *expr.NAT) {
 		}
 	}
 	// nft brackets a v6 address when a port follows: dnat to [::1]:8080.
-	if hasPort && strings.Contains(addr, ":") {
+	if hasPort && addrV6 {
 		out.WriteByte('[')
 	}
 	if x.Type == expr.NATTypeDestNAT {
@@ -947,8 +1045,8 @@ func writeNAT(out *strings.Builder, regs *renderRegs, x *expr.NAT) {
 	} else {
 		out.WriteString("snat to ")
 	}
-	out.WriteString(addr)
-	if hasPort && strings.Contains(addr, ":") {
+	out.Write(addr)
+	if hasPort && addrV6 {
 		out.WriteByte(']')
 	}
 	if hasPort {

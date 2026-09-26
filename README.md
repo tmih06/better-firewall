@@ -126,19 +126,19 @@ rules on Linux arm64 (Go 1.22.2, `-benchmem -benchtime=1s`):
 |---|---:|---:|
 | Before `d6ac943` | 23,944 | 1,049,586 |
 | After `d6ac943` | 21,944 | 1,009,581 |
-| Current optimized path | 11,142 | 623,463 |
+| Current optimized path | 3,512 | 368,079 |
 
-The latest compiler path removes 10,802 allocations (−49.2%) and about 386 KB
-(−38.3%) from the post-`d6ac943` result. On the local arm64 run it compiled
-1,000 ordinary rules in about 0.90 ms; this is configuration compilation, not
+The latest compiler path removes 18,432 allocations (−84.0%) and about 642 KB
+(−63.5%) from the post-`d6ac943` result. On the local arm64 run it compiled
+1,000 ordinary rules in about 0.50 ms; this is configuration compilation, not
 packet filtering. CI should be used for cross-machine comparisons.
 
 `BenchmarkRulesetRender` covers the `bfw diff`/dry-run text path with 1,000
 multi-port rules. After the set index but before builder sizing, it measured
 2.10 ms, 793,153 B/op, and 16,096 allocations/op on the local arm64 run.
-The current streaming renderer measures about 0.65 ms, 385,027 B/op, and
-98 allocations/op. A 1,000-rule limit-render run measures about 3.17 ms,
-2,624,700 B/op, and 2,118 allocations/op. The renderer keeps the compiled
+The current streaming renderer measures about 0.63 ms, 384,850 B/op, and
+78 allocations/op. A 1,000-rule limit-render run measures about 2.70 ms,
+2,624,573 B/op, and 2,098 allocations/op. The renderer keeps the compiled
 object order and output text deterministic.
 
 `BenchmarkRuleMatch1000` covers the duplicate/update scan used by CLI rule
