@@ -64,6 +64,30 @@ func baseFor(dir string) string {
 	}
 }
 
+func policyFor(p store.Policies, dir string) string {
+	switch dir {
+	case "out":
+		return p.Output
+	case "routed":
+		return p.Forward
+	default:
+		return p.Input
+	}
+}
+
+func overridePolicy(current, raw string) string {
+	switch strings.ToLower(raw) {
+	case "accept", "allow":
+		return "allow"
+	case "drop", "deny":
+		return "deny"
+	case "reject":
+		return "reject"
+	default:
+		return current
+	}
+}
+
 // compiled is the full object graph for one Apply batch.
 type compiled struct {
 	table       *nftables.Table
@@ -183,21 +207,14 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 	// (ufw reads them from /etc/default/ufw at apply time) — but never
 	// override panic's forced deny-all.
 	if !st.Panic {
-		for k, dst := range map[string]*string{
-			"DEFAULT_INPUT_POLICY":   &pol.Input,
-			"DEFAULT_OUTPUT_POLICY":  &pol.Output,
-			"DEFAULT_FORWARD_POLICY": &pol.Forward,
-		} {
-			if v, ok := etc[k]; ok {
-				switch strings.ToLower(v) {
-				case "accept", "allow":
-					*dst = "allow"
-				case "drop", "deny":
-					*dst = "deny"
-				case "reject":
-					*dst = "reject"
-				}
-			}
+		if v, ok := etc["DEFAULT_INPUT_POLICY"]; ok {
+			pol.Input = overridePolicy(pol.Input, v)
+		}
+		if v, ok := etc["DEFAULT_OUTPUT_POLICY"]; ok {
+			pol.Output = overridePolicy(pol.Output, v)
+		}
+		if v, ok := etc["DEFAULT_FORWARD_POLICY"]; ok {
+			pol.Forward = overridePolicy(pol.Forward, v)
 		}
 	}
 	ipv6 := st.IPv6
@@ -225,9 +242,8 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 	}
 
 	// ---- base chains -----------------------------------------------------
-	policies := map[string]string{"in": pol.Input, "out": pol.Output, "routed": pol.Forward}
 	for _, d := range directions {
-		p := policies[d.dir]
+		p := policyFor(pol, d.dir)
 		cp := nftables.ChainPolicyAccept
 		if p != "allow" {
 			cp = nftables.ChainPolicyDrop // deny and reject both map to drop
@@ -288,10 +304,11 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 
 	// ---- reject / track / skip-to-policy / limit / logging chains --------
 	for _, d := range directions {
-		if policies[d.dir] == "reject" {
+		p := policyFor(pol, d.dir)
+		if p == "reject" {
 			c.addRule("bfw-reject-"+d.base, counter(), rejectExpr())
 		}
-		if policies[d.dir] == "allow" {
+		if p == "allow" {
 			// ufw track chains: statefully accept new tcp/udp so the
 			// accept policy is conntrack-aware.
 			for _, proto := range []byte{unix.IPPROTO_TCP, unix.IPPROTO_UDP} {
@@ -302,7 +319,7 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 		}
 		// skip-to-policy chains exist so after.rules fragments can jump
 		// noisy traffic straight to the policy verdict (ufw parity).
-		c.addRule("bfw-skip-to-policy-"+d.base, counter(), policyVerdict(policies[d.dir]))
+		c.addRule("bfw-skip-to-policy-"+d.base, counter(), policyVerdict(p))
 	}
 	c.addRule(chUserLimitA, counter(), verdict(expr.VerdictAccept))
 	if level != "off" {
@@ -314,7 +331,7 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 	}
 	c.addRule(chUserLimit, counter(), rejectExpr())
 
-	c.compileLoggingChains(level, policies)
+	c.compileLoggingChains(level, pol)
 
 	// ---- named sets (bfw extension) --------------------------------------
 	if err := c.compileNamedSets(st); err != nil {
@@ -506,7 +523,7 @@ func (c *compiled) compileAfter() {
 
 // compileLoggingChains emits the level-dependent contents of the logging
 // chains, mirroring backend_iptables.py _get_logging_rules.
-func (c *compiled) compileLoggingChains(level string, policies map[string]string) {
+func (c *compiled) compileLoggingChains(level string, policies store.Policies) {
 	userLogging := []string{}
 	for _, d := range directions {
 		userLogging = append(userLogging, "bfw-user-logging-"+d.base)
@@ -533,7 +550,7 @@ func (c *compiled) compileLoggingChains(level string, policies map[string]string
 	// medium+ also logs packets about to hit an accept policy.
 	for _, d := range directions {
 		ch := "bfw-after-logging-" + d.base
-		p := policies[d.dir]
+		p := policyFor(policies, d.dir)
 		switch {
 		case p == "deny" || p == "reject":
 			ex := append(limitExpr(), logExpr("[BFW BLOCK] "))
