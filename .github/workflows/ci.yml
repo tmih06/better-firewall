@@ -2,9 +2,10 @@
 # dispatch (Actions → CI → Run workflow). Actions are pinned to commit SHAs.
 #
 # Privileged integration tests go through scripts/ci/isolate.sh. The k6
-# performance job instead confines firewall changes and traffic to two
-# containers on an internal-only Docker network on a disposable hosted runner.
-# Do NOT reproduce either privileged job locally — see README §Development.
+# performance and attack-lab jobs instead confine firewall changes and
+# traffic to two containers on an internal-only Docker network on a
+# disposable hosted runner. Do NOT reproduce either privileged job
+# locally — see README §Development.
 name: CI
 
 on:
@@ -280,6 +281,42 @@ jobs:
         with:
           name: better-firewall-performance-raw-${{ matrix.cardinality }}
           path: artifacts/performance/raw/*.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # ------------------------------------------------------------------ attack
+  # Real-attack comparison: nmap recon plus hping3 SYN/connect floods against
+  # the service while legit keep-alive traffic runs, for bfw, ufw, and a
+  # no-firewall baseline. Same isolation model as the performance job:
+  # internal-only network, NET_ADMIN confined to the defender's netns.
+  attack:
+    name: attack-lab (bfw vs ufw)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: build
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download bfw artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bfw
+          path: .
+      - run: chmod +x bfw
+      - name: Run containerized attack comparison
+        env:
+          BFW_PERF_RUNNER_ENV: ${{ runner.environment }}
+        run: scripts/perf/run_attack.sh
+      - name: Publish attack-lab report
+        if: always()
+        run: cat artifacts/attack/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Upload attack artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: better-firewall-attack
+          path: artifacts/attack/**
           if-no-files-found: error
           retention-days: 30
 
