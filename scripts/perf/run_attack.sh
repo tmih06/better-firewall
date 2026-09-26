@@ -199,6 +199,10 @@ META="$RAW_DIR/metadata.json"
     echo "}"
 } > "$META"
 
+# Trace the engine loop: compose-exec chatter is the only way to see which
+# remote command failed when a phase exits non-zero under set -e.
+set -x
+
 for ENGINE in none bfw ufw; do
     echo "[attack] === engine: $ENGINE (${RULES} rules) ==="
     reset_firewalls
