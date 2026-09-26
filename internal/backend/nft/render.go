@@ -640,10 +640,8 @@ func renderLookup(c *compiled, p pend, x *expr.Lookup) string {
 	name := x.SetName
 	if strings.HasPrefix(name, "__set") {
 		// anonymous set: render elements inline
-		for _, s := range c.sets {
-			if s.ID == x.SetID {
-				return fmt.Sprintf("%s { %s }", p.text, renderElements(s, c.elems[s]))
-			}
+		if s := c.setIndex[x.SetID]; s != nil {
+			return fmt.Sprintf("%s { %s }", p.text, renderElements(s, c.elems[s]))
 		}
 	}
 	inv := ""

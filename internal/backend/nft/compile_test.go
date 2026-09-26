@@ -179,6 +179,9 @@ func TestCompileStructure(t *testing.T) {
 	if anon.ID == 0 || anon.Name == "" {
 		t.Error("anonymous set missing pre-assigned ID/name")
 	}
+	if c.setIndex[anon.ID] != anon {
+		t.Error("anonymous set ID index does not point to the compiled set")
+	}
 
 	// NAT tables
 	if len(c.natTables) != 2 {
