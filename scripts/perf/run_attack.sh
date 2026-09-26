@@ -157,7 +157,7 @@ EOF'
 {"jails":[{"name":"ssh","identifiers":["sshd"],"patterns":["(?i)failed password for (?:invalid user )?\\\\S+ from (?P<ip>[a-f0-9:.]+) port [0-9]+"],"max_retries":5,"find_time":"10m","ban_time":"10m","ignore_ips":["127.0.0.0/8","::1/128"]}]}
 EOF'
     fi
-    # Sanity: the generated protect.json must be valid JSON on the defender.
+    compose exec --no-TTY --detach server sh -c 'bfw protect > /var/log/bfw-protect.log 2>&1'
     sx python3 -c 'import json; json.load(open("/etc/better-firewall/protect.json"))' \
         > "$RAW_DIR/protect_config_check.txt" 2>&1 || echo "protect.json invalid" > "$RAW_DIR/protect_config_check.txt"
     compose exec --no-TTY --detach server bfw protect
@@ -292,6 +292,16 @@ for ENGINE in none bfw ufw; do
         wait $LAPI_PID || true
         echo "{\"ssh_before\":${SSH_PRE:-9},\"ssh_after\":${SSH_POST:-9},\"http_after\":${HTTP_POST:-9},\"legit_after\":${LGT_AFTER:-9},\"jail_ban_s\":$BAN_S}" \
             > "$RAW_DIR/dynamic_jail_bfw.json"
+        # Debug artifacts for the jail path: auth log, protect stderr, and
+        # the shim/detector process state inside the defender.
+        sx sh -c 'tail -n 60 /var/log/bfw-attack-auth.log 2>/dev/null' \
+            > "$RAW_DIR/auth_log_bfw.txt" 2>&1 || true
+        sx sh -c 'cat /var/log/bfw-protect.log 2>/dev/null' \
+            > "$RAW_DIR/protect_log_bfw.txt" 2>&1 || true
+        sx sh -c 'ps -ef 2>/dev/null | grep -E "sshd|tail|protect|journalctl" | grep -v grep' \
+            > "$RAW_DIR/protect_ps_bfw.txt" 2>&1 || true
+        sx sh -c 'nft list set inet better-firewall bfw_threat_bans 2>/dev/null' \
+            > "$RAW_DIR/threat_set_bfw.txt" 2>&1 || true
         sx pkill -f 'bfw protect' >/dev/null 2>&1 || true
         sx pkill -f fake_lapi >/dev/null 2>&1 || true
     else
