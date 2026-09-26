@@ -383,21 +383,27 @@ func renderRule(out *strings.Builder, c *compiled, r *nftables.Rule) {
 		case *expr.Exthdr:
 			regs.set(x.DestRegister, pend{text: exthdrText(x)})
 		case *expr.Dynset:
-			addToken(renderDynset(&regs, x, lastL4))
+			tokenPrefix(out, &first)
+			writeDynset(out, &regs, x, lastL4)
 		case *expr.Limit:
-			addToken(renderLimit(x))
+			tokenPrefix(out, &first)
+			writeLimit(out, x)
 		case *expr.Log:
-			addToken(fmt.Sprintf("log prefix %q", string(x.Data)))
+			tokenPrefix(out, &first)
+			out.WriteString("log prefix ")
+			out.WriteString(strconv.Quote(string(x.Data)))
 		case *expr.Counter:
 			addToken("counter")
 		case *expr.Verdict:
-			addToken(renderVerdict(x))
+			tokenPrefix(out, &first)
+			writeVerdict(out, x)
 		case *expr.Reject:
 			addToken("reject")
 		case *expr.Masq:
 			addToken("masquerade")
 		case *expr.NAT:
-			addToken(renderNAT(&regs, x))
+			tokenPrefix(out, &first)
+			writeNAT(out, &regs, x)
 		case *expr.Notrack:
 			addToken("notrack")
 		default:
@@ -646,6 +652,11 @@ func writeUint(out *strings.Builder, n uint64) {
 	out.Write(strconv.AppendUint(buf[:0], n, 10))
 }
 
+func writeInt(out *strings.Builder, n int64) {
+	var buf [20]byte
+	out.Write(strconv.AppendInt(buf[:0], n, 10))
+}
+
 func writeCtStateName(out *strings.Builder, bits uint32) {
 	first := true
 	for _, s := range []struct {
@@ -789,48 +800,61 @@ func exthdrText(x *expr.Exthdr) string {
 	return fmt.Sprintf("exthdr %d @ %d", x.Type, x.Offset)
 }
 
-func renderDynset(regs *renderRegs, x *expr.Dynset, lastL4 byte) string {
+func writeDynset(out *strings.Builder, regs *renderRegs, x *expr.Dynset, lastL4 byte) {
 	key := regs.get(x.SrcRegKey).text
 	// find the port register: the next reg32 slot after the addr
-	portText := ""
-	setPortText := func(reg uint32, p pend) {
-		if portText != "" || reg == x.SrcRegKey || p.text == "" ||
+	var port pend
+	setPort := func(reg uint32, p pend) {
+		if port.text != "" || reg == x.SrcRegKey || p.text == "" ||
 			(!strings.HasSuffix(p.text, "dport") && p.text != "imm") {
 			return
 		}
-		if p.text == "imm" && len(p.imm) == 2 {
-			portText = strconv.Itoa(int(binaryutil.BigEndian.Uint16(p.imm)))
-		} else {
-			portText = p.text
-		}
+		port = p
 	}
 	for reg := uint32(1); reg < uint32(len(regs.values)); reg++ {
-		setPortText(reg, regs.get(reg))
+		setPort(reg, regs.get(reg))
 	}
 	for reg, p := range regs.extra {
-		setPortText(reg, p)
+		setPort(reg, p)
 	}
-	if portText == "" {
-		portText = l4Name(lastL4) + " dport"
-	}
-	var inner strings.Builder
-	fmt.Fprintf(&inner, "%s . %s", key, portText)
-	if x.Timeout != 0 {
-		fmt.Fprintf(&inner, " timeout %s", x.Timeout)
-	}
-	for _, e := range x.Exprs {
-		if l, ok := e.(*expr.Limit); ok {
-			fmt.Fprintf(&inner, " %s", renderLimit(l))
+	if port.text == "" {
+		// Keep the legacy rendering for a dynset without an observed L4
+		// protocol; normal limit rules always carry tcp/udp here.
+		if name := l4Name(lastL4); name != "" {
+			port.text = name + " dport"
+		} else {
+			port.text = " dport"
 		}
 	}
 	op := "add"
 	if x.Operation == unix.NFT_DYNSET_OP_UPDATE {
 		op = "update"
 	}
-	return fmt.Sprintf("%s @%s { %s }", op, x.SetName, inner.String())
+	out.WriteString(op)
+	out.WriteString(" @")
+	out.WriteString(x.SetName)
+	out.WriteString(" { ")
+	out.WriteString(key)
+	out.WriteString(" . ")
+	if port.text == "imm" && len(port.imm) == 2 {
+		writeUint(out, uint64(binaryutil.BigEndian.Uint16(port.imm)))
+	} else {
+		out.WriteString(port.text)
+	}
+	if x.Timeout != 0 {
+		out.WriteString(" timeout ")
+		out.WriteString(x.Timeout.String())
+	}
+	for _, e := range x.Exprs {
+		if l, ok := e.(*expr.Limit); ok {
+			out.WriteByte(' ')
+			writeLimit(out, l)
+		}
+	}
+	out.WriteString(" }")
 }
 
-func renderLimit(l *expr.Limit) string {
+func writeLimit(out *strings.Builder, l *expr.Limit) {
 	unit := "second"
 	switch l.Unit {
 	case expr.LimitTimeMinute:
@@ -842,53 +866,71 @@ func renderLimit(l *expr.Limit) string {
 	case expr.LimitTimeWeek:
 		unit = "week"
 	}
-	over := ""
 	if l.Over {
-		over = "over "
+		out.WriteString("limit rate over ")
+	} else {
+		out.WriteString("limit rate ")
 	}
-	s := fmt.Sprintf("limit rate %s%d/%s", over, l.Rate, unit)
+	writeUint(out, uint64(l.Rate))
+	out.WriteByte('/')
+	out.WriteString(unit)
 	if l.Burst != 0 {
-		s += fmt.Sprintf(" burst %d packets", l.Burst)
+		out.WriteString(" burst ")
+		writeUint(out, uint64(l.Burst))
+		out.WriteString(" packets")
 	}
-	return s
 }
 
-func renderVerdict(v *expr.Verdict) string {
+func writeVerdict(out *strings.Builder, v *expr.Verdict) {
 	switch v.Kind {
 	case expr.VerdictAccept:
-		return "accept"
+		out.WriteString("accept")
 	case expr.VerdictDrop:
-		return "drop"
+		out.WriteString("drop")
 	case expr.VerdictReturn:
-		return "return"
+		out.WriteString("return")
 	case expr.VerdictJump:
-		return "jump " + v.Chain
+		out.WriteString("jump ")
+		out.WriteString(v.Chain)
 	case expr.VerdictGoto:
-		return "goto " + v.Chain
+		out.WriteString("goto ")
+		out.WriteString(v.Chain)
 	case expr.VerdictContinue:
-		return "continue"
+		out.WriteString("continue")
 	default:
-		return fmt.Sprintf("verdict %d", v.Kind)
+		out.WriteString("verdict ")
+		writeInt(out, int64(v.Kind))
 	}
 }
 
-func renderNAT(regs *renderRegs, x *expr.NAT) string {
-	addr := ""
+func writeNAT(out *strings.Builder, regs *renderRegs, x *expr.NAT) {
+	var addr string
 	if p := regs.get(x.RegAddrMin); len(p.imm) > 0 {
 		addr = net.IP(p.imm).String()
 	}
-	port := ""
+	var port uint16
+	hasPort := false
 	if x.RegProtoMin != 0 {
 		if p := regs.get(x.RegProtoMin); len(p.imm) == 2 {
-			port = ":" + strconv.Itoa(int(binaryutil.BigEndian.Uint16(p.imm)))
+			port = binaryutil.BigEndian.Uint16(p.imm)
+			hasPort = true
 		}
 	}
 	// nft brackets a v6 address when a port follows: dnat to [::1]:8080.
-	if port != "" && strings.Contains(addr, ":") {
-		addr = "[" + addr + "]"
+	if hasPort && strings.Contains(addr, ":") {
+		out.WriteByte('[')
 	}
 	if x.Type == expr.NATTypeDestNAT {
-		return fmt.Sprintf("dnat to %s%s", addr, port)
+		out.WriteString("dnat to ")
+	} else {
+		out.WriteString("snat to ")
 	}
-	return fmt.Sprintf("snat to %s%s", addr, port)
+	out.WriteString(addr)
+	if hasPort && strings.Contains(addr, ":") {
+		out.WriteByte(']')
+	}
+	if hasPort {
+		out.WriteByte(':')
+		writeUint(out, uint64(port))
+	}
 }
