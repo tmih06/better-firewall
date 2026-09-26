@@ -353,6 +353,45 @@ func TestCompileLoggingOff(t *testing.T) {
 	}
 }
 
+func TestCompileLoggedRuleKeepsIndependentTerminalRules(t *testing.T) {
+	st := store.Defaults()
+	st.Rules4 = []rule.Rule{{
+		ID: "logged", Action: rule.ActionAllow, Direction: rule.DirIn,
+		Proto: "tcp", Log: rule.LogAll,
+		Src: rule.AddrSpec{IP: "any"},
+		Dst: rule.AddrSpec{IP: "any", Ports: []rule.PortRange{{Lo: 443, Hi: 443, Proto: "tcp"}}},
+	}}
+	c, err := compile(st, nil)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+
+	logging := rulesIn(c, "bfw-user-logging-input")
+	if len(logging) != 2 {
+		t.Fatalf("logged chain has %d rules, want log + return", len(logging))
+	}
+	last := func(r *nftables.Rule) expr.Any {
+		return r.Exprs[len(r.Exprs)-1]
+	}
+	if _, ok := last(logging[0]).(*expr.Log); !ok {
+		t.Fatalf("first logged rule was overwritten: last expression is %T", last(logging[0]))
+	}
+	if v, ok := last(logging[1]).(*expr.Verdict); !ok || v.Kind != expr.VerdictReturn {
+		t.Fatalf("logged return rule = %T %+v, want return verdict", last(logging[1]), last(logging[1]))
+	}
+
+	user := rulesIn(c, "bfw-user-input")
+	if len(user) < 2 {
+		t.Fatalf("user chain has %d rules, want logging jump + accept", len(user))
+	}
+	if v, ok := last(user[len(user)-2]).(*expr.Verdict); !ok || v.Kind != expr.VerdictJump || v.Chain != "bfw-user-logging-input" {
+		t.Fatalf("logging jump missing: %T %+v", last(user[len(user)-2]), last(user[len(user)-2]))
+	}
+	if v, ok := last(user[len(user)-1]).(*expr.Verdict); !ok || v.Kind != expr.VerdictAccept {
+		t.Fatalf("terminal accept missing: %T %+v", last(user[len(user)-1]), last(user[len(user)-1]))
+	}
+}
+
 func TestCompileRejectPolicy(t *testing.T) {
 	st := store.Defaults()
 	st.Policies.Input = "reject"
