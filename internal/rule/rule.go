@@ -130,18 +130,63 @@ func (r *Rule) TupleKey() string {
 	if r.Forward() && r.RouteDir != "" {
 		dir = r.RouteDir
 	}
-	fmt.Fprintf(&b, "dir=%s fwd=%v proto=%s icmp_type=%s ifin=%s ifout=%s v6=%v\n",
-		dir, r.Forward(), r.Proto, r.ICMPType, r.IfaceIn, r.IfaceOut, r.v6)
-	fmt.Fprintf(&b, "src=%s|%s dapp=%s sapp=%s\n", addrKey(r.Src), addrKey(r.Dst), r.Dapp, r.Sapp)
+	b.Grow(96 + len(dir) + len(r.Proto) + len(r.ICMPType) + len(r.IfaceIn) + len(r.IfaceOut) +
+		len(r.Src.IP) + len(r.Src.Set) + len(r.Dst.IP) + len(r.Dst.Set) + len(r.Dapp) + len(r.Sapp))
+	b.WriteString("dir=")
+	b.WriteString(dir)
+	b.WriteString(" fwd=")
+	writeBool(&b, r.Forward())
+	b.WriteString(" proto=")
+	b.WriteString(r.Proto)
+	b.WriteString(" icmp_type=")
+	b.WriteString(r.ICMPType)
+	b.WriteString(" ifin=")
+	b.WriteString(r.IfaceIn)
+	b.WriteString(" ifout=")
+	b.WriteString(r.IfaceOut)
+	b.WriteString(" v6=")
+	writeBool(&b, r.v6)
+	b.WriteByte('\n')
+	b.WriteString("src=")
+	writeAddrKey(&b, r.Src)
+	b.WriteByte('|')
+	writeAddrKey(&b, r.Dst)
+	b.WriteString(" dapp=")
+	b.WriteString(r.Dapp)
+	b.WriteString(" sapp=")
+	b.WriteString(r.Sapp)
+	b.WriteByte('\n')
 	return b.String()
 }
 
-func addrKey(a AddrSpec) string {
-	var ps []string
-	for _, p := range a.Ports {
-		ps = append(ps, p.String())
+func writeBool(b *strings.Builder, value bool) {
+	if value {
+		b.WriteString("true")
+		return
 	}
-	return a.IP + "/" + a.Set + "{" + strings.Join(ps, ",") + "}"
+	b.WriteString("false")
+}
+
+func writeAddrKey(b *strings.Builder, a AddrSpec) {
+	b.WriteString(a.IP)
+	b.WriteByte('/')
+	b.WriteString(a.Set)
+	b.WriteByte('{')
+	for i, p := range a.Ports {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.Itoa(int(p.Lo)))
+		if p.Hi != p.Lo {
+			b.WriteByte(':')
+			b.WriteString(strconv.Itoa(int(p.Hi)))
+		}
+		if p.Proto != "" && p.Proto != "any" {
+			b.WriteByte('/')
+			b.WriteString(p.Proto)
+		}
+	}
+	b.WriteByte('}')
 }
 
 // MatchCode mirrors ufw UFWRule.match return codes.

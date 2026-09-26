@@ -142,6 +142,14 @@ func TestTupleKeyDistinguishesMatchFields(t *testing.T) {
 	}
 }
 
+func TestTupleKeyCanonicalFormat(t *testing.T) {
+	want := "dir=in fwd=false proto=tcp icmp_type= ifin=eth0 ifout= v6=false\n" +
+		"src=10.0.0.0/8/{1000:2000/tcp}|192.168.1.1/{80/tcp} dapp= sapp=\n"
+	if got := matchBase().TupleKey(); got != want {
+		t.Fatalf("TupleKey = %q, want %q", got, want)
+	}
+}
+
 func TestTupleKeyDistinguishesFamily(t *testing.T) {
 	base := matchBase()
 	v6 := base.Clone()
