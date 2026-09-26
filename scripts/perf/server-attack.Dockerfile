@@ -3,16 +3,19 @@ FROM python:3.12-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Adds openssh-server over the perf server image so the attack lab can run a
-# real SSH brute-force jail: sshd logs to a file, and the journalctl shim
-# (mounted at runtime) re-emits those lines as journald JSON for bfw protect.
+# Dropbear provides a real SSH password-auth endpoint for the brute-force
+# jail. OpenSSH cannot run under this container's cap_drop ALL profile —
+# its mandatory preauth privilege separation needs SYS_CHROOT, SETGID and
+# SETUID. Dropbear authenticates without privsep chroot/setgroups, so the
+# attack stays real (sshpass over the SSH protocol) without weakening the
+# lab's capability isolation. Its log format is covered by the same
+# "failed password" jail pattern the sshd jail uses.
 RUN apt-get update -qq \
-    && apt-get install -y --no-install-recommends iptables nftables ufw openssh-server curl \
+    && apt-get install -y --no-install-recommends iptables nftables ufw dropbear-bin curl \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /run/sshd /root/.ssh \
-    && ssh-keygen -A \
+    && mkdir -p /etc/dropbear \
     && printf 'labpassword\nlabpassword\n' | passwd root \
-    && sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/; s/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    && dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key
 
 COPY bfw /usr/local/bin/bfw
 COPY scripts/perf/server.py /usr/local/lib/bfw-perf/server.py

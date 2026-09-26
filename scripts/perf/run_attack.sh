@@ -127,40 +127,42 @@ run_attack() {
     wait "$legit_pid" || true
 }
 
-# --- dynamic smart banning ---------------------------------------------------
-
-ATTACKER_IP=""
+# start_sshd: run dropbear (real SSH password auth without privsep chroot or
+# setgroups) inside the defender; -E logs to stderr, redirected to the file
+# the journalctl shim tails and converts to journald JSON records.
+start_sshd() {
+    sx sh -c 'dropbear -E -r /etc/dropbear/dropbear_rsa_host_key >> /var/log/bfw-attack-auth.log 2>&1 || true'
+}
 
 # threat_bans <ip> -> 1 if ip is in the bfw threat-ban set.
 threat_bans() {
     sx nft list set inet better-firewall bfw_threat_bans 2>/dev/null | grep -q "$1"
 }
 
-# start_sshd: run a real OpenSSH daemon inside the defender; sshd -E logs to
-# the file the journalctl shim tails and converts to journald JSON records.
-start_sshd() {
-    sx sh -c '/usr/sbin/sshd -E /var/log/bfw-attack-auth.log >/dev/null 2>&1 || true'
-}
-
 # start_protect <lapi-url-or-empty>: write protect.json + key, launch the
 # fake LAPI when configured, then start `bfw protect` in the background.
 start_protect() {
     sx sh -c 'mkdir -p /etc/better-firewall && printf "lab-bouncer-key-0123456789abcdef" > /etc/better-firewall/bouncer.key && chmod 600 /etc/better-firewall/bouncer.key'
+    # Write protect.json on the host and docker-cp it in — heredoc quoting
+    # through two layers of sh -c mangled the jail regex otherwise.
+    # Patterns cover OpenSSH ("Failed password for X from IP port N") and
+    # dropbear ("Bad password attempt for 'X' from IP:port"); the shim emits
+    # either under the sshd identifier.
+    local cfg="$RAW_DIR/protect.generated.json" crowdsec=""
     if [ -n "${1:-}" ]; then
-        sx sh -c 'cat > /etc/better-firewall/protect.json <<EOF
-{"jails":[{"name":"ssh","identifiers":["sshd"],"patterns":["(?i)failed password for (?:invalid user )?\\\\S+ from (?P<ip>[a-f0-9:.]+) port [0-9]+"],"max_retries":5,"find_time":"10m","ban_time":"10m","ignore_ips":["127.0.0.0/8","::1/128"]}],
- "crowdsec":{"url":"'$1'","api_key_file":"/etc/better-firewall/bouncer.key","poll_interval":"2s"}}
-EOF'
+        crowdsec=",
+ \"crowdsec\":{\"url\":\"$1\",\"api_key_file\":\"/etc/better-firewall/bouncer.key\",\"poll_interval\":\"2s\"}"
+    fi
+    cat > "$cfg" <<EOF
+{"jails":[{"name":"ssh","identifiers":["sshd"],"patterns":["(?i)failed password for (?:invalid user )?\\\\S+ from (?P<ip>[a-f0-9:.]+) port [0-9]+","(?i)bad password attempt for .+ from (?P<ip>[a-f0-9:.]+):[0-9]+"],"max_retries":5,"find_time":"10m","ban_time":"10m","ignore_ips":["127.0.0.0/8","::1/128"]}]$crowdsec}
+EOF
+    docker cp "$cfg" "$(compose ps -q server)":/etc/better-firewall/protect.json
+    python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$cfg" \
+        > "$RAW_DIR/protect_config_check.txt" 2>&1 || echo "protect.json invalid" > "$RAW_DIR/protect_config_check.txt"
+    if [ -n "${1:-}" ]; then
         compose exec --no-TTY --detach server python3 /usr/local/lib/bfw-perf/fake_lapi.py
-    else
-        sx sh -c 'cat > /etc/better-firewall/protect.json <<EOF
-{"jails":[{"name":"ssh","identifiers":["sshd"],"patterns":["(?i)failed password for (?:invalid user )?\\\\S+ from (?P<ip>[a-f0-9:.]+) port [0-9]+"],"max_retries":5,"find_time":"10m","ban_time":"10m","ignore_ips":["127.0.0.0/8","::1/128"]}]}
-EOF'
     fi
     compose exec --no-TTY --detach server sh -c 'bfw protect > /var/log/bfw-protect.log 2>&1'
-    sx python3 -c 'import json; json.load(open("/etc/better-firewall/protect.json"))' \
-        > "$RAW_DIR/protect_config_check.txt" 2>&1 || echo "protect.json invalid" > "$RAW_DIR/protect_config_check.txt"
-    compose exec --no-TTY --detach server bfw protect
 }
 
 # wait_ban <ip> <timeout_s>: poll the threat set; prints seconds-to-ban or -1.

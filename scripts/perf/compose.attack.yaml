@@ -12,7 +12,6 @@ services:
       - ALL
     cap_add:
       - NET_ADMIN
-      - SYS_CHROOT  # sshd preauth privsep chroots into /run/sshd
     security_opt:
       - no-new-privileges:true
     networks:

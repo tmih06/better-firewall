@@ -9,7 +9,7 @@ touch "$LOG"
 # Historical lines are skipped (--lines=0 semantics): only follow new ones.
 tail -n0 -F "$LOG" 2>/dev/null | while IFS= read -r line; do
     case "$line" in
-        *"Failed password"*|*"Invalid user"*)
+        *"Failed password"*|*"Invalid user"*|*"Bad password"*)
             esc=$(printf '%s' "$line" | sed 's/\\/\\\\/g; s/"/\\"/g')
             printf '{"SYSLOG_IDENTIFIER":"sshd","MESSAGE":"%s"}\n' "$esc"
             ;;
