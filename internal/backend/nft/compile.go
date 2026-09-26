@@ -71,6 +71,7 @@ type compiled struct {
 	chainIndex  map[string]*nftables.Chain
 	sets        []*nftables.Set
 	elems       map[*nftables.Set][]nftables.SetElement
+	limitSets   map[string]*nftables.Set
 	rules       []*nftables.Rule
 	natTables   []*nftables.Table
 	setID       uint32
@@ -106,10 +107,54 @@ func (c *compiled) addRule(chain string, exprs ...expr.Any) {
 // values; IPV6 there overrides st.IPv6 when present (same precedence ufw
 // gives /etc/default/ufw).
 func compile(st *store.State, etc map[string]string) (*compiled, error) {
+	limitCount := 0
+	for _, r := range st.Rules4 {
+		if r.Action == rule.ActionLimit {
+			limitCount++
+		}
+	}
+	for _, r := range st.Rules6 {
+		if r.Action == rule.ActionLimit {
+			limitCount++
+		}
+	}
+	ruleReserve, setReserve := 128, 2+2*len(st.Sets)+limitCount
+	reserveRules := func(rules []rule.Rule) {
+		for _, r := range rules {
+			variants := 1
+			if (r.Proto == "" || r.Proto == "any") && (len(r.Src.Ports) != 0 || len(r.Dst.Ports) != 0) {
+				variants = 2 // bare ports expand to tcp and udp
+			}
+			ruleReserve += variants
+			if r.Log != rule.LogNone {
+				ruleReserve += 3 * variants // log, return, and user-chain jump
+			}
+			if r.Action == rule.ActionLimit {
+				ruleReserve += variants // over-limit and under-limit branches
+			}
+			if len(r.Src.Ports) > 1 {
+				setReserve += variants
+			}
+			if len(r.Dst.Ports) > 1 {
+				setReserve += variants
+			}
+		}
+	}
+	reserveRules(st.Rules4)
+	reserveRules(st.Rules6)
 	c := &compiled{
-		table:      &nftables.Table{Family: nftables.TableFamilyINet, Name: TableName},
-		chainIndex: map[string]*nftables.Chain{},
-		elems:      map[*nftables.Set][]nftables.SetElement{},
+		table: &nftables.Table{Family: nftables.TableFamilyINet, Name: TableName},
+		// Reserve the object graph once. Apply sends every object in one
+		// batch, so repeated slice growth here only copies pointers while the
+		// ruleset is being built. The rule estimate deliberately errs high for
+		// logged/limited rules; the small pointer reserve is cheaper than the
+		// repeated growth and copying on the common large-ruleset path.
+		chains:     make([]*nftables.Chain, 0, 48),
+		rules:      make([]*nftables.Rule, 0, ruleReserve),
+		sets:       make([]*nftables.Set, 0, setReserve),
+		chainIndex: make(map[string]*nftables.Chain, 48),
+		elems:      make(map[*nftables.Set][]nftables.SetElement, setReserve),
+		limitSets:  make(map[string]*nftables.Set, limitCount),
 	}
 
 	pol := st.Policies
@@ -638,28 +683,44 @@ func (c *compiled) compileRule(r *rule.Rule, v6 bool, now int64) error {
 			// the chain holds [limit? log prefix, return] per rule. The
 			// RETURN must carry the same match — an unconditional return
 			// would shadow every later logged rule in the chain.
-			lm := append([]expr.Any{}, match...)
+			// Keep the match slice for the other rule variants. Appending to
+			// it is safe because ruleMatch returns a fresh slice for every
+			// variant; only the slice header is changed here.
+			lm := match
 			if r.Log == rule.LogNew {
 				lm = append(lm, ctState(expr.CtStateBitNEW)...)
 			}
 			lm = append(lm, limit3(), logExpr(logPrefix(r.Action)))
 			c.addRule(logChain, lm...)
-			rm := append([]expr.Any{}, match...)
+			rm := append([]expr.Any(nil), match...)
 			if r.Log == rule.LogNew {
 				rm = append(rm, ctState(expr.CtStateBitNEW)...)
 			}
 			c.addRule(logChain, append(rm, counter(), verdict(expr.VerdictReturn))...)
-			c.addRule(userChain, append(append([]expr.Any{}, match...), counter(), jump(logChain))...)
+			c.addRule(userChain, append(append([]expr.Any(nil), match...), counter(), jump(logChain))...)
+		}
+		actionMatch := match
+		if r.Log != rule.LogNone && r.Action != rule.ActionLimit {
+			// The logged rule above owns match's backing array after its
+			// append. Clone before adding the terminal action so the two
+			// compiled nft rules cannot alias and overwrite one another.
+			actionMatch = append([]expr.Any(nil), match...)
 		}
 		switch r.Action {
 		case rule.ActionAllow:
-			c.addRule(userChain, append(append([]expr.Any{}, match...), counter(), verdict(expr.VerdictAccept))...)
+			c.addRule(userChain, append(actionMatch, counter(), verdict(expr.VerdictAccept))...)
 		case rule.ActionDeny:
-			c.addRule(userChain, append(append([]expr.Any{}, match...), counter(), verdict(expr.VerdictDrop))...)
+			c.addRule(userChain, append(actionMatch, counter(), verdict(expr.VerdictDrop))...)
 		case rule.ActionReject:
-			c.addRule(userChain, append(append([]expr.Any{}, match...), counter(), rejectExpr())...)
+			c.addRule(userChain, append(actionMatch, counter(), rejectExpr())...)
 		case rule.ActionLimit:
-			if err := c.compileLimit(r, proto, v6, match, userChain); err != nil {
+			limitMatch := match
+			if r.Log != rule.LogNone {
+				// The logging rule owns match's backing array; limit's two
+				// branches must be built from an independent prefix.
+				limitMatch = append([]expr.Any(nil), match...)
+			}
+			if err := c.compileLimit(r, proto, v6, limitMatch, userChain); err != nil {
 				return err
 			}
 		default:
@@ -685,13 +746,7 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 	// Reuse an existing dynset of the same name: a proto-any limit rule
 	// expands to tcp+udp variants that share r.ID, and emitting the set
 	// twice would double it in render/diff (the kernel dedups by name).
-	var set *nftables.Set
-	for _, s := range c.sets {
-		if s.Name == name {
-			set = s
-			break
-		}
-	}
+	set := c.limitSets[name]
 	if set == nil {
 		set = &nftables.Set{
 			Table:         c.table,
@@ -708,6 +763,7 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 			Size: 65535,
 		}
 		c.sets = append(c.sets, set)
+		c.limitSets[name] = set
 	}
 
 	// Key registers: saddr then dport, contiguous in the kernel's reg32
@@ -720,7 +776,11 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 		saddrOff, saddrLen = 8, 16
 	}
 
-	ex := append([]expr.Any{}, match...)
+	// The first limit branch consumes match's backing array. The caller does
+	// not retain it after this function, so avoid a full copy for the common
+	// path; the second branch clones only the original match prefix below.
+	baseLen := len(match)
+	ex := match
 	ex = append(ex,
 		ctState(expr.CtStateBitNEW)...,
 	)
@@ -747,7 +807,8 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 		jump(chUserLimit),
 	)
 	c.addRule(userChain, ex...)
-	c.addRule(userChain, append(append([]expr.Any{}, match...), counter(), jump(chUserLimitA))...)
+	acceptMatch := append([]expr.Any(nil), match[:baseLen]...)
+	c.addRule(userChain, append(acceptMatch, counter(), jump(chUserLimitA))...)
 	return nil
 }
 
@@ -764,19 +825,20 @@ func (c *compiled) ruleMatch(r *rule.Rule, proto string, v6 bool) ([]expr.Any, e
 		(len(r.Src.Ports) != 0 || len(r.Dst.Ports) != 0) {
 		return nil, fmt.Errorf("rule %s: ICMP rules cannot include ports", r.ID)
 	}
-	ex := nfproto(v6)
+	ex := make([]expr.Any, 0, 16)
+	ex = appendNFProto(ex, v6)
 	if r.IfaceIn != "" {
-		ex = append(ex, iif(r.IfaceIn)...)
+		ex = appendIfaceMatch(ex, expr.MetaKeyIIFNAME, r.IfaceIn)
 	}
 	if r.IfaceOut != "" {
-		ex = append(ex, oif(r.IfaceOut)...)
+		ex = appendIfaceMatch(ex, expr.MetaKeyOIFNAME, r.IfaceOut)
 	}
 	if proto != "any" {
 		num, err := protoNum(proto)
 		if err != nil {
 			return nil, fmt.Errorf("rule %s: %w", r.ID, err)
 		}
-		ex = append(ex, l4proto(num)...)
+		ex = appendL4Proto(ex, num)
 	}
 	if r.ICMPType != "" {
 		if proto != "icmp" && proto != "icmpv6" {
@@ -787,21 +849,21 @@ func (c *compiled) ruleMatch(r *rule.Rule, proto string, v6 bool) ([]expr.Any, e
 			return nil, fmt.Errorf("rule %s: %w", r.ID, err)
 		}
 		n, _ := strconv.ParseUint(typ, 10, 8)
-		ex = append(ex, icmpType(byte(n))...)
+		ex = appendICMPType(ex, byte(n))
 	}
-	ex = append(ex, c.endpointAddr(&r.Src, "saddr", v6)...)
-	ex = append(ex, c.endpointAddr(&r.Dst, "daddr", v6)...)
+	ex = c.appendEndpointAddr(ex, &r.Src, "saddr", v6)
+	ex = c.appendEndpointAddr(ex, &r.Dst, "daddr", v6)
 	// ports (only meaningful for tcp/udp)
 	if proto == "tcp" || proto == "udp" {
-		ex = append(ex, c.portExprs(r.Src.Ports, "sport", proto)...)
-		ex = append(ex, c.portExprs(r.Dst.Ports, "dport", proto)...)
+		ex = c.appendPortExprs(ex, r.Src.Ports, "sport", proto)
+		ex = c.appendPortExprs(ex, r.Dst.Ports, "dport", proto)
 	}
 	return ex, nil
 }
 
-// endpointAddr emits the address match for one endpoint: set lookup, CIDR
-// bitwise, host cmp, or nothing for "any".
-func (c *compiled) endpointAddr(a *rule.AddrSpec, which string, v6 bool) []expr.Any {
+// appendEndpointAddr emits the address match for one endpoint directly into
+// dst: set lookup, CIDR bitwise, host cmp, or nothing for "any".
+func (c *compiled) appendEndpointAddr(dst []expr.Any, a *rule.AddrSpec, which string, v6 bool) []expr.Any {
 	if a.Set != "" {
 		name := "bfw_set_" + a.Set
 		if v6 {
@@ -817,20 +879,20 @@ func (c *compiled) endpointAddr(a *rule.AddrSpec, which string, v6 bool) []expr.
 				off = 24
 			}
 		}
-		return []expr.Any{
+		return append(dst,
 			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: off, Len: addrLen(v6)},
 			&expr.Lookup{SourceRegister: 1, SetName: name},
-		}
+		)
 	}
 	if a.Any() {
-		return nil
+		return dst
 	}
-	return addrMatch(which, a.IP, v6)
+	return appendAddrMatch(dst, which, a.IP, v6)
 }
 
-// portExprs emits sport/dport matches for the ranges of one proto.
-// Single port → cmp; lo:hi → range; multiple → anonymous set lookup.
-func (c *compiled) portExprs(ports []rule.PortRange, which, proto string) []expr.Any {
+// appendPortExprs emits sport/dport matches for the ranges of one proto
+// directly into dst. Single port → cmp; lo:hi → range; multiple → anonymous set lookup.
+func (c *compiled) appendPortExprs(dst []expr.Any, ports []rule.PortRange, which, proto string) []expr.Any {
 	var first rule.PortRange
 	matched := 0
 	for _, p := range ports {
@@ -842,7 +904,7 @@ func (c *compiled) portExprs(ports []rule.PortRange, which, proto string) []expr
 		}
 	}
 	if matched == 0 {
-		return nil
+		return dst
 	}
 	offset := uint32(0)
 	if which == "dport" {
@@ -851,23 +913,22 @@ func (c *compiled) portExprs(ports []rule.PortRange, which, proto string) []expr
 	load := &expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: offset, Len: 2}
 	if matched == 1 {
 		if first.Lo == first.Hi {
-			return []expr.Any{load, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.BigEndian.PutUint16(first.Lo)}}
+			return append(dst, load, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.BigEndian.PutUint16(first.Lo)})
 		}
-		return []expr.Any{load, &expr.Range{
+		return append(dst, load, &expr.Range{
 			Op: expr.CmpOpEq, Register: 1,
 			FromData: binaryutil.BigEndian.PutUint16(first.Lo),
 			ToData:   binaryutil.BigEndian.PutUint16(first.Hi),
-		}}
+		})
 	}
 
-	// Multiport rules alone need a retained filtered list for set creation.
-	rs := make([]rule.PortRange, 0, matched)
+	// Multiport rules need an anonymous set. Build its elements directly from
+	// the filtered input so no second temporary port slice is required.
 	interval := false
 	for _, p := range ports {
 		if p.Proto != "" && p.Proto != "any" && p.Proto != proto {
 			continue
 		}
-		rs = append(rs, p)
 		if p.Multi() {
 			interval = true
 		}
@@ -879,7 +940,10 @@ func (c *compiled) portExprs(ports []rule.PortRange, which, proto string) []expr
 	}
 	set.Name = fmt.Sprintf("__set%d", set.ID)
 	var elems []nftables.SetElement
-	for _, p := range rs {
+	for _, p := range ports {
+		if p.Proto != "" && p.Proto != "any" && p.Proto != proto {
+			continue
+		}
 		if interval {
 			elems = append(elems, portIntervalElems(p.Lo, p.Hi)...)
 		} else {
@@ -888,7 +952,7 @@ func (c *compiled) portExprs(ports []rule.PortRange, which, proto string) []expr
 	}
 	c.sets = append(c.sets, set)
 	c.elems[set] = elems
-	return []expr.Any{load, &expr.Lookup{SourceRegister: 1, SetName: set.Name, SetID: set.ID}}
+	return append(dst, load, &expr.Lookup{SourceRegister: 1, SetName: set.Name, SetID: set.ID})
 }
 
 // compileNAT builds table ip/ip6 better-firewall-nat when st.NAT is non-empty.
@@ -998,21 +1062,29 @@ func join(lists ...[]expr.Any) []expr.Any {
 }
 
 func nfproto(v6 bool) []expr.Any {
+	return appendNFProto(nil, v6)
+}
+
+func appendNFProto(dst []expr.Any, v6 bool) []expr.Any {
 	b := byte(unix.NFPROTO_IPV4)
 	if v6 {
 		b = unix.NFPROTO_IPV6
 	}
-	return []expr.Any{
+	return append(dst,
 		&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
 		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{b}},
-	}
+	)
 }
 
 func l4proto(num byte) []expr.Any {
-	return []expr.Any{
+	return appendL4Proto(nil, num)
+}
+
+func appendL4Proto(dst []expr.Any, num byte) []expr.Any {
+	return append(dst,
 		&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
 		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{num}},
-	}
+	)
 }
 
 func protoNum(p string) (byte, error) {
@@ -1094,6 +1166,10 @@ func iif(name string) []expr.Any { return ifaceMatch(expr.MetaKeyIIFNAME, name) 
 func oif(name string) []expr.Any { return ifaceMatch(expr.MetaKeyOIFNAME, name) }
 
 func ifaceMatch(key expr.MetaKey, name string) []expr.Any {
+	return appendIfaceMatch(nil, key, name)
+}
+
+func appendIfaceMatch(dst []expr.Any, key expr.MetaKey, name string) []expr.Any {
 	// Trailing '+' is a prefix wildcard (iptables -i eth+ / nft iifname
 	// "eth*"): match only the prefix bytes via a bitwise mask.
 	if strings.HasSuffix(name, "+") {
@@ -1104,18 +1180,18 @@ func ifaceMatch(key expr.MetaKey, name string) []expr.Any {
 		for i := range prefix {
 			mask[i] = 0xff
 		}
-		return []expr.Any{
+		return append(dst,
 			&expr.Meta{Key: key, Register: 1},
 			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 16, Mask: mask, Xor: make([]byte, 16)},
 			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: b},
-		}
+		)
 	}
 	b := make([]byte, 16)
 	copy(b, name)
-	return []expr.Any{
+	return append(dst,
 		&expr.Meta{Key: key, Register: 1},
 		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: b},
-	}
+	)
 }
 
 func addrLen(v6 bool) uint32 {
@@ -1129,6 +1205,13 @@ func addrLen(v6 bool) uint32 {
 // saddr/daddr. which is "saddr" or "daddr". Returns nil on unparseable
 // input (callers validate upstream).
 func addrMatch(which, cidr string, v6 bool) []expr.Any {
+	return appendAddrMatch(nil, which, cidr, v6)
+}
+
+// appendAddrMatch is the allocation-conscious form used while compiling user
+// rules. It appends directly to dst while retaining addrMatch's fail-closed
+// behavior for malformed or family-mismatched addresses.
+func appendAddrMatch(dst []expr.Any, which, cidr string, v6 bool) []expr.Any {
 	off := uint32(12)
 	if which == "daddr" {
 		off = 16
@@ -1145,10 +1228,10 @@ func addrMatch(which, cidr string, v6 bool) []expr.Any {
 		if ip == nil {
 			// Fail closed: two contradictory cmps on reg 1 can never both
 			// hold, so the rule matches nothing rather than everything.
-			return []expr.Any{
+			return append(dst,
 				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0}},
 				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{1}},
-			}
+			)
 		}
 		bits := 128
 		if ip.To4() != nil {
@@ -1160,24 +1243,24 @@ func addrMatch(which, cidr string, v6 bool) []expr.Any {
 	// Family mismatch (v4 addr in a v6 rule or vice versa) would emit a
 	// wrong-length payload load — fail closed instead of a garbage match.
 	if (len(addr) == 16) != v6 {
-		return []expr.Any{
+		return append(dst,
 			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0}},
 			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{1}},
-		}
+		)
 	}
 	load := &expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: off, Len: uint32(len(addr))}
 	ones, bits := ipnet.Mask.Size()
 	if ones == bits {
-		return []expr.Any{load, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: addr}}
+		return append(dst, load, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: addr})
 	}
-	return []expr.Any{
+	return append(dst,
 		load,
 		&expr.Bitwise{
 			SourceRegister: 1, DestRegister: 1, Len: uint32(len(addr)),
 			Mask: []byte(ipnet.Mask), Xor: make([]byte, len(addr)),
 		},
 		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: addr},
-	}
+	)
 }
 
 func canonIP(ip net.IP) []byte {
@@ -1241,10 +1324,14 @@ func portEq(which string, p uint16) []expr.Any {
 }
 
 func icmpType(t byte) []expr.Any {
-	return []expr.Any{
+	return appendICMPType(nil, t)
+}
+
+func appendICMPType(dst []expr.Any, t byte) []expr.Any {
+	return append(dst,
 		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 0, Len: 1},
 		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{t}},
-	}
+	)
 }
 
 func hopLimit(hl byte) []expr.Any {
