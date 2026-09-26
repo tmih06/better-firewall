@@ -313,6 +313,8 @@ jobs:
             --output-md artifacts/performance/summary.md \
             --max-error-rate 0.01 \
             --max-p95-latency-ms 500.0
+      - name: Publish firewall comparison and resource metrics
+        run: cat artifacts/performance/summary.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload performance artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

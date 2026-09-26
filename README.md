@@ -126,7 +126,24 @@ firewall packet throughput or a protection-disabled baseline.
 | nft ban-set compile | 1,000 bans | 0.995 ms | 1,138,720 | 6,980 | — |
 | nft ban-set compile | 10,000 bans | 14.535 ms | 17,119,184 | 52,005 | — |
 
-The separate CI `performance` job compares firewall traffic with UFW using isolated containers; its results are not mixed with these protection microbenchmarks.
+## Firewall comparison and resource usage
+
+The hosted `performance` job compares **no firewall**, **bfw**, and **UFW** on
+the same isolated runner. It tests 10, 100, 500, and 1,000 rules with
+keep-alive, new-connection churn, and mixed traffic (three repeats).
+
+| Measure | What the report contains |
+|---|---|
+| Network behavior | Requests/s, p50/p95/p99 latency, errors, dropped iterations, checks, and bytes transferred |
+| Container resources | Average/peak CPU and memory for the firewall server and k6 attacker; sampled every second |
+| Rule-application cost | Rule-add and firewall-enable wall time, CPU seconds, and peak RSS for bfw and UFW |
+| Footprint | bfw executable, UFW launcher, and installed UFW package sizes |
+
+Open the [CI runs](https://github.com/tmih06/better-firewall/actions/workflows/ci.yml)
+and select the latest successful **Consolidate performance report** job. Its
+`better-firewall-performance` artifact contains `summary.md`, `summary.json`,
+and raw run data (retained for 30 days). New successful runs also display the
+Markdown report in the job summary.
 
 ## Migrate an existing firewall
 
