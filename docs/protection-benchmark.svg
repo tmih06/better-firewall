@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1120" height="826" viewBox="0 0 1120 826" role="img" aria-labelledby="title desc">
   <title id="title">Protection path cost per operation</title>
-  <desc id="desc">Three panels of horizontal logarithmic bars. The latency panel shows time per operation, the memory panel shows heap bytes per operation, and the allocations panel shows heap allocation count per operation, for journal failure detection, CrowdSec decision decoding, and nft ban-set compilation at 100, 1,000, and 10,000 bans.</desc>
+  <desc id="desc">Three dot-plot panels, one per measure, on a linear axis running from zero. The time panel shows time per operation, the memory panel shows heap bytes per operation, and the allocations panel shows heap allocation count per operation, for journal failure detection, CrowdSec decision decoding, and nft ban-set compilation at 100, 1,000, and 10,000 bans. Dots mark position only, because these measures span several orders of magnitude and bar length would not be proportional to the value.</desc>
   <style>
     text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #172554; }
     .muted { fill: #64748b; }
@@ -15,112 +15,114 @@
   </style>
   <rect width="1120" height="826" fill="#f1f5f9"/>
   <text x="32" y="38" font-size="24" font-weight="700">Protection path cost per operation</text>
-  <text x="32" y="62" font-size="13" class="muted">Five benchmark cases · one sample per case · logarithmic bar length · Linux x86_64, Go 1.27.x, AMD EPYC</text>
+  <text x="32" y="62" font-size="13" class="muted">Five benchmark cases · one sample per case · linear axis from zero · Linux x86_64, Go 1.27.x, AMD EPYC</text>
   <rect class="panel" x="24" y="104" width="1072" height="212" rx="14"/>
   <text x="48" y="130" font-size="14" font-weight="650">Time per operation</text>
+  <line class="axis" x1="470" y1="140" x2="470" y2="288"/>
   <line class="grid" x1="470.0" y1="140" x2="470.0" y2="288"/>
-  <text x="470.0" y="306" text-anchor="middle" font-size="10" class="muted">0.1 µs</text>
-  <line class="grid" x1="580.0" y1="140" x2="580.0" y2="288"/>
-  <text x="580.0" y="306" text-anchor="middle" font-size="10" class="muted">1 µs</text>
-  <line class="grid" x1="690.0" y1="140" x2="690.0" y2="288"/>
-  <text x="690.0" y="306" text-anchor="middle" font-size="10" class="muted">10 µs</text>
-  <line class="grid" x1="800.0" y1="140" x2="800.0" y2="288"/>
-  <text x="800.0" y="306" text-anchor="middle" font-size="10" class="muted">100 µs</text>
-  <line class="grid" x1="910.0" y1="140" x2="910.0" y2="288"/>
-  <text x="910.0" y="306" text-anchor="middle" font-size="10" class="muted">1 ms</text>
-  <line class="grid" x1="1020.0" y1="140" x2="1020.0" y2="288"/>
-  <text x="1020.0" y="306" text-anchor="middle" font-size="10" class="muted">10 ms</text>
+  <text x="470.0" y="306" text-anchor="start" font-size="10" class="muted">0 ms</text>
+  <line class="grid" x1="650.0" y1="140" x2="650.0" y2="288"/>
+  <text x="650.0" y="306" text-anchor="middle" font-size="10" class="muted">3 ms</text>
+  <line class="grid" x1="830.0" y1="140" x2="830.0" y2="288"/>
+  <text x="830.0" y="306" text-anchor="middle" font-size="10" class="muted">6 ms</text>
+  <line class="grid" x1="1010.0" y1="140" x2="1010.0" y2="288"/>
+  <text x="1010.0" y="306" text-anchor="end" font-size="10" class="muted">9 ms</text>
   <text x="48" y="162.2" font-size="12.5" font-weight="650">Journal failure detector</text>
   <text x="48" y="178.2" font-size="10.5" class="muted">one failed-login event</text>
-  <rect x="470" y="155.2" width="105.2" height="16" rx="4" fill="#0f9d8a"/>
-  <text x="583.2" y="167.2" font-size="11" font-weight="650">0.905 µs</text>
+  <line class="axis" x1="470" y1="163.2" x2="470.1" y2="163.2"/>
+  <circle cx="470.1" cy="163.2" r="6" fill="#0f9d8a"><title>Journal failure detector, one failed-login event: 0.905 µs</title></circle>
+  <text x="482.1" y="167.2" font-size="11" font-weight="650" fill="#0f9d8a">0.905 µs</text>
   <text x="48" y="192.6" font-size="12.5" font-weight="650">CrowdSec JSON decode</text>
   <text x="48" y="208.6" font-size="10.5" class="muted">100 decisions</text>
-  <rect x="470" y="185.6" width="303.0" height="16" rx="4" fill="#3b82f6"/>
-  <text x="781.0" y="197.6" font-size="11" font-weight="650">56.86 µs</text>
+  <line class="axis" x1="470" y1="193.6" x2="473.4" y2="193.6"/>
+  <circle cx="473.4" cy="193.6" r="6" fill="#3b82f6"><title>CrowdSec JSON decode, 100 decisions: 56.86 µs</title></circle>
+  <text x="485.4" y="197.6" font-size="11" font-weight="650" fill="#3b82f6">56.86 µs</text>
   <text x="48" y="223.0" font-size="12.5" font-weight="650">nft ban-set compile</text>
   <text x="48" y="239.0" font-size="10.5" class="muted">100 bans</text>
-  <rect x="470" y="216.0" width="318.3" height="16" rx="4" fill="#8b5cf6"/>
-  <text x="796.3" y="228.0" font-size="11" font-weight="650">78.20 µs</text>
+  <line class="axis" x1="470" y1="224.0" x2="474.7" y2="224.0"/>
+  <circle cx="474.7" cy="224.0" r="6" fill="#8b5cf6"><title>nft ban-set compile, 100 bans: 78.20 µs</title></circle>
+  <text x="486.7" y="228.0" font-size="11" font-weight="650" fill="#8b5cf6">78.20 µs</text>
   <text x="48" y="253.4" font-size="12.5" font-weight="650">nft ban-set compile</text>
   <text x="48" y="269.4" font-size="10.5" class="muted">1,000 bans</text>
-  <rect x="470" y="246.4" width="389.4" height="16" rx="4" fill="#f59e0b"/>
-  <text x="867.4" y="258.4" font-size="11" font-weight="650">0.347 ms</text>
+  <line class="axis" x1="470" y1="254.4" x2="490.8" y2="254.4"/>
+  <circle cx="490.8" cy="254.4" r="6" fill="#f59e0b"><title>nft ban-set compile, 1,000 bans: 0.347 ms</title></circle>
+  <text x="502.8" y="258.4" font-size="11" font-weight="650" fill="#f59e0b">0.347 ms</text>
   <text x="48" y="283.8" font-size="12.5" font-weight="650">nft ban-set compile</text>
   <text x="48" y="299.8" font-size="10.5" class="muted">10,000 bans</text>
-  <rect x="470" y="276.8" width="539.6" height="16" rx="4" fill="#ef4444"/>
-  <text x="1017.6" y="288.8" font-size="11" font-weight="650">8.039 ms</text>
+  <line class="axis" x1="470" y1="284.8" x2="952.4" y2="284.8"/>
+  <circle cx="952.4" cy="284.8" r="6" fill="#ef4444"><title>nft ban-set compile, 10,000 bans: 8.039 ms</title></circle>
+  <text x="964.4" y="288.8" font-size="11" font-weight="650" fill="#ef4444">8.039 ms</text>
   <rect class="panel" x="24" y="330" width="1072" height="212" rx="14"/>
-  <text x="48" y="356" font-size="14" font-weight="650">Heap bytes per operation</text>
+  <text x="48" y="356" font-size="14" font-weight="650">Heap memory per operation</text>
+  <line class="axis" x1="470" y1="366" x2="470" y2="514"/>
   <line class="grid" x1="470.0" y1="366" x2="470.0" y2="514"/>
-  <text x="470.0" y="532" text-anchor="middle" font-size="10" class="muted">10 B</text>
-  <line class="grid" x1="548.6" y1="366" x2="548.6" y2="514"/>
-  <text x="548.6" y="532" text-anchor="middle" font-size="10" class="muted">100 B</text>
-  <line class="grid" x1="627.1" y1="366" x2="627.1" y2="514"/>
-  <text x="627.1" y="532" text-anchor="middle" font-size="10" class="muted">1 kB</text>
-  <line class="grid" x1="705.7" y1="366" x2="705.7" y2="514"/>
-  <text x="705.7" y="532" text-anchor="middle" font-size="10" class="muted">10 kB</text>
-  <line class="grid" x1="784.3" y1="366" x2="784.3" y2="514"/>
-  <text x="784.3" y="532" text-anchor="middle" font-size="10" class="muted">100 kB</text>
-  <line class="grid" x1="862.9" y1="366" x2="862.9" y2="514"/>
-  <text x="862.9" y="532" text-anchor="middle" font-size="10" class="muted">1 MB</text>
-  <line class="grid" x1="941.4" y1="366" x2="941.4" y2="514"/>
-  <text x="941.4" y="532" text-anchor="middle" font-size="10" class="muted">10 MB</text>
-  <line class="grid" x1="1020.0" y1="366" x2="1020.0" y2="514"/>
-  <text x="1020.0" y="532" text-anchor="middle" font-size="10" class="muted">100 MB</text>
+  <text x="470.0" y="532" text-anchor="start" font-size="10" class="muted">0 MiB</text>
+  <line class="grid" x1="650.0" y1="366" x2="650.0" y2="514"/>
+  <text x="650.0" y="532" text-anchor="middle" font-size="10" class="muted">6 MiB</text>
+  <line class="grid" x1="830.0" y1="366" x2="830.0" y2="514"/>
+  <text x="830.0" y="532" text-anchor="middle" font-size="10" class="muted">12 MiB</text>
+  <line class="grid" x1="1010.0" y1="366" x2="1010.0" y2="514"/>
+  <text x="1010.0" y="532" text-anchor="end" font-size="10" class="muted">18 MiB</text>
   <text x="48" y="388.2" font-size="12.5" font-weight="650">Journal failure detector</text>
   <text x="48" y="404.2" font-size="10.5" class="muted">one failed-login event</text>
-  <rect x="470" y="381.2" width="85.4" height="16" rx="4" fill="#0f9d8a"/>
-  <text x="563.4" y="393.2" font-size="11" font-weight="650">122 B</text>
+  <line class="axis" x1="470" y1="389.2" x2="470.0" y2="389.2"/>
+  <circle cx="470.0" cy="389.2" r="6" fill="#0f9d8a"><title>Journal failure detector, one failed-login event: 122 B</title></circle>
+  <text x="482.0" y="393.2" font-size="11" font-weight="650" fill="#0f9d8a">122 B</text>
   <text x="48" y="418.6" font-size="12.5" font-weight="650">CrowdSec JSON decode</text>
   <text x="48" y="434.6" font-size="10.5" class="muted">100 decisions</text>
-  <rect x="470" y="411.6" width="268.4" height="16" rx="4" fill="#3b82f6"/>
-  <text x="746.4" y="423.6" font-size="11" font-weight="650">26.1 kB</text>
+  <line class="axis" x1="470" y1="419.6" x2="470.7" y2="419.6"/>
+  <circle cx="470.7" cy="419.6" r="6" fill="#3b82f6"><title>CrowdSec JSON decode, 100 decisions: 26.1 kB</title></circle>
+  <text x="482.7" y="423.6" font-size="11" font-weight="650" fill="#3b82f6">26.1 kB</text>
   <text x="48" y="449.0" font-size="12.5" font-weight="650">nft ban-set compile</text>
   <text x="48" y="465.0" font-size="10.5" class="muted">100 bans</text>
-  <rect x="470" y="442.0" width="338.7" height="16" rx="4" fill="#8b5cf6"/>
-  <text x="816.7" y="454.0" font-size="11" font-weight="650">204.4 kB</text>
+  <line class="axis" x1="470" y1="450.0" x2="475.8" y2="450.0"/>
+  <circle cx="475.8" cy="450.0" r="6" fill="#8b5cf6"><title>nft ban-set compile, 100 bans: 204.4 kB</title></circle>
+  <text x="487.8" y="454.0" font-size="11" font-weight="650" fill="#8b5cf6">204.4 kB</text>
   <text x="48" y="479.4" font-size="12.5" font-weight="650">nft ban-set compile</text>
   <text x="48" y="495.4" font-size="10.5" class="muted">1,000 bans</text>
-  <rect x="470" y="472.4" width="397.3" height="16" rx="4" fill="#f59e0b"/>
-  <text x="875.3" y="484.4" font-size="11" font-weight="650">1.139 MB</text>
+  <line class="axis" x1="470" y1="480.4" x2="502.6" y2="480.4"/>
+  <circle cx="502.6" cy="480.4" r="6" fill="#f59e0b"><title>nft ban-set compile, 1,000 bans: 1.139 MB</title></circle>
+  <text x="514.6" y="484.4" font-size="11" font-weight="650" fill="#f59e0b">1.139 MB</text>
   <text x="48" y="509.8" font-size="12.5" font-weight="650">nft ban-set compile</text>
   <text x="48" y="525.8" font-size="10.5" class="muted">10,000 bans</text>
-  <rect x="470" y="502.8" width="489.8" height="16" rx="4" fill="#ef4444"/>
-  <text x="967.8" y="514.8" font-size="11" font-weight="650">17.12 MB</text>
+  <line class="axis" x1="470" y1="510.8" x2="959.8" y2="510.8"/>
+  <circle cx="959.8" cy="510.8" r="6" fill="#ef4444"><title>nft ban-set compile, 10,000 bans: 17.12 MB</title></circle>
+  <text x="971.8" y="514.8" font-size="11" font-weight="650" fill="#ef4444">17.12 MB</text>
   <rect class="panel" x="24" y="556" width="1072" height="212" rx="14"/>
   <text x="48" y="582" font-size="14" font-weight="650">Heap allocations per operation</text>
+  <line class="axis" x1="470" y1="592" x2="470" y2="740"/>
   <line class="grid" x1="470.0" y1="592" x2="470.0" y2="740"/>
-  <text x="470.0" y="758" text-anchor="middle" font-size="10" class="muted">1</text>
-  <line class="grid" x1="580.0" y1="592" x2="580.0" y2="740"/>
-  <text x="580.0" y="758" text-anchor="middle" font-size="10" class="muted">10</text>
-  <line class="grid" x1="690.0" y1="592" x2="690.0" y2="740"/>
-  <text x="690.0" y="758" text-anchor="middle" font-size="10" class="muted">100</text>
-  <line class="grid" x1="800.0" y1="592" x2="800.0" y2="740"/>
-  <text x="800.0" y="758" text-anchor="middle" font-size="10" class="muted">1,000</text>
-  <line class="grid" x1="910.0" y1="592" x2="910.0" y2="740"/>
-  <text x="910.0" y="758" text-anchor="middle" font-size="10" class="muted">10,000</text>
-  <line class="grid" x1="1020.0" y1="592" x2="1020.0" y2="740"/>
-  <text x="1020.0" y="758" text-anchor="middle" font-size="10" class="muted">100,000</text>
+  <text x="470.0" y="758" text-anchor="start" font-size="10" class="muted">0</text>
+  <line class="grid" x1="650.0" y1="592" x2="650.0" y2="740"/>
+  <text x="650.0" y="758" text-anchor="middle" font-size="10" class="muted">20000</text>
+  <line class="grid" x1="830.0" y1="592" x2="830.0" y2="740"/>
+  <text x="830.0" y="758" text-anchor="middle" font-size="10" class="muted">40000</text>
+  <line class="grid" x1="1010.0" y1="592" x2="1010.0" y2="740"/>
+  <text x="1010.0" y="758" text-anchor="end" font-size="10" class="muted">60000</text>
   <text x="48" y="614.2" font-size="12.5" font-weight="650">Journal failure detector</text>
   <text x="48" y="630.2" font-size="10.5" class="muted">one failed-login event</text>
-  <rect x="470" y="607.2" width="33.1" height="16" rx="4" fill="#0f9d8a"/>
-  <text x="511.1" y="619.2" font-size="11" font-weight="650">2</text>
+  <line class="axis" x1="470" y1="615.2" x2="470.0" y2="615.2"/>
+  <circle cx="470.0" cy="615.2" r="6" fill="#0f9d8a"><title>Journal failure detector, one failed-login event: 2</title></circle>
+  <text x="482.0" y="619.2" font-size="11" font-weight="650" fill="#0f9d8a">2</text>
   <text x="48" y="644.6" font-size="12.5" font-weight="650">CrowdSec JSON decode</text>
   <text x="48" y="660.6" font-size="10.5" class="muted">100 decisions</text>
-  <rect x="470" y="637.6" width="228.3" height="16" rx="4" fill="#3b82f6"/>
-  <text x="706.3" y="649.6" font-size="11" font-weight="650">119</text>
+  <line class="axis" x1="470" y1="645.6" x2="471.1" y2="645.6"/>
+  <circle cx="471.1" cy="645.6" r="6" fill="#3b82f6"><title>CrowdSec JSON decode, 100 decisions: 119</title></circle>
+  <text x="483.1" y="649.6" font-size="11" font-weight="650" fill="#3b82f6">119</text>
   <text x="48" y="675.0" font-size="12.5" font-weight="650">nft ban-set compile</text>
   <text x="48" y="691.0" font-size="10.5" class="muted">100 bans</text>
-  <rect x="470" y="668.0" width="373.2" height="16" rx="4" fill="#8b5cf6"/>
-  <text x="851.2" y="680.0" font-size="11" font-weight="650">2,470</text>
+  <line class="axis" x1="470" y1="676.0" x2="492.2" y2="676.0"/>
+  <circle cx="492.2" cy="676.0" r="6" fill="#8b5cf6"><title>nft ban-set compile, 100 bans: 2,470</title></circle>
+  <text x="504.2" y="680.0" font-size="11" font-weight="650" fill="#8b5cf6">2,470</text>
   <text x="48" y="705.4" font-size="12.5" font-weight="650">nft ban-set compile</text>
   <text x="48" y="721.4" font-size="10.5" class="muted">1,000 bans</text>
-  <rect x="470" y="698.4" width="422.8" height="16" rx="4" fill="#f59e0b"/>
-  <text x="900.8" y="710.4" font-size="11" font-weight="650">6,980</text>
+  <line class="axis" x1="470" y1="706.4" x2="532.8" y2="706.4"/>
+  <circle cx="532.8" cy="706.4" r="6" fill="#f59e0b"><title>nft ban-set compile, 1,000 bans: 6,980</title></circle>
+  <text x="544.8" y="710.4" font-size="11" font-weight="650" fill="#f59e0b">6,980</text>
   <text x="48" y="735.8" font-size="12.5" font-weight="650">nft ban-set compile</text>
   <text x="48" y="751.8" font-size="10.5" class="muted">10,000 bans</text>
-  <rect x="470" y="728.8" width="518.8" height="16" rx="4" fill="#ef4444"/>
-  <text x="996.8" y="740.8" font-size="11" font-weight="650">52,005</text>
-  <text x="24" y="810" font-size="11" class="muted">Bar length is logarithmic, so one equal step is a tenfold change. Values are a single sample and vary by machine.</text>
+  <line class="axis" x1="470" y1="736.8" x2="938.0" y2="736.8"/>
+  <circle cx="938.0" cy="736.8" r="6" fill="#ef4444"><title>nft ban-set compile, 10,000 bans: 52,005</title></circle>
+  <text x="950.0" y="740.8" font-size="11" font-weight="650" fill="#ef4444">52,005</text>
+  <text x="24" y="810" font-size="11" class="muted">Every axis is linear and starts at zero; a dot twice as far from the axis is twice the value. Values are a single sample and vary by machine.</text>
 </svg>
