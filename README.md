@@ -126,7 +126,7 @@ rules on Linux arm64 (Go 1.22.2, `-benchmem -benchtime=1s`):
 |---|---:|---:|
 | Before `d6ac943` | 23,944 | 1,049,586 |
 | After `d6ac943` | 21,944 | 1,009,581 |
-| After `9895dc9` + `7bdaf36` | 17,143 | 719,497 |
+| Current optimized path | 17,142 | 719,450 |
 
 The latest compiler path removes 4,800 allocations (−21.9%) and about 290 KB
 (−28.7%) from the post-`d6ac943` result. On the local arm64 run it compiled
@@ -136,8 +136,8 @@ packet filtering. CI should be used for cross-machine comparisons.
 `BenchmarkRulesetRender` covers the `bfw diff`/dry-run text path with 1,000
 multi-port rules. After the set index but before builder sizing, it measured
 2.10 ms, 793,153 B/op, and 16,096 allocations/op on the local arm64 run.
-The builder plus set sizing now measures about 1.95 ms, 748,421 B/op, and
-13,880 allocations/op. The renderer keeps the compiled object order and
+The builder plus set sizing now measures about 1.90 ms, 748,413 B/op, and
+13,881 allocations/op. The renderer keeps the compiled object order and
 output text deterministic.
 
 ## Firewall comparison and resource usage

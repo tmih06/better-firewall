@@ -246,6 +246,24 @@ func TestCompileIPv6Disabled(t *testing.T) {
 	}
 }
 
+func TestOverridePolicyPreservesUnknownValues(t *testing.T) {
+	for _, tc := range []struct {
+		raw, want string
+	}{
+		{raw: "ACCEPT", want: "allow"},
+		{raw: "allow", want: "allow"},
+		{raw: "DROP", want: "deny"},
+		{raw: "deny", want: "deny"},
+		{raw: "REJECT", want: "reject"},
+		{raw: "unexpected", want: "original"},
+		{raw: "", want: "original"},
+	} {
+		if got := overridePolicy("original", tc.raw); got != tc.want {
+			t.Errorf("overridePolicy(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
 func TestCompileICMPType(t *testing.T) {
 	st := store.Defaults()
 	st.IPv6 = true
