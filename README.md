@@ -126,11 +126,11 @@ rules on Linux arm64 (Go 1.22.2, `-benchmem -benchtime=1s`):
 |---|---:|---:|
 | Before `d6ac943` | 23,944 | 1,049,586 |
 | After `d6ac943` | 21,944 | 1,009,581 |
-| Current optimized path | 91 | 321,550 |
+| Current optimized path | 90 | 321,602 |
 
-The latest compiler path removes 21,853 allocations (−99.6%) and about 688 KB
+The latest compiler path removes 21,854 allocations (−99.6%) and about 688 KB
 (−68.1%) from the post-`d6ac943` result. On the local arm64 run it compiled
-1,000 ordinary rules in about 0.29 ms and 1,000 limit rules in about 0.86 ms;
+1,000 ordinary rules in about 0.28 ms and 1,000 limit rules in about 0.83 ms;
 this is configuration compilation, not packet filtering. CI should be used for
 cross-machine comparisons.
 
