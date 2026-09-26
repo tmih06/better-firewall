@@ -156,7 +156,7 @@ const (
 
 // Match compares two rules per ufw semantics.
 func (r *Rule) Match(o *Rule) MatchCode {
-	if r.TupleKey() != o.TupleKey() {
+	if !sameTuple(r, o) {
 		return MatchNone
 	}
 	if r.Action == o.Action && r.Log == o.Log && r.Comment == o.Comment {
@@ -166,6 +166,49 @@ func (r *Rule) Match(o *Rule) MatchCode {
 		return MatchComment
 	}
 	return MatchAction
+}
+
+// sameTuple compares the fields represented by TupleKey without constructing
+// either formatted key. Keep the normalization rules in sync with addrKey and
+// TupleKey: an empty or explicit "any" port protocol has no serialized suffix
+// and therefore compares equal.
+func sameTuple(r, o *Rule) bool {
+	routeDir := r.Direction
+	if r.Forward() && r.RouteDir != "" {
+		routeDir = r.RouteDir
+	}
+	oRouteDir := o.Direction
+	if o.Forward() && o.RouteDir != "" {
+		oRouteDir = o.RouteDir
+	}
+	if routeDir != oRouteDir || r.Forward() != o.Forward() ||
+		r.Proto != o.Proto || r.ICMPType != o.ICMPType ||
+		r.IfaceIn != o.IfaceIn || r.IfaceOut != o.IfaceOut || r.v6 != o.v6 ||
+		r.Dapp != o.Dapp || r.Sapp != o.Sapp {
+		return false
+	}
+	return sameAddrTuple(r.Src, o.Src) && sameAddrTuple(r.Dst, o.Dst)
+}
+
+func sameAddrTuple(a, b AddrSpec) bool {
+	if a.IP != b.IP || a.Set != b.Set || len(a.Ports) != len(b.Ports) {
+		return false
+	}
+	for i := range a.Ports {
+		left, right := a.Ports[i], b.Ports[i]
+		if left.Lo != right.Lo || left.Hi != right.Hi ||
+			normalizedPortProto(left.Proto) != normalizedPortProto(right.Proto) {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizedPortProto(proto string) string {
+	if proto == "" || proto == "any" {
+		return ""
+	}
+	return proto
 }
 
 // AppTuple groups rules expanded from one app-profile application; ufw
