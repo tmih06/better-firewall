@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="826" viewBox="0 0 1120 826" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="900" viewBox="0 0 1120 900" role="img" aria-labelledby="title desc">
   <title id="title">Protection path cost per operation</title>
-  <desc id="desc">Three dot-plot panels, one per measure, on a linear axis running from zero. The time panel shows time per operation, the memory panel shows heap bytes per operation, and the allocations panel shows heap allocation count per operation, for journal failure detection, CrowdSec decision decoding, and nft ban-set compilation at 100, 1,000, and 10,000 bans. Dots mark position only, because these measures span several orders of magnitude and bar length would not be proportional to the value.</desc>
+  <desc id="desc">Three dot-plot panels, one per measure, on a linear axis running from zero. Time, heap bytes, and heap allocations per operation for journal failure detection, CrowdSec decision decoding, and nft ban-set compilation at 100, 1,000, and 10,000 bans. Colored dots are the latest CI run; grey ghost dots are the previous run before the compile-path optimization. Dots mark position only, because these measures span several orders of magnitude.</desc>
   <style>
     text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #172554; }
     .muted { fill: #64748b; }
@@ -12,13 +12,13 @@
     .bfw { fill: #0f9d8a; }
     .ufw { fill: #3b82f6; }
     .peak { fill-opacity: 0.42; }
+    .prev { fill: #cbd5e1; }
   </style>
-  <rect width="1120" height="826" fill="#f1f5f9"/>
+  <rect width="1120" height="900" fill="#f1f5f9"/>
   <text x="32" y="38" font-size="24" font-weight="700">Protection path cost per operation</text>
-  <text x="32" y="62" font-size="13" class="muted">Five benchmark cases · one sample per case · linear axis from zero · Linux x86_64, Go 1.27.x, AMD EPYC</text>
+  <text x="32" y="62" font-size="13" class="muted">Five benchmark cases · colored = latest CI run · grey = previous run · linear axis from zero · Linux x86_64, Go 1.27.x, AMD EPYC</text>
   <rect class="panel" x="24" y="104" width="1072" height="212" rx="14"/>
   <text x="48" y="130" font-size="14" font-weight="650">Time per operation</text>
-  <line class="axis" x1="470" y1="140" x2="470" y2="288"/>
   <line class="grid" x1="470.0" y1="140" x2="470.0" y2="288"/>
   <text x="470.0" y="306" text-anchor="start" font-size="10" class="muted">0 ms</text>
   <line class="grid" x1="650.0" y1="140" x2="650.0" y2="288"/>
@@ -27,34 +27,44 @@
   <text x="830.0" y="306" text-anchor="middle" font-size="10" class="muted">6 ms</text>
   <line class="grid" x1="1010.0" y1="140" x2="1010.0" y2="288"/>
   <text x="1010.0" y="306" text-anchor="end" font-size="10" class="muted">9 ms</text>
-  <text x="48" y="162.2" font-size="12.5" font-weight="650">Journal failure detector</text>
-  <text x="48" y="178.2" font-size="10.5" class="muted">one failed-login event</text>
-  <line class="axis" x1="470" y1="163.2" x2="470.1" y2="163.2"/>
-  <circle cx="470.1" cy="163.2" r="6" fill="#0f9d8a"><title>Journal failure detector, one failed-login event: 0.905 µs</title></circle>
-  <text x="482.1" y="167.2" font-size="11" font-weight="650" fill="#0f9d8a">0.905 µs</text>
-  <text x="48" y="192.6" font-size="12.5" font-weight="650">CrowdSec JSON decode</text>
-  <text x="48" y="208.6" font-size="10.5" class="muted">100 decisions</text>
-  <line class="axis" x1="470" y1="193.6" x2="473.4" y2="193.6"/>
-  <circle cx="473.4" cy="193.6" r="6" fill="#3b82f6"><title>CrowdSec JSON decode, 100 decisions: 56.86 µs</title></circle>
-  <text x="485.4" y="197.6" font-size="11" font-weight="650" fill="#3b82f6">56.86 µs</text>
-  <text x="48" y="223.0" font-size="12.5" font-weight="650">nft ban-set compile</text>
-  <text x="48" y="239.0" font-size="10.5" class="muted">100 bans</text>
-  <line class="axis" x1="470" y1="224.0" x2="474.7" y2="224.0"/>
-  <circle cx="474.7" cy="224.0" r="6" fill="#8b5cf6"><title>nft ban-set compile, 100 bans: 78.20 µs</title></circle>
-  <text x="486.7" y="228.0" font-size="11" font-weight="650" fill="#8b5cf6">78.20 µs</text>
-  <text x="48" y="253.4" font-size="12.5" font-weight="650">nft ban-set compile</text>
-  <text x="48" y="269.4" font-size="10.5" class="muted">1,000 bans</text>
-  <line class="axis" x1="470" y1="254.4" x2="490.8" y2="254.4"/>
-  <circle cx="490.8" cy="254.4" r="6" fill="#f59e0b"><title>nft ban-set compile, 1,000 bans: 0.347 ms</title></circle>
-  <text x="502.8" y="258.4" font-size="11" font-weight="650" fill="#f59e0b">0.347 ms</text>
-  <text x="48" y="283.8" font-size="12.5" font-weight="650">nft ban-set compile</text>
-  <text x="48" y="299.8" font-size="10.5" class="muted">10,000 bans</text>
-  <line class="axis" x1="470" y1="284.8" x2="952.4" y2="284.8"/>
-  <circle cx="952.4" cy="284.8" r="6" fill="#ef4444"><title>nft ban-set compile, 10,000 bans: 8.039 ms</title></circle>
-  <text x="964.4" y="288.8" font-size="11" font-weight="650" fill="#ef4444">8.039 ms</text>
+  <line class="axis" x1="470" y1="140" x2="470" y2="288"/>
+  <text x="48" y="163.2" font-size="12.5" font-weight="650">Journal failure detector</text>
+  <text x="48" y="179.2" font-size="10.5" class="muted">one failed-login event</text>
+  <line class="axis" x1="470" y1="164.2" x2="470.1" y2="164.2"/>
+  <circle cx="470.1" cy="164.2" r="5" class="prev"><title>previous run, Journal failure detector, one failed-login event: 905 ns</title></circle>
+  <line class="axis" x1="470" y1="164.2" x2="470.1" y2="164.2"/>
+  <circle cx="470.1" cy="164.2" r="6" fill="#0f9d8a"><title>Journal failure detector, one failed-login event: 879 ns</title></circle>
+  <text x="482.1" y="168.2" font-size="11" font-weight="650" fill="#0f9d8a">879 ns</text>
+  <text x="48" y="193.6" font-size="12.5" font-weight="650">CrowdSec JSON decode</text>
+  <text x="48" y="209.6" font-size="10.5" class="muted">100 decisions</text>
+  <line class="axis" x1="470" y1="194.6" x2="473.4" y2="194.6"/>
+  <circle cx="473.4" cy="194.6" r="5" class="prev"><title>previous run, CrowdSec JSON decode, 100 decisions: 56.86 µs</title></circle>
+  <line class="axis" x1="470" y1="194.6" x2="473.4" y2="194.6"/>
+  <circle cx="473.4" cy="194.6" r="6" fill="#3b82f6"><title>CrowdSec JSON decode, 100 decisions: 56.63 µs</title></circle>
+  <text x="485.4" y="198.6" font-size="11" font-weight="650" fill="#3b82f6">56.63 µs</text>
+  <text x="48" y="224.0" font-size="12.5" font-weight="650">nft ban-set compile</text>
+  <text x="48" y="240.0" font-size="10.5" class="muted">100 bans</text>
+  <line class="axis" x1="470" y1="225.0" x2="474.7" y2="225.0"/>
+  <circle cx="474.7" cy="225.0" r="5" class="prev"><title>previous run, nft ban-set compile, 100 bans: 78.2 µs</title></circle>
+  <line class="axis" x1="470" y1="225.0" x2="471.8" y2="225.0"/>
+  <circle cx="471.8" cy="225.0" r="6" fill="#8b5cf6"><title>nft ban-set compile, 100 bans: 29.28 µs</title></circle>
+  <text x="483.8" y="229.0" font-size="11" font-weight="650" fill="#8b5cf6">29.28 µs</text>
+  <text x="48" y="254.4" font-size="12.5" font-weight="650">nft ban-set compile</text>
+  <text x="48" y="270.4" font-size="10.5" class="muted">1,000 bans</text>
+  <line class="axis" x1="470" y1="255.4" x2="490.8" y2="255.4"/>
+  <circle cx="490.8" cy="255.4" r="5" class="prev"><title>previous run, nft ban-set compile, 1,000 bans: 347 µs</title></circle>
+  <line class="axis" x1="470" y1="255.4" x2="477.7" y2="255.4"/>
+  <circle cx="477.7" cy="255.4" r="6" fill="#f59e0b"><title>nft ban-set compile, 1,000 bans: 128.12 µs</title></circle>
+  <text x="489.7" y="259.4" font-size="11" font-weight="650" fill="#f59e0b">128.12 µs</text>
+  <text x="48" y="284.8" font-size="12.5" font-weight="650">nft ban-set compile</text>
+  <text x="48" y="300.8" font-size="10.5" class="muted">10,000 bans</text>
+  <line class="axis" x1="470" y1="285.8" x2="952.3" y2="285.8"/>
+  <circle cx="952.3" cy="285.8" r="5" class="prev"><title>previous run, nft ban-set compile, 10,000 bans: 8.039 ms</title></circle>
+  <line class="axis" x1="470" y1="285.8" x2="545.3" y2="285.8"/>
+  <circle cx="545.3" cy="285.8" r="6" fill="#ef4444"><title>nft ban-set compile, 10,000 bans: 1.255 ms</title></circle>
+  <text x="557.3" y="289.8" font-size="11" font-weight="650" fill="#ef4444">1.255 ms</text>
   <rect class="panel" x="24" y="330" width="1072" height="212" rx="14"/>
   <text x="48" y="356" font-size="14" font-weight="650">Heap memory per operation</text>
-  <line class="axis" x1="470" y1="366" x2="470" y2="514"/>
   <line class="grid" x1="470.0" y1="366" x2="470.0" y2="514"/>
   <text x="470.0" y="532" text-anchor="start" font-size="10" class="muted">0 MiB</text>
   <line class="grid" x1="650.0" y1="366" x2="650.0" y2="514"/>
@@ -63,34 +73,44 @@
   <text x="830.0" y="532" text-anchor="middle" font-size="10" class="muted">12 MiB</text>
   <line class="grid" x1="1010.0" y1="366" x2="1010.0" y2="514"/>
   <text x="1010.0" y="532" text-anchor="end" font-size="10" class="muted">18 MiB</text>
-  <text x="48" y="388.2" font-size="12.5" font-weight="650">Journal failure detector</text>
-  <text x="48" y="404.2" font-size="10.5" class="muted">one failed-login event</text>
-  <line class="axis" x1="470" y1="389.2" x2="470.0" y2="389.2"/>
-  <circle cx="470.0" cy="389.2" r="6" fill="#0f9d8a"><title>Journal failure detector, one failed-login event: 122 B</title></circle>
-  <text x="482.0" y="393.2" font-size="11" font-weight="650" fill="#0f9d8a">122 B</text>
-  <text x="48" y="418.6" font-size="12.5" font-weight="650">CrowdSec JSON decode</text>
-  <text x="48" y="434.6" font-size="10.5" class="muted">100 decisions</text>
-  <line class="axis" x1="470" y1="419.6" x2="470.7" y2="419.6"/>
-  <circle cx="470.7" cy="419.6" r="6" fill="#3b82f6"><title>CrowdSec JSON decode, 100 decisions: 26.1 kB</title></circle>
-  <text x="482.7" y="423.6" font-size="11" font-weight="650" fill="#3b82f6">26.1 kB</text>
-  <text x="48" y="449.0" font-size="12.5" font-weight="650">nft ban-set compile</text>
-  <text x="48" y="465.0" font-size="10.5" class="muted">100 bans</text>
-  <line class="axis" x1="470" y1="450.0" x2="475.8" y2="450.0"/>
-  <circle cx="475.8" cy="450.0" r="6" fill="#8b5cf6"><title>nft ban-set compile, 100 bans: 204.4 kB</title></circle>
-  <text x="487.8" y="454.0" font-size="11" font-weight="650" fill="#8b5cf6">204.4 kB</text>
-  <text x="48" y="479.4" font-size="12.5" font-weight="650">nft ban-set compile</text>
-  <text x="48" y="495.4" font-size="10.5" class="muted">1,000 bans</text>
-  <line class="axis" x1="470" y1="480.4" x2="502.6" y2="480.4"/>
-  <circle cx="502.6" cy="480.4" r="6" fill="#f59e0b"><title>nft ban-set compile, 1,000 bans: 1.139 MB</title></circle>
-  <text x="514.6" y="484.4" font-size="11" font-weight="650" fill="#f59e0b">1.139 MB</text>
-  <text x="48" y="509.8" font-size="12.5" font-weight="650">nft ban-set compile</text>
-  <text x="48" y="525.8" font-size="10.5" class="muted">10,000 bans</text>
-  <line class="axis" x1="470" y1="510.8" x2="959.8" y2="510.8"/>
-  <circle cx="959.8" cy="510.8" r="6" fill="#ef4444"><title>nft ban-set compile, 10,000 bans: 17.12 MB</title></circle>
-  <text x="971.8" y="514.8" font-size="11" font-weight="650" fill="#ef4444">17.12 MB</text>
+  <line class="axis" x1="470" y1="366" x2="470" y2="514"/>
+  <text x="48" y="389.2" font-size="12.5" font-weight="650">Journal failure detector</text>
+  <text x="48" y="405.2" font-size="10.5" class="muted">one failed-login event</text>
+  <line class="axis" x1="470" y1="390.2" x2="470.0" y2="390.2"/>
+  <circle cx="470.0" cy="390.2" r="5" class="prev"><title>previous run, Journal failure detector, one failed-login event: 122 B</title></circle>
+  <line class="axis" x1="470" y1="390.2" x2="470.0" y2="390.2"/>
+  <circle cx="470.0" cy="390.2" r="6" fill="#0f9d8a"><title>Journal failure detector, one failed-login event: 122 B</title></circle>
+  <text x="482.0" y="394.2" font-size="11" font-weight="650" fill="#0f9d8a">122 B</text>
+  <text x="48" y="419.6" font-size="12.5" font-weight="650">CrowdSec JSON decode</text>
+  <text x="48" y="435.6" font-size="10.5" class="muted">100 decisions</text>
+  <line class="axis" x1="470" y1="420.6" x2="470.7" y2="420.6"/>
+  <circle cx="470.7" cy="420.6" r="5" class="prev"><title>previous run, CrowdSec JSON decode, 100 decisions: 25.5 kB</title></circle>
+  <line class="axis" x1="470" y1="420.6" x2="470.7" y2="420.6"/>
+  <circle cx="470.7" cy="420.6" r="6" fill="#3b82f6"><title>CrowdSec JSON decode, 100 decisions: 25.5 kB</title></circle>
+  <text x="482.7" y="424.6" font-size="11" font-weight="650" fill="#3b82f6">25.5 kB</text>
+  <text x="48" y="450.0" font-size="12.5" font-weight="650">nft ban-set compile</text>
+  <text x="48" y="466.0" font-size="10.5" class="muted">100 bans</text>
+  <line class="axis" x1="470" y1="451.0" x2="475.8" y2="451.0"/>
+  <circle cx="475.8" cy="451.0" r="5" class="prev"><title>previous run, nft ban-set compile, 100 bans: 199.6 kB</title></circle>
+  <line class="axis" x1="470" y1="451.0" x2="472.6" y2="451.0"/>
+  <circle cx="472.6" cy="451.0" r="6" fill="#8b5cf6"><title>nft ban-set compile, 100 bans: 90.2 kB</title></circle>
+  <text x="484.6" y="455.0" font-size="11" font-weight="650" fill="#8b5cf6">90.2 kB</text>
+  <text x="48" y="480.4" font-size="12.5" font-weight="650">nft ban-set compile</text>
+  <text x="48" y="496.4" font-size="10.5" class="muted">1,000 bans</text>
+  <line class="axis" x1="470" y1="481.4" x2="502.6" y2="481.4"/>
+  <circle cx="502.6" cy="481.4" r="5" class="prev"><title>previous run, nft ban-set compile, 1,000 bans: 1.09 MB</title></circle>
+  <line class="axis" x1="470" y1="481.4" x2="481.2" y2="481.4"/>
+  <circle cx="481.2" cy="481.4" r="6" fill="#f59e0b"><title>nft ban-set compile, 1,000 bans: 381.1 kB</title></circle>
+  <text x="493.2" y="485.4" font-size="11" font-weight="650" fill="#f59e0b">381.1 kB</text>
+  <text x="48" y="510.8" font-size="12.5" font-weight="650">nft ban-set compile</text>
+  <text x="48" y="526.8" font-size="10.5" class="muted">10,000 bans</text>
+  <line class="axis" x1="470" y1="511.8" x2="959.8" y2="511.8"/>
+  <circle cx="959.8" cy="511.8" r="5" class="prev"><title>previous run, nft ban-set compile, 10,000 bans: 16.3 MB</title></circle>
+  <line class="axis" x1="470" y1="511.8" x2="565.8" y2="511.8"/>
+  <circle cx="565.8" cy="511.8" r="6" fill="#ef4444"><title>nft ban-set compile, 10,000 bans: 3.19 MB</title></circle>
+  <text x="577.8" y="515.8" font-size="11" font-weight="650" fill="#ef4444">3.19 MB</text>
   <rect class="panel" x="24" y="556" width="1072" height="212" rx="14"/>
   <text x="48" y="582" font-size="14" font-weight="650">Heap allocations per operation</text>
-  <line class="axis" x1="470" y1="592" x2="470" y2="740"/>
   <line class="grid" x1="470.0" y1="592" x2="470.0" y2="740"/>
   <text x="470.0" y="758" text-anchor="start" font-size="10" class="muted">0</text>
   <line class="grid" x1="650.0" y1="592" x2="650.0" y2="740"/>
@@ -99,30 +119,45 @@
   <text x="830.0" y="758" text-anchor="middle" font-size="10" class="muted">40000</text>
   <line class="grid" x1="1010.0" y1="592" x2="1010.0" y2="740"/>
   <text x="1010.0" y="758" text-anchor="end" font-size="10" class="muted">60000</text>
-  <text x="48" y="614.2" font-size="12.5" font-weight="650">Journal failure detector</text>
-  <text x="48" y="630.2" font-size="10.5" class="muted">one failed-login event</text>
-  <line class="axis" x1="470" y1="615.2" x2="470.0" y2="615.2"/>
-  <circle cx="470.0" cy="615.2" r="6" fill="#0f9d8a"><title>Journal failure detector, one failed-login event: 2</title></circle>
-  <text x="482.0" y="619.2" font-size="11" font-weight="650" fill="#0f9d8a">2</text>
-  <text x="48" y="644.6" font-size="12.5" font-weight="650">CrowdSec JSON decode</text>
-  <text x="48" y="660.6" font-size="10.5" class="muted">100 decisions</text>
-  <line class="axis" x1="470" y1="645.6" x2="471.1" y2="645.6"/>
-  <circle cx="471.1" cy="645.6" r="6" fill="#3b82f6"><title>CrowdSec JSON decode, 100 decisions: 119</title></circle>
-  <text x="483.1" y="649.6" font-size="11" font-weight="650" fill="#3b82f6">119</text>
-  <text x="48" y="675.0" font-size="12.5" font-weight="650">nft ban-set compile</text>
-  <text x="48" y="691.0" font-size="10.5" class="muted">100 bans</text>
-  <line class="axis" x1="470" y1="676.0" x2="492.2" y2="676.0"/>
-  <circle cx="492.2" cy="676.0" r="6" fill="#8b5cf6"><title>nft ban-set compile, 100 bans: 2,470</title></circle>
-  <text x="504.2" y="680.0" font-size="11" font-weight="650" fill="#8b5cf6">2,470</text>
-  <text x="48" y="705.4" font-size="12.5" font-weight="650">nft ban-set compile</text>
-  <text x="48" y="721.4" font-size="10.5" class="muted">1,000 bans</text>
-  <line class="axis" x1="470" y1="706.4" x2="532.8" y2="706.4"/>
-  <circle cx="532.8" cy="706.4" r="6" fill="#f59e0b"><title>nft ban-set compile, 1,000 bans: 6,980</title></circle>
-  <text x="544.8" y="710.4" font-size="11" font-weight="650" fill="#f59e0b">6,980</text>
-  <text x="48" y="735.8" font-size="12.5" font-weight="650">nft ban-set compile</text>
-  <text x="48" y="751.8" font-size="10.5" class="muted">10,000 bans</text>
-  <line class="axis" x1="470" y1="736.8" x2="938.0" y2="736.8"/>
-  <circle cx="938.0" cy="736.8" r="6" fill="#ef4444"><title>nft ban-set compile, 10,000 bans: 52,005</title></circle>
-  <text x="950.0" y="740.8" font-size="11" font-weight="650" fill="#ef4444">52,005</text>
-  <text x="24" y="810" font-size="11" class="muted">Every axis is linear and starts at zero; a dot twice as far from the axis is twice the value. Values are a single sample and vary by machine.</text>
+  <line class="axis" x1="470" y1="592" x2="470" y2="740"/>
+  <text x="48" y="615.2" font-size="12.5" font-weight="650">Journal failure detector</text>
+  <text x="48" y="631.2" font-size="10.5" class="muted">one failed-login event</text>
+  <line class="axis" x1="470" y1="616.2" x2="470.0" y2="616.2"/>
+  <circle cx="470.0" cy="616.2" r="5" class="prev"><title>previous run, Journal failure detector, one failed-login event: 2</title></circle>
+  <line class="axis" x1="470" y1="616.2" x2="470.0" y2="616.2"/>
+  <circle cx="470.0" cy="616.2" r="6" fill="#0f9d8a"><title>Journal failure detector, one failed-login event: 2</title></circle>
+  <text x="482.0" y="620.2" font-size="11" font-weight="650" fill="#0f9d8a">2</text>
+  <text x="48" y="645.6" font-size="12.5" font-weight="650">CrowdSec JSON decode</text>
+  <text x="48" y="661.6" font-size="10.5" class="muted">100 decisions</text>
+  <line class="axis" x1="470" y1="646.6" x2="471.1" y2="646.6"/>
+  <circle cx="471.1" cy="646.6" r="5" class="prev"><title>previous run, CrowdSec JSON decode, 100 decisions: 119</title></circle>
+  <line class="axis" x1="470" y1="646.6" x2="471.1" y2="646.6"/>
+  <circle cx="471.1" cy="646.6" r="6" fill="#3b82f6"><title>CrowdSec JSON decode, 100 decisions: 119</title></circle>
+  <text x="483.1" y="650.6" font-size="11" font-weight="650" fill="#3b82f6">119</text>
+  <text x="48" y="676.0" font-size="12.5" font-weight="650">nft ban-set compile</text>
+  <text x="48" y="692.0" font-size="10.5" class="muted">100 bans</text>
+  <line class="axis" x1="470" y1="677.0" x2="492.2" y2="677.0"/>
+  <circle cx="492.2" cy="677.0" r="5" class="prev"><title>previous run, nft ban-set compile, 100 bans: 2,470</title></circle>
+  <line class="axis" x1="470" y1="677.0" x2="470.8" y2="677.0"/>
+  <circle cx="470.8" cy="677.0" r="6" fill="#8b5cf6"><title>nft ban-set compile, 100 bans: 91</title></circle>
+  <text x="482.8" y="681.0" font-size="11" font-weight="650" fill="#8b5cf6">91</text>
+  <text x="48" y="706.4" font-size="12.5" font-weight="650">nft ban-set compile</text>
+  <text x="48" y="722.4" font-size="10.5" class="muted">1,000 bans</text>
+  <line class="axis" x1="470" y1="707.4" x2="532.8" y2="707.4"/>
+  <circle cx="532.8" cy="707.4" r="5" class="prev"><title>previous run, nft ban-set compile, 1,000 bans: 6,980</title></circle>
+  <line class="axis" x1="470" y1="707.4" x2="470.8" y2="707.4"/>
+  <circle cx="470.8" cy="707.4" r="6" fill="#f59e0b"><title>nft ban-set compile, 1,000 bans: 93</title></circle>
+  <text x="482.8" y="711.4" font-size="11" font-weight="650" fill="#f59e0b">93</text>
+  <text x="48" y="736.8" font-size="12.5" font-weight="650">nft ban-set compile</text>
+  <text x="48" y="752.8" font-size="10.5" class="muted">10,000 bans</text>
+  <line class="axis" x1="470" y1="737.8" x2="938.0" y2="737.8"/>
+  <circle cx="938.0" cy="737.8" r="5" class="prev"><title>previous run, nft ban-set compile, 10,000 bans: 52,005</title></circle>
+  <line class="axis" x1="470" y1="737.8" x2="471.0" y2="737.8"/>
+  <circle cx="471.0" cy="737.8" r="6" fill="#ef4444"><title>nft ban-set compile, 10,000 bans: 115</title></circle>
+  <text x="483.0" y="741.8" font-size="11" font-weight="650" fill="#ef4444">115</text>
+  <rect x="24" y="800" width="12" height="12" rx="3" class="bfw"/>
+  <text x="42" y="810" font-size="12">Latest CI run</text>
+  <rect x="150" y="800" width="12" height="12" rx="3" class="prev"/>
+  <text x="168" y="810" font-size="12">Previous run</text>
+  <text x="280" y="810" font-size="11" class="muted">Every axis is linear and starts at zero; a dot twice as far from the axis is twice the value. Values are a single sample and vary by machine.</text>
 </svg>

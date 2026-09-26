@@ -12,79 +12,80 @@
     .bfw { fill: #0f9d8a; }
     .ufw { fill: #3b82f6; }
     .peak { fill-opacity: 0.42; }
+    .prev { fill: #cbd5e1; }
   </style>
   <rect width="1120" height="470" fill="#f1f5f9"/>
   <text x="32" y="38" font-size="24" font-weight="700">Request throughput: bfw / UFW</text>
-  <text x="32" y="62" font-size="13" class="muted">Requests per second ratio by traffic profile · 3 repeats · 1.000× means equal throughput</text>
+  <text x="32" y="62" font-size="13" class="muted">Request throughput ratio by traffic profile · 3 repeats · 1.000× means parity</text>
   <rect class="panel" x="24.0" y="104" width="348.0" height="300" rx="14"/>
   <text x="44.0" y="132" font-size="14" font-weight="650">Keep-alive</text>
-  <line class="parity" x1="260.8" y1="144" x2="260.8" y2="378"/>
+  <line class="parity" x1="313.7" y1="144" x2="313.7" y2="378"/>
   <line class="axis" x1="102.0" y1="378" x2="354.0" y2="378"/>
-  <text x="102.0" y="392" text-anchor="start" font-size="10" class="muted">0.976×</text>
-  <text x="354.0" y="392" text-anchor="end" font-size="10" class="muted">1.014×</text>
-  <text x="260.8" y="156" text-anchor="middle" font-size="10" font-weight="650">1.000×</text>
+  <text x="102.0" y="392" text-anchor="start" font-size="10" class="muted">0.979×</text>
+  <text x="354.0" y="392" text-anchor="end" font-size="10" class="muted">1.004×</text>
+  <text x="313.7" y="156" text-anchor="middle" font-size="10" font-weight="650">1.000×</text>
   <text x="44.0" y="197.0" font-size="11" class="muted">10</text>
-  <line class="axis" x1="102.0" y1="193.0" x2="354.0" y2="193.0"/>
-  <circle cx="174.8" cy="193.0" r="5.5" fill="#0f9d8a"><title>10 rules: 0.9869×</title></circle>
-  <text x="163.8" y="197.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9869×</text>
+  <line class="axis" x1="102.0" y1="193" x2="354.0" y2="193"/>
+  <circle cx="212.9" cy="193" r="5.5" fill="#0f9d8a"><title>10 rules: 0.9900×</title></circle>
+  <text x="223.9" y="197.0" text-anchor="start" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9900×</text>
   <text x="44.0" y="251.0" font-size="11" class="muted">100</text>
-  <line class="axis" x1="102.0" y1="247.0" x2="354.0" y2="247.0"/>
-  <circle cx="207.7" cy="247.0" r="5.5" fill="#0f9d8a"><title>100 rules: 0.9919×</title></circle>
-  <text x="196.7" y="251.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9919×</text>
+  <line class="axis" x1="102.0" y1="247" x2="354.0" y2="247"/>
+  <circle cx="142.3" cy="247" r="5.5" fill="#0f9d8a"><title>100 rules: 0.9830×</title></circle>
+  <text x="153.3" y="251.0" text-anchor="start" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9830×</text>
   <text x="44.0" y="305.0" font-size="11" class="muted">500</text>
-  <line class="axis" x1="102.0" y1="301.0" x2="354.0" y2="301.0"/>
-  <circle cx="226.7" cy="301.0" r="5.5" fill="#0f9d8a"><title>500 rules: 0.9948×</title></circle>
-  <text x="215.7" y="305.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9948×</text>
+  <line class="axis" x1="102.0" y1="301" x2="354.0" y2="301"/>
+  <circle cx="233.0" cy="301" r="5.5" fill="#0f9d8a"><title>500 rules: 0.9920×</title></circle>
+  <text x="222.0" y="305.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9920×</text>
   <text x="44.0" y="359.0" font-size="11" class="muted">1,000</text>
-  <line class="axis" x1="102.0" y1="355.0" x2="354.0" y2="355.0"/>
-  <circle cx="197.8" cy="355.0" r="5.5" fill="#0f9d8a"><title>1,000 rules: 0.9904×</title></circle>
-  <text x="186.8" y="359.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9904×</text>
+  <line class="axis" x1="102.0" y1="355" x2="354.0" y2="355"/>
+  <circle cx="303.6" cy="355" r="5.5" fill="#0f9d8a"><title>1,000 rules: 0.9990×</title></circle>
+  <text x="292.6" y="359.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9990×</text>
   <rect class="panel" x="386.0" y="104" width="348.0" height="300" rx="14"/>
   <text x="406.0" y="132" font-size="14" font-weight="650">Connection churn</text>
-  <line class="parity" x1="622.8" y1="144" x2="622.8" y2="378"/>
+  <line class="parity" x1="590.0" y1="144" x2="590.0" y2="378"/>
   <line class="axis" x1="464.0" y1="378" x2="716.0" y2="378"/>
-  <text x="464.0" y="392" text-anchor="start" font-size="10" class="muted">0.976×</text>
-  <text x="716.0" y="392" text-anchor="end" font-size="10" class="muted">1.014×</text>
-  <text x="622.8" y="156" text-anchor="middle" font-size="10" font-weight="650">1.000×</text>
+  <text x="464.0" y="392" text-anchor="start" font-size="10" class="muted">0.996×</text>
+  <text x="716.0" y="392" text-anchor="end" font-size="10" class="muted">1.004×</text>
+  <text x="590.0" y="156" text-anchor="middle" font-size="10" font-weight="650">1.000×</text>
   <text x="406.0" y="197.0" font-size="11" class="muted">10</text>
-  <line class="axis" x1="464.0" y1="193.0" x2="716.0" y2="193.0"/>
-  <circle cx="620.2" cy="193.0" r="5.5" fill="#0f9d8a"><title>10 rules: 0.9996×</title></circle>
-  <text x="609.2" y="197.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9996×</text>
+  <line class="axis" x1="464.0" y1="193" x2="716.0" y2="193"/>
+  <circle cx="590.0" cy="193" r="5.5" fill="#0f9d8a"><title>10 rules: 1.0000×</title></circle>
+  <text x="601.0" y="197.0" text-anchor="start" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0000×</text>
   <text x="406.0" y="251.0" font-size="11" class="muted">100</text>
-  <line class="axis" x1="464.0" y1="247.0" x2="716.0" y2="247.0"/>
-  <circle cx="624.1" cy="247.0" r="5.5" fill="#0f9d8a"><title>100 rules: 1.0002×</title></circle>
-  <text x="635.1" y="251.0" text-anchor="start" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0002×</text>
+  <line class="axis" x1="464.0" y1="247" x2="716.0" y2="247"/>
+  <circle cx="590.0" cy="247" r="5.5" fill="#0f9d8a"><title>100 rules: 1.0000×</title></circle>
+  <text x="601.0" y="251.0" text-anchor="start" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0000×</text>
   <text x="406.0" y="305.0" font-size="11" class="muted">500</text>
-  <line class="axis" x1="464.0" y1="301.0" x2="716.0" y2="301.0"/>
-  <circle cx="621.5" cy="301.0" r="5.5" fill="#0f9d8a"><title>500 rules: 0.9998×</title></circle>
-  <text x="610.5" y="305.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9998×</text>
+  <line class="axis" x1="464.0" y1="301" x2="716.0" y2="301"/>
+  <circle cx="590.0" cy="301" r="5.5" fill="#0f9d8a"><title>500 rules: 1.0000×</title></circle>
+  <text x="601.0" y="305.0" text-anchor="start" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0000×</text>
   <text x="406.0" y="359.0" font-size="11" class="muted">1,000</text>
-  <line class="axis" x1="464.0" y1="355.0" x2="716.0" y2="355.0"/>
-  <circle cx="622.2" cy="355.0" r="5.5" fill="#0f9d8a"><title>1,000 rules: 0.9999×</title></circle>
-  <text x="611.2" y="359.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9999×</text>
+  <line class="axis" x1="464.0" y1="355" x2="716.0" y2="355"/>
+  <circle cx="590.0" cy="355" r="5.5" fill="#0f9d8a"><title>1,000 rules: 1.0000×</title></circle>
+  <text x="601.0" y="359.0" text-anchor="start" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0000×</text>
   <rect class="panel" x="748.0" y="104" width="348.0" height="300" rx="14"/>
   <text x="768.0" y="132" font-size="14" font-weight="650">Mixed payload</text>
-  <line class="parity" x1="984.8" y1="144" x2="984.8" y2="378"/>
+  <line class="parity" x1="1038.2" y1="144" x2="1038.2" y2="378"/>
   <line class="axis" x1="826.0" y1="378" x2="1078.0" y2="378"/>
-  <text x="826.0" y="392" text-anchor="start" font-size="10" class="muted">0.976×</text>
-  <text x="1078.0" y="392" text-anchor="end" font-size="10" class="muted">1.014×</text>
-  <text x="984.8" y="156" text-anchor="middle" font-size="10" font-weight="650">1.000×</text>
+  <text x="826.0" y="392" text-anchor="start" font-size="10" class="muted">0.968×</text>
+  <text x="1078.0" y="392" text-anchor="end" font-size="10" class="muted">1.006×</text>
+  <text x="1038.2" y="156" text-anchor="middle" font-size="10" font-weight="650">1.000×</text>
   <text x="768.0" y="197.0" font-size="11" class="muted">10</text>
-  <line class="axis" x1="826.0" y1="193.0" x2="1078.0" y2="193.0"/>
-  <circle cx="929.7" cy="193.0" r="5.5" fill="#0f9d8a"><title>10 rules: 0.9916×</title></circle>
-  <text x="918.7" y="197.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9916×</text>
+  <line class="axis" x1="826.0" y1="193" x2="1078.0" y2="193"/>
+  <circle cx="965.3" cy="193" r="5.5" fill="#0f9d8a"><title>10 rules: 0.9890×</title></circle>
+  <text x="954.3" y="197.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9890×</text>
   <text x="768.0" y="251.0" font-size="11" class="muted">100</text>
-  <line class="axis" x1="826.0" y1="247.0" x2="1078.0" y2="247.0"/>
-  <circle cx="942.2" cy="247.0" r="5.5" fill="#0f9d8a"><title>100 rules: 0.9935×</title></circle>
-  <text x="931.2" y="251.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9935×</text>
+  <line class="axis" x1="826.0" y1="247" x2="1078.0" y2="247"/>
+  <circle cx="852.5" cy="247" r="5.5" fill="#0f9d8a"><title>100 rules: 0.9720×</title></circle>
+  <text x="863.5" y="251.0" text-anchor="start" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9720×</text>
   <text x="768.0" y="305.0" font-size="11" class="muted">500</text>
-  <line class="axis" x1="826.0" y1="301.0" x2="1078.0" y2="301.0"/>
-  <circle cx="1020.3" cy="301.0" r="5.5" fill="#0f9d8a"><title>500 rules: 1.0054×</title></circle>
-  <text x="1009.3" y="305.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0054×</text>
+  <line class="axis" x1="826.0" y1="301" x2="1078.0" y2="301"/>
+  <circle cx="1051.5" cy="301" r="5.5" fill="#0f9d8a"><title>500 rules: 1.0020×</title></circle>
+  <text x="1040.5" y="305.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0020×</text>
   <text x="768.0" y="359.0" font-size="11" class="muted">1,000</text>
-  <line class="axis" x1="826.0" y1="355.0" x2="1078.0" y2="355.0"/>
-  <circle cx="895.6" cy="355.0" r="5.5" fill="#0f9d8a"><title>1,000 rules: 0.9864×</title></circle>
-  <text x="884.6" y="359.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9864×</text>
+  <line class="axis" x1="826.0" y1="355" x2="1078.0" y2="355"/>
+  <circle cx="1024.9" cy="355" r="5.5" fill="#0f9d8a"><title>1,000 rules: 0.9980×</title></circle>
+  <text x="1013.9" y="359.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9980×</text>
   <text x="24" y="424" font-size="11" class="muted">Each dot is the bfw-to-UFW ratio for that rule count; dots left of the dashed line favour bfw.</text>
   <text x="24" y="442" font-size="11" class="muted">The horizontal axis is linear and zoomed to the measured range, so small gaps look larger than they are.</text>
 </svg>

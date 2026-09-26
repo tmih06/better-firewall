@@ -111,11 +111,11 @@ protection-disabled baseline are not covered here.
 
 | Path | Work per operation | Time | B/op | Allocs/op | Throughput |
 |---|---:|---:|---:|---:|---:|
-| Journal failure detector | 1 failed-login event | 0.905 µs | 122 | 2 | — |
-| CrowdSec JSON decode | 100 decisions | 56.86 µs | 26,085 | 119 | 216.4 MB/s |
-| nft ban-set compile | 100 bans | 78.20 µs | 204,369 | 2,470 | — |
-| nft ban-set compile | 1,000 bans | 0.347 ms | 1,138,708 | 6,980 | — |
-| nft ban-set compile | 10,000 bans | 8.039 ms | 17,119,158 | 52,005 | — |
+| Journal failure detector | 1 failed-login event | 0.879 µs | 122 | 2 | — |
+| CrowdSec JSON decode | 100 decisions | 56.63 µs | 26,085 | 119 | 210.6 MB/s |
+| nft ban-set compile | 100 bans | 29.28 µs | 97,155 | 905 | — |
+| nft ban-set compile | 1,000 bans | 128.12 µs | 510,312 | 3,638 | — |
+| nft ban-set compile | 10,000 bans | 1.255 ms | 5,886,148 | 12,506 | — |
 
 ### Ruleset compilation cost
 
