@@ -609,6 +609,15 @@ func (c *compiled) addSet(s *nftables.Set, elems []nftables.SetElement) {
 	}
 }
 
+// limitSetsMap allocates the limit-set index only when the ruleset actually
+// contains limit rules; plain policies skip the map entirely.
+func limitSetsMap(limitCount int) map[string]*nftables.Set {
+	if limitCount == 0 {
+		return nil
+	}
+	return make(map[string]*nftables.Set, limitCount)
+}
+
 // compile builds the complete ruleset for st. etc carries /etc/default
 // values; IPV6 there overrides st.IPv6 when present (same precedence ufw
 // gives /etc/default/ufw).
@@ -664,7 +673,7 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 		chainIndex: make(map[string]*nftables.Chain, 48),
 		elems:      make(map[*nftables.Set][]nftables.SetElement, setReserve),
 		setIndex:   make(map[uint32]*nftables.Set, anonymousSetReserve),
-		limitSets:  make(map[string]*nftables.Set, limitCount),
+		limitSets:  limitSetsMap(limitCount),
 	}
 
 	pol := st.Policies
