@@ -53,6 +53,26 @@ var directions = []struct {
 	{"routed", "forward", nftables.ChainHookForward},
 }
 
+// Common protocol matches are immutable after construction. Rules receive a
+// fresh expression slice, but sharing these read-only expression objects avoids
+// allocating the same meta/cmp pair for every ordinary rule during a compile.
+var cachedNFProto = [2][]expr.Any{
+	appendNFProto(nil, false),
+	appendNFProto(nil, true),
+}
+
+var cachedL4Proto = func() [256][]expr.Any {
+	var out [256][]expr.Any
+	for _, num := range []byte{
+		unix.IPPROTO_TCP, unix.IPPROTO_UDP, unix.IPPROTO_ICMP,
+		unix.IPPROTO_ICMPV6, unix.IPPROTO_AH, unix.IPPROTO_ESP,
+		unix.IPPROTO_GRE, unix.IPPROTO_IGMP, unix.IPPROTO_IPV6, 112,
+	} {
+		out[num] = appendL4Proto(nil, num)
+	}
+	return out
+}()
+
 func baseFor(dir string) string {
 	switch dir {
 	case "out":
@@ -879,7 +899,11 @@ func (c *compiled) ruleMatch(r *rule.Rule, proto string, v6 bool) ([]expr.Any, e
 		return nil, fmt.Errorf("rule %s: ICMP rules cannot include ports", r.ID)
 	}
 	ex := make([]expr.Any, 0, 16)
-	ex = appendNFProto(ex, v6)
+	if v6 {
+		ex = append(ex, cachedNFProto[1]...)
+	} else {
+		ex = append(ex, cachedNFProto[0]...)
+	}
 	if r.IfaceIn != "" {
 		ex = appendIfaceMatch(ex, expr.MetaKeyIIFNAME, r.IfaceIn)
 	}
@@ -891,7 +915,7 @@ func (c *compiled) ruleMatch(r *rule.Rule, proto string, v6 bool) ([]expr.Any, e
 		if err != nil {
 			return nil, fmt.Errorf("rule %s: %w", r.ID, err)
 		}
-		ex = appendL4Proto(ex, num)
+		ex = append(ex, cachedL4Proto[num]...)
 	}
 	if r.ICMPType != "" {
 		if proto != "icmp" && proto != "icmpv6" {
