@@ -96,9 +96,12 @@ add_rules() {
 }
 
 lx() { compose exec --no-TTY legit "$@"; }
-
+# resolve_ip <service> -> its IPv4 on the lab network. docker inspect is
+# authoritative; in-container getent is not (glibc nsswitch in slim images
+# does not always consult embedded Docker DNS for unqualified names).
 resolve_ip() {
-    sx getent hosts "$1" | awk '{print $1; exit}'
+    docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+        "$(compose ps -q "$1")"
 }
 
 legit() { # seconds -> json stats on stdout
@@ -260,7 +263,7 @@ for ENGINE in none bfw ufw; do
         LAPI_PID=$!
         sleep 2
         lapi_push "$ATTACKER_IP" >/dev/null
-        BAN_S=$(wait_ban "$ATTACKER_IP" 15)
+        BAN_S=$(wait_ban "$ATTACKER_IP" 15 || true)
         ATK_AFTER=$(ax python3 "$DRIVERS" probe server "$HTTP_PORT" | tail -1)
         LGT_AFTER=$(lx python3 "$DRIVERS" probe server "$HTTP_PORT" | tail -1)
         lapi_unban "$ATTACKER_IP" >/dev/null
@@ -280,9 +283,9 @@ for ENGINE in none bfw ufw; do
         legit 20 > "$RAW_DIR/legit_during_sshjail_bfw.json" &
         LAPI_PID=$!
         sleep 1
-        ax sh -c 'for i in $(seq 1 12); do timeout 4 sshpass -p wrongpw ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@server true 2>/dev/null; done' \
-            > "$RAW_DIR/attack_sshbrute_bfw.txt" 2>&1
-        BAN_S=$(wait_ban "$ATTACKER_IP" 15)
+        ax sh -c 'for i in $(seq 1 12); do timeout 4 sshpass -p wrongpw ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@server true 2>/dev/null; done; true' \
+            > "$RAW_DIR/attack_sshbrute_bfw.txt" 2>&1 || true
+        BAN_S=$(wait_ban "$ATTACKER_IP" 15 || true)
         SSH_POST=$(ax python3 "$DRIVERS" probe server 22 | tail -1)
         HTTP_POST=$(ax python3 "$DRIVERS" probe server "$HTTP_PORT" | tail -1)
         LGT_AFTER=$(lx python3 "$DRIVERS" probe server "$HTTP_PORT" | tail -1)
@@ -297,8 +300,8 @@ for ENGINE in none bfw ufw; do
         start_sshd
         sleep 1
         SSH_PRE=$(ax python3 "$DRIVERS" probe server 22 | tail -1)
-        ax sh -c 'for i in $(seq 1 12); do timeout 4 sshpass -p wrongpw ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@server true 2>/dev/null; done' \
-            > "$RAW_DIR/attack_sshbrute_${ENGINE}.txt" 2>&1
+        ax sh -c 'for i in $(seq 1 12); do timeout 4 sshpass -p wrongpw ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@server true 2>/dev/null; done; true' \
+            > "$RAW_DIR/attack_sshbrute_${ENGINE}.txt" 2>&1 || true
         SSH_POST=$(ax python3 "$DRIVERS" probe server 22 | tail -1)
         echo "{\"ssh_before\":${SSH_PRE:-9},\"ssh_after\":${SSH_POST:-9},\"mechanism\":\"none\"}" \
             > "$RAW_DIR/dynamic_jail_${ENGINE}.json"
