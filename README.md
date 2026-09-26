@@ -130,26 +130,26 @@ rules on Linux arm64 (Go 1.22.2, `-benchmem -benchtime=1s`):
 
 The latest compiler path removes 21,853 allocations (−99.6%) and about 688 KB
 (−68.1%) from the post-`d6ac943` result. On the local arm64 run it compiled
-1,000 ordinary rules in about 0.30 ms and 1,000 limit rules in about 1.22 ms;
+1,000 ordinary rules in about 0.29 ms and 1,000 limit rules in about 0.86 ms;
 this is configuration compilation, not packet filtering. CI should be used for
 cross-machine comparisons.
 
 `BenchmarkRulesetRender` covers the `bfw diff`/dry-run text path with 1,000
 multi-port rules. After the set index but before builder sizing, it measured
 2.10 ms, 793,153 B/op, and 16,096 allocations/op on the local arm64 run.
-The current streaming renderer measures about 0.60 ms, 384,869 B/op, and
-78 allocations/op. A 1,000-rule limit-render run measures about 2.73 ms,
-2,624,575 B/op, and 2,098 allocations/op. The renderer keeps the compiled
+The current streaming renderer measures about 0.64 ms, 384,858 B/op, and
+78 allocations/op. A 1,000-rule limit-render run measures about 2.41 ms,
+2,000,366 B/op, and 97 allocations/op. The renderer keeps the compiled
 object order and output text deterministic.
 
 `BenchmarkRuleMatch1000` covers the duplicate/update scan used by CLI rule
 mutations. Comparing 1,000 candidates now takes about 58 µs with zero heap
 bytes and zero allocations per operation. `BenchmarkTupleKey1000`, used by
-import/export indexing, takes about 0.25 ms, 116,000 B/op, and 2,000
-allocations/op for the same 1,000-rule workload. `BenchmarkAppTuple1000`, used
-by application-profile grouping in status and rule mutation commands, takes
-about 0.082 ms, 64,000 B/op, and 1,000 allocations/op after streaming the
-canonical tuple directly into its result.
+import/export indexing, takes about 0.24 ms, 112,000 B/op, and 1,000
+allocations/op for the same 1,000-rule workload after the port formatter
+moved to a stack buffer. `BenchmarkAppTuple1000`, used by application-profile
+grouping in status and rule mutation commands, takes about 0.082 ms, 64,000
+B/op, and 1,000 allocations/op.
 
 ## Firewall comparison and resource usage
 
