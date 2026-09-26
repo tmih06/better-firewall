@@ -40,3 +40,19 @@ func BenchmarkTupleKey1000(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkAppTuple1000 covers the application-profile grouping path used by
+// status and app-rule mutation commands.
+func BenchmarkAppTuple1000(b *testing.B) {
+	list := benchmarkRules1000()
+	for i := range list {
+		list[i].Dapp = "OpenSSH"
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for j := range list {
+			_ = list[j].AppTuple()
+		}
+	}
+}
