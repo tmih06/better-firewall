@@ -128,22 +128,56 @@ firewall packet throughput or a protection-disabled baseline.
 
 ## Firewall comparison and resource usage
 
-The hosted `performance` job compares **no firewall**, **bfw**, and **UFW** on
-the same isolated runner. It tests 10, 100, 500, and 1,000 rules with
-keep-alive, new-connection churn, and mixed traffic (three repeats).
+The protection microbenchmarks above do not measure packet handling. This
+separate hosted test compares no firewall, bfw, and UFW with 10, 100, 500, and
+1,000 rules under keep-alive, connection-churn, and mixed traffic (three
+repeats each). The snapshot below is from [CI run #14](https://github.com/tmih06/better-firewall/actions/runs/36213832378),
+commit `a558b00`: Linux 6.17 x86_64, bfw 0.1.0, UFW 0.36.2, and k6 2.3.0.
 
-| Measure | What the report contains |
-|---|---|
-| Network behavior | Requests/s, p50/p95/p99 latency, errors, dropped iterations, checks, and bytes transferred |
-| Container resources | Average/peak CPU and memory for the firewall server and k6 attacker; sampled every second |
-| Rule-application cost | Rule-add and firewall-enable wall time, CPU seconds, and peak RSS for bfw and UFW |
-| Footprint | bfw executable, UFW launcher, and installed UFW package sizes |
+**Network throughput: bfw/UFW** — ratios near 1.0 indicate similar throughput.
 
-Open the [CI runs](https://github.com/tmih06/better-firewall/actions/workflows/ci.yml)
-and select the latest successful **Consolidate performance report** job. Its
-`better-firewall-performance` artifact contains `summary.md`, `summary.json`,
-and raw run data (retained for 30 days). New successful runs also display the
-Markdown report in the job summary.
+![bfw-to-UFW request-throughput ratio for all traffic profiles and rule counts](docs/firewall-throughput.svg)
+
+**p95 latency: bfw/UFW** — lower than 1.0 means bfw had lower p95 latency.
+
+![bfw-to-UFW p95 latency ratio for all traffic profiles and rule counts](docs/firewall-latency.svg)
+
+At 1,000 rules, all three profiles had zero request errors:
+
+| Profile | bfw req/s | UFW req/s | bfw/UFW | bfw p95 (ms) | UFW p95 (ms) |
+|---|---:|---:|---:|---:|---:|
+| Keep-alive | 16,223.0 | 16,380.7 | 0.990× | 0.99 | 0.99 |
+| Connection churn | 200.1 | 200.1 | 1.000× | 0.29 | 0.29 |
+| Mixed | 12,530.8 | 12,703.9 | 0.986× | 5.01 | 4.95 |
+
+**Rule setup + firewall enable** — mean wall-clock time across three repeats;
+this is configuration/apply time, not packet-processing latency.
+
+![bfw and UFW time to add rules and enable the firewall](docs/firewall-setup-time.svg)
+
+At 1,000 rules, total setup took 9.7789 s for bfw and 168.6403 s for UFW
+(17.25× in this run).
+
+**Container resources** — server/defender container for the 1,000-rule mixed
+profile, sampled once per second (24 samples):
+
+![Average and peak CPU and memory for the defender container under 1,000-rule mixed traffic](docs/firewall-resources.svg)
+
+| Scenario | CPU avg (%) | CPU peak (%) | Memory avg (MiB) | Memory peak (MiB) |
+|---|---:|---:|---:|---:|
+| No firewall | 81.29 | 113.21 | 26.24 | 42.34 |
+| bfw | 76.57 | 111.71 | 29.69 | 43.92 |
+| UFW | 72.32 | 111.05 | 34.22 | 41.59 |
+
+These are single-run hosted-CI measurements; CPU scheduling noise makes small
+differences informational, not a general performance guarantee. Resource
+measurements do not gate CI. The full report includes all profiles/rule counts,
+the k6 attacker’s resource use, executable/package sizes, and CLI CPU/RSS
+measurements. Open the [report job for run #14](https://github.com/tmih06/better-firewall/actions/runs/36213832378/job/108329042753)
+or the [CI runs](https://github.com/tmih06/better-firewall/actions/workflows/ci.yml)
+for the latest report. The `better-firewall-performance` artifact contains
+`summary.md`, `summary.json`, and raw data for 30 days; new successful runs
+also publish the Markdown report in the job summary.
 
 ## Migrate an existing firewall
 

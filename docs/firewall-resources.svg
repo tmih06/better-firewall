@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="520" viewBox="0 0 1120 520" role="img" aria-labelledby="title desc">
+  <title id="title">Firewall resource use at 1,000 rules under mixed traffic</title>
+  <desc id="desc">One-second Docker samples during the 1,000-rule mixed traffic workload, 24 samples per scenario. Defender CPU average and peak percentages: no firewall 81.29 and 113.21, bfw 76.57 and 111.71, UFW 72.32 and 111.05. Defender memory average and peak MiB: no firewall 26.24 and 42.34, bfw 29.69 and 43.92, UFW 34.22 and 41.59.</desc>
+  <style>
+    text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #172554; }
+    .muted { fill: #64748b; }
+    .panel { fill: #fff; stroke: #dbe4f0; stroke-width: 1; }
+    .grid { stroke: #e2e8f0; stroke-width: 1; }
+    .avg { fill: #0f9d8a; }
+    .peak { fill: #3b82f6; }
+  </style>
+  <rect width="1120" height="520" fill="#f1f5f9"/>
+  <text x="32" y="36" font-size="24" font-weight="700">Defender resource use · 1,000 rules · mixed load</text>
+  <text x="32" y="60" font-size="13" class="muted">Server container only · one-second samples · 24 samples per scenario</text>
+  <rect class="panel" x="24" y="80" width="1072" height="400" rx="14"/>
+  <text x="68" y="116" font-size="17" font-weight="650">CPU</text>
+  <text x="68" y="137" font-size="11" class="muted">Docker CPU % (can exceed 100%)</text>
+  <rect class="avg" x="215" y="111" width="12" height="12" rx="3"/><text x="233" y="122" font-size="11">Average</text>
+  <rect class="peak" x="310" y="111" width="12" height="12" rx="3"/><text x="328" y="122" font-size="11">Peak</text>
+  <line class="grid" x1="190" y1="156" x2="190" y2="398"/>
+  <line class="grid" x1="273.3" y1="156" x2="273.3" y2="398"/>
+  <line class="grid" x1="356.7" y1="156" x2="356.7" y2="398"/>
+  <line class="grid" x1="440" y1="156" x2="440" y2="398"/>
+  <line class="grid" x1="523.3" y1="156" x2="523.3" y2="398"/>
+  <text x="68" y="195" font-size="12" font-weight="650">No firewall</text><rect class="avg" x="190" y="178" width="135.5" height="12" rx="3"/><text x="332" y="188" font-size="11">81.29%</text><rect class="peak" x="190" y="193" width="188.7" height="12" rx="3"/><text x="385" y="203" font-size="11">113.21%</text>
+  <text x="68" y="260" font-size="12" font-weight="650">bfw</text><rect class="avg" x="190" y="243" width="127.6" height="12" rx="3"/><text x="324" y="253" font-size="11">76.57%</text><rect class="peak" x="190" y="258" width="186.2" height="12" rx="3"/><text x="383" y="268" font-size="11">111.71%</text>
+  <text x="68" y="325" font-size="12" font-weight="650">UFW</text><rect class="avg" x="190" y="308" width="120.5" height="12" rx="3"/><text x="317" y="318" font-size="11">72.32%</text><rect class="peak" x="190" y="323" width="185.1" height="12" rx="3"/><text x="382" y="333" font-size="11">111.05%</text>
+  <line x1="190" y1="398" x2="523.3" y2="398" stroke="#94a3b8"/>
+  <text x="190" y="419" font-size="10" text-anchor="middle" class="muted">0</text><text x="273.3" y="419" font-size="10" text-anchor="middle" class="muted">50</text><text x="356.7" y="419" font-size="10" text-anchor="middle" class="muted">100</text><text x="440" y="419" font-size="10" text-anchor="middle" class="muted">150</text><text x="523.3" y="419" font-size="10" text-anchor="middle" class="muted">200%</text>
+
+  <line x1="560" y1="114" x2="560" y2="434" stroke="#e2e8f0"/>
+  <text x="602" y="116" font-size="17" font-weight="650">Memory</text>
+  <text x="602" y="137" font-size="11" class="muted">MiB</text>
+  <rect class="avg" x="745" y="111" width="12" height="12" rx="3"/><text x="763" y="122" font-size="11">Average</text>
+  <rect class="peak" x="840" y="111" width="12" height="12" rx="3"/><text x="858" y="122" font-size="11">Peak</text>
+  <line class="grid" x1="700" y1="156" x2="700" y2="398"/>
+  <line class="grid" x1="760" y1="156" x2="760" y2="398"/>
+  <line class="grid" x1="820" y1="156" x2="820" y2="398"/>
+  <line class="grid" x1="880" y1="156" x2="880" y2="398"/>
+  <line class="grid" x1="940" y1="156" x2="940" y2="398"/>
+  <line class="grid" x1="1000" y1="156" x2="1000" y2="398"/>
+  <text x="602" y="195" font-size="12" font-weight="650">No firewall</text><rect class="avg" x="700" y="178" width="157.4" height="12" rx="3"/><text x="863" y="188" font-size="11">26.24 MiB</text><rect class="peak" x="700" y="193" width="254.0" height="12" rx="3"/><text x="960" y="203" font-size="11">42.34 MiB</text>
+  <text x="602" y="260" font-size="12" font-weight="650">bfw</text><rect class="avg" x="700" y="243" width="178.1" height="12" rx="3"/><text x="884" y="253" font-size="11">29.69 MiB</text><rect class="peak" x="700" y="258" width="263.5" height="12" rx="3"/><text x="970" y="268" font-size="11">43.92 MiB</text>
+  <text x="602" y="325" font-size="12" font-weight="650">UFW</text><rect class="avg" x="700" y="308" width="205.3" height="12" rx="3"/><text x="912" y="318" font-size="11">34.22 MiB</text><rect class="peak" x="700" y="323" width="249.5" height="12" rx="3"/><text x="956" y="333" font-size="11">41.59 MiB</text>
+  <line x1="700" y1="398" x2="1000" y2="398" stroke="#94a3b8"/>
+  <text x="700" y="419" font-size="10" text-anchor="middle" class="muted">0</text><text x="760" y="419" font-size="10" text-anchor="middle" class="muted">10</text><text x="820" y="419" font-size="10" text-anchor="middle" class="muted">20</text><text x="880" y="419" font-size="10" text-anchor="middle" class="muted">30</text><text x="940" y="419" font-size="10" text-anchor="middle" class="muted">40</text><text x="1000" y="419" font-size="10" text-anchor="middle" class="muted">50 MiB</text>
+  <text x="68" y="458" font-size="11" class="muted">Single hosted-run sample; Docker CPU scheduling is noisy. Resource values are report-only, not CI gates.</text>
+</svg>
