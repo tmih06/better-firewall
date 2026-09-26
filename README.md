@@ -202,31 +202,33 @@ independent measurement.
 ### Attack-lab comparison
 
 A separate hosted job drives real attacks at the defended container: nmap
-recon plus hping3 SYN floods (denied and allowed ports) and a TCP connect
-flood, while keep-alive HTTP traffic measures service availability. Engines:
-no firewall, bfw, and UFW with 10 allow rules, 6 s per attack. From CI run
-[36262120074](https://github.com/tmih06/better-firewall/actions/runs/36262120074):
-Linux 6.17 x86_64, hping3, Nmap 7.93.
+recon, hping3 SYN floods (denied and allowed ports), a TCP connect flood,
+12-round SSH brute-force attempts, and dynamic ban/unban pushes through a
+CrowdSec-compatible LAPI — all while an independent client keeps measuring
+legitimate keep-alive traffic. Engines: no firewall, bfw, and UFW with 10
+allow rules, 6 s per attack. From CI run
+[36265933201](https://github.com/tmih06/better-firewall/actions/runs/36265933201):
+Linux 6.17 x86_64, hping3, Nmap 7.93, dropbear as the SSH target.
 
-![Attack-lab board: nmap recon time and legit requests completed during each attack for no firewall, bfw, and UFW](docs/attack-lab.svg)
-
-Key results from that run:
+![Attack-lab board: nmap recon time, legit requests during each attack, and dynamic ban outcomes for no firewall, bfw, and UFW](docs/attack-lab.svg)
 
 | Measure | No firewall | bfw | UFW |
 |---|---:|---:|---:|
-| nmap 1–2000 | 2,000 closed in 0.14 s | 2,000 filtered in 41 s | 2,000 filtered in 41 s |
-| Service port 8080 during probes | open | open | open |
-| Denied port 8081 during probes | open | closed (DROP) | closed (DROP) |
-| Legit requests during SYN flood → denied port | 87,166 | 85,537 | 84,677 |
-| Legit requests during SYN flood → allowed port | 101,598 | 86,547 | 94,633 |
-| Legit requests during TCP connect flood | 77,038 | 68,511 | 69,642 |
-| Failed legit requests (any attack) | 0 | 0 | 0 |
+| nmap 1–2000 | 2,000 closed in 0.13 s | 1,999 filtered in 7.13 s | 1,999 filtered in 7.22 s |
+| Ports visible in 8070–8110 | 8080, 8081 | 8080 only | 8080 only |
+| Legit reqs, SYN flood → denied | 163,056 | 145,646 | 154,074 |
+| Legit reqs, SYN flood → allowed | 148,100 | 145,602 | 145,164 |
+| Legit reqs, connect flood | 126,818 | 131,771 | 122,735 |
+| Failed legit requests | 0 | 0 | 0 |
+| SSH brute-force (12 tries) | attacker unbanned | **banned in 0.1 s; ssh blocked** | attacker unbanned |
+| LAPI ban → attacker | — | **blocked in 0.9 s; unban in 0.1 s** | — |
 
-The nmap row is the defensive win: under either firewall the attacker sees
-zero port states in a 41-second filtered scan instead of instant closed
-answers. Legit traffic stayed up with zero failures under every engine; the
-~8–15% request-count dip under bfw/ufw during floods is kernel rule-evaluation
-cost, not a service outage (p95 stayed under 2.5 ms in all cases).
+Under either firewall, recon turns into seconds of filtered ports instead of
+instant answers, and legit traffic survives every flood without failures
+(p95 ≤ 1.31 ms). The dynamic rows are what ufw cannot do at all: bfw protect
+banned the brute-forcer's IP 0.1 s after the fifth failed SSH attempt and
+applied a CrowdSec-style LAPI decision 0.9 s after it was pushed — while the
+independent legit stream was never affected.
 
 ## Migrate an existing firewall
 

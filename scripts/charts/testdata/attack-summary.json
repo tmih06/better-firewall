@@ -21,69 +21,89 @@
         "open_8081": 1
       },
       "nmap": {
+        "open_ports": [],
         "open": 0,
         "closed": 2000,
-        "filtered": 0
+        "filtered": 0,
+        "seconds": 0.13
+      },
+      "nmap_window": {
+        "open_ports": [
+          8080,
+          8081
+        ],
+        "open": 2,
+        "closed": 39,
+        "filtered": 0,
+        "seconds": 0.07
       },
       "calm": {
-        "ok": 48848,
+        "ok": 72167,
         "req_fail": 0,
         "connect_fail": 0,
-        "p50_ms": 0.641,
-        "p95_ms": 0.756,
-        "max_ms": 1.339,
-        "requests": 48848
+        "p50_ms": 0.424,
+        "p95_ms": 0.579,
+        "max_ms": 0.819,
+        "requests": 72167
       },
       "attacks": {
         "synflood_denied": {
           "legit": {
-            "ok": 87166,
+            "ok": 163056,
             "req_fail": 0,
             "connect_fail": 0,
-            "p50_ms": 0.801,
-            "p95_ms": 1.349,
-            "max_ms": 3.856,
-            "requests": 87166
+            "p50_ms": 0.445,
+            "p95_ms": 0.634,
+            "max_ms": 2.813,
+            "requests": 163056
           },
           "cpu": {
-            "server_cpu": 58.05
+            "server_cpu": 49.68
           }
         },
         "synflood_allowed": {
           "legit": {
-            "ok": 101598,
+            "ok": 148100,
             "req_fail": 0,
             "connect_fail": 0,
-            "p50_ms": 0.773,
-            "p95_ms": 0.989,
-            "max_ms": 3.662,
-            "requests": 101598
+            "p50_ms": 0.566,
+            "p95_ms": 0.692,
+            "max_ms": 2.536,
+            "requests": 148100
           },
           "cpu": {
-            "server_cpu": 56.32
+            "server_cpu": 54.11
           }
         },
         "connectflood": {
           "legit": {
-            "ok": 77038,
+            "ok": 126818,
             "req_fail": 0,
             "connect_fail": 0,
-            "p50_ms": 0.661,
-            "p95_ms": 2.289,
-            "max_ms": 8.947,
-            "requests": 77038
+            "p50_ms": 0.485,
+            "p95_ms": 1.241,
+            "max_ms": 4.579,
+            "requests": 126818
           },
           "cpu": {
-            "server_cpu": 82.46
+            "server_cpu": 76.91
           }
         }
+      },
+      "lapi": {
+        "mechanism": "none"
+      },
+      "jail": {
+        "ssh_before": 1,
+        "ssh_after": 1,
+        "mechanism": "none"
       }
     },
     "bfw": {
       "setup": {
         "engine": "bfw",
         "rules": 10,
-        "setup_s": 1.791
+        "setup_s": 1.501
       },
       "reach": {
         "engine": "bfw",
@@ -91,69 +111,95 @@
         "open_8081": 0
       },
       "nmap": {
-        "open": 0,
+        "open_ports": [
+          22
+        ],
+        "open": 1,
         "closed": 0,
-        "filtered": 2000
+        "filtered": 1999,
+        "seconds": 7.13
+      },
+      "nmap_window": {
+        "open_ports": [
+          8080
+        ],
+        "open": 1,
+        "closed": 0,
+        "filtered": 40,
+        "seconds": 1.6
       },
       "calm": {
-        "ok": 44606,
+        "ok": 68224,
         "req_fail": 0,
         "connect_fail": 0,
-        "p50_ms": 0.706,
-        "p95_ms": 0.798,
-        "max_ms": 1.426,
-        "requests": 44606
+        "p50_ms": 0.443,
+        "p95_ms": 0.64,
+        "max_ms": 1.492,
+        "requests": 68224
       },
       "attacks": {
         "synflood_denied": {
           "legit": {
-            "ok": 85537,
+            "ok": 145646,
             "req_fail": 0,
             "connect_fail": 0,
-            "p50_ms": 0.924,
-            "p95_ms": 1.214,
-            "max_ms": 5.384,
-            "requests": 85537
+            "p50_ms": 0.475,
+            "p95_ms": 0.745,
+            "max_ms": 2.169,
+            "requests": 145646
           },
           "cpu": {
-            "server_cpu": 58.1
+            "server_cpu": 53.64
           }
         },
         "synflood_allowed": {
           "legit": {
-            "ok": 86547,
+            "ok": 145602,
             "req_fail": 0,
             "connect_fail": 0,
-            "p50_ms": 0.797,
-            "p95_ms": 1.257,
-            "max_ms": 3.25,
-            "requests": 86547
+            "p50_ms": 0.496,
+            "p95_ms": 0.741,
+            "max_ms": 2.188,
+            "requests": 145602
           },
           "cpu": {
-            "server_cpu": 62.23
+            "server_cpu": 50.33
           }
         },
         "connectflood": {
           "legit": {
-            "ok": 68511,
+            "ok": 131771,
             "req_fail": 0,
             "connect_fail": 0,
-            "p50_ms": 0.783,
-            "p95_ms": 2.416,
-            "max_ms": 7.42,
-            "requests": 68511
+            "p50_ms": 0.527,
+            "p95_ms": 1.091,
+            "max_ms": 4.897,
+            "requests": 131771
           },
           "cpu": {
-            "server_cpu": 82.03
+            "server_cpu": 60.28
           }
         }
+      },
+      "lapi": {
+        "lapi_ban_s": 0.938,
+        "lapi_unban_s": 0.101,
+        "attacker_after_ban": 0,
+        "legit_after_ban": 1
+      },
+      "jail": {
+        "ssh_before": 1,
+        "ssh_after": 0,
+        "http_after": 0,
+        "legit_after": 1,
+        "jail_ban_s": 0.084
       }
     },
     "ufw": {
       "setup": {
         "engine": "ufw",
         "rules": 10,
-        "setup_s": 4.008
+        "setup_s": 3.697
       },
       "reach": {
         "engine": "ufw",
@@ -161,62 +207,83 @@
         "open_8081": 0
       },
       "nmap": {
-        "open": 0,
+        "open_ports": [
+          22
+        ],
+        "open": 1,
         "closed": 0,
-        "filtered": 2000
+        "filtered": 1999,
+        "seconds": 7.22
+      },
+      "nmap_window": {
+        "open_ports": [
+          8080
+        ],
+        "open": 1,
+        "closed": 0,
+        "filtered": 40,
+        "seconds": 1.6
       },
       "calm": {
-        "ok": 43213,
+        "ok": 73846,
         "req_fail": 0,
         "connect_fail": 0,
-        "p50_ms": 0.72,
-        "p95_ms": 0.833,
-        "max_ms": 1.4,
-        "requests": 43213
+        "p50_ms": 0.42,
+        "p95_ms": 0.543,
+        "max_ms": 0.864,
+        "requests": 73846
       },
       "attacks": {
         "synflood_denied": {
           "legit": {
-            "ok": 84677,
+            "ok": 154074,
             "req_fail": 0,
             "connect_fail": 0,
-            "p50_ms": 0.831,
-            "p95_ms": 1.314,
-            "max_ms": 3.275,
-            "requests": 84677
+            "p50_ms": 0.464,
+            "p95_ms": 0.709,
+            "max_ms": 1.648,
+            "requests": 154074
           },
           "cpu": {
-            "server_cpu": 63.14
+            "server_cpu": 52.4
           }
         },
         "synflood_allowed": {
           "legit": {
-            "ok": 94633,
+            "ok": 145164,
             "req_fail": 0,
             "connect_fail": 0,
-            "p50_ms": 0.776,
-            "p95_ms": 1.212,
-            "max_ms": 2.51,
-            "requests": 94633
+            "p50_ms": 0.583,
+            "p95_ms": 0.742,
+            "max_ms": 1.72,
+            "requests": 145164
           },
           "cpu": {
-            "server_cpu": 60.5
+            "server_cpu": 49.35
           }
         },
         "connectflood": {
           "legit": {
-            "ok": 69642,
+            "ok": 122735,
             "req_fail": 0,
             "connect_fail": 0,
-            "p50_ms": 0.801,
-            "p95_ms": 2.361,
-            "max_ms": 6.489,
-            "requests": 69642
+            "p50_ms": 0.477,
+            "p95_ms": 1.306,
+            "max_ms": 13.048,
+            "requests": 122735
           },
           "cpu": {
-            "server_cpu": 81.43
+            "server_cpu": 80.81
           }
         }
+      },
+      "lapi": {
+        "mechanism": "none"
+      },
+      "jail": {
+        "ssh_before": 1,
+        "ssh_after": 1,
+        "mechanism": "none"
       }
     }
   },

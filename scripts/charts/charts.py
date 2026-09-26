@@ -382,7 +382,7 @@ def attack_svg():
                 s += f'  <text x="{bx}" y="{y+13}" font-size="11" class="muted">{label}: n/a</text>\n'
                 continue
             if d.get("mechanism") == "none":
-                s += f'  <text x="{bx}" y="{y+13}" font-size="11" fill="{color}">{label}: no mechanism — attacker unbanned</text>\n'
+                s += f'  <text x="{bx}" y="{y+13}" font-size="11" class="muted">{label}: no mechanism</text>\n'
                 continue
             t = d.get(tkey)
             txt = f"{label}: ban {t:.1f} s" if isinstance(t, (int, float)) and t >= 0 else f"{label}: ban pending"
