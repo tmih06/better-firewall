@@ -332,20 +332,9 @@ var cachedLogExpressions = map[string]expr.Any{
 	"[BFW LIMIT BLOCK] ":   &expr.Log{Key: 1 << unix.NFTA_LOG_PREFIX, Data: []byte("[BFW LIMIT BLOCK] ")},
 }
 
-func baseFor(dir string) string {
-	switch dir {
-	case "out":
-		return "output"
-	case "routed":
-		return "forward"
-	default:
-		return "input"
-	}
-}
-
 // userChainFor returns the canonical user chain without constructing a new
 // string for every compiled rule. Unknown directions retain the existing
-// fail-closed mapping to the input chain used by baseFor.
+// fail-closed mapping to the input chain.
 func userChainFor(dir string) string {
 	switch dir {
 	case "out":
