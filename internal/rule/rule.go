@@ -313,14 +313,6 @@ func canonWild(ip string, v6 bool) string {
 	return ip
 }
 
-// portListStr renders a port list the way ufw's dport/sport strings look
-// ("any", "80", "80,443", "8080:8090").
-func portListStr(ports []PortRange) string {
-	var b strings.Builder
-	writePortList(&b, ports)
-	return b.String()
-}
-
 func writePortList(b *strings.Builder, ports []PortRange) {
 	if len(ports) == 0 {
 		b.WriteString("any")

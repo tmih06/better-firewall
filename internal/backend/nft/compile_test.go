@@ -420,6 +420,47 @@ func TestCompileLimitUsesFamilySpecificRegisters(t *testing.T) {
 	}
 }
 
+func TestRuleArenaKeepsPointersStableAcrossChunks(t *testing.T) {
+	table := &nftables.Table{Name: "arena"}
+	chain := &nftables.Chain{Name: "input", Table: table}
+	c := &compiled{
+		table:   table,
+		rules:   make([]*nftables.Rule, 0, 128),
+		ruleCap: 2,
+	}
+	for i := 0; i < 100; i++ {
+		c.addRuleObject(table, chain, []expr.Any{&expr.Counter{}})
+	}
+	if len(c.ruleArenas) < 2 {
+		t.Fatalf("rule arena did not exercise chunk rollover: got %d chunks", len(c.ruleArenas))
+	}
+	for i, r := range c.rules {
+		if r.Table != table || r.Chain != chain {
+			t.Errorf("rule %d points at the wrong table or chain", i)
+		}
+		if len(r.Exprs) != 1 {
+			t.Errorf("rule %d expression count = %d, want 1", i, len(r.Exprs))
+		}
+	}
+}
+
+func TestPortDataUsesBigEndianEncoding(t *testing.T) {
+	for _, tc := range []struct {
+		port uint16
+		want []byte
+	}{
+		{0, []byte{0, 0}},
+		{1, []byte{0, 1}},
+		{0x1234, []byte{0x12, 0x34}},
+		{0xffff, []byte{0xff, 0xff}},
+	} {
+		got := portData(tc.port)
+		if len(got) != len(tc.want) || got[0] != tc.want[0] || got[1] != tc.want[1] {
+			t.Errorf("portData(%d) = %v, want %v", tc.port, got, tc.want)
+		}
+	}
+}
+
 func TestCompileLoggingOff(t *testing.T) {
 	st := store.Defaults()
 	st.Logging = "off"
