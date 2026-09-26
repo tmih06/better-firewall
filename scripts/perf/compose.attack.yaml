@@ -1,0 +1,40 @@
+# Attack-lab topology: one defended server, one attacker, internal-only
+# bridge. No ports are published to the runner host. NET_ADMIN on the server
+# is confined to the container's own network namespace; the attacker gets
+# NET_RAW (needed by hping3) and nothing else.
+services:
+  server:
+    build:
+      context: ../..
+      dockerfile: scripts/perf/server.Dockerfile
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - attacklab
+    init: true
+    stop_grace_period: 2s
+
+  attacker:
+    build:
+      context: .
+      dockerfile: attacker.Dockerfile
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - attacklab
+    volumes:
+      - ./attack_drivers.py:/lab/attack_drivers.py:ro
+    depends_on:
+      - server
+
+networks:
+  attacklab:
+    internal: true
