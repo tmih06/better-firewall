@@ -404,3 +404,65 @@ func TestRenderTextDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestCompileAnyPortsExpandToMatchingTransports(t *testing.T) {
+	tests := []struct {
+		name  string
+		ports []rule.PortRange
+		want  []byte
+	}{
+		{
+			name:  "tcp only",
+			ports: []rule.PortRange{{Lo: 80, Hi: 80, Proto: "tcp"}},
+			want:  []byte{6},
+		},
+		{
+			name:  "udp only",
+			ports: []rule.PortRange{{Lo: 53, Hi: 53, Proto: "udp"}},
+			want:  []byte{17},
+		},
+		{
+			name:  "unspecified transport expands to tcp and udp",
+			ports: []rule.PortRange{{Lo: 80, Hi: 80, Proto: "any"}},
+			want:  []byte{6, 17},
+		},
+		{
+			name: "no ports stays protocol agnostic",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := store.Defaults()
+			st.Rules4 = []rule.Rule{{
+				ID: "r1", Action: rule.ActionAllow, Direction: rule.DirIn, Proto: "any",
+				Src: rule.AddrSpec{IP: "any"},
+				Dst: rule.AddrSpec{IP: "any", Ports: tt.ports},
+			}}
+			c, err := compile(st, nil)
+			if err != nil {
+				t.Fatalf("compile: %v", err)
+			}
+
+			compiledRules := rulesIn(c, "bfw-user-input")
+			var got []byte
+			for _, compiledRule := range compiledRules {
+				for _, expression := range compiledRule.Exprs {
+					cmp, ok := expression.(*expr.Cmp)
+					if ok && len(cmp.Data) == 1 && (cmp.Data[0] == 6 || cmp.Data[0] == 17) {
+						got = append(got, cmp.Data[0])
+						break
+					}
+				}
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("compiled transports = %v, want %v", got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Fatalf("compiled transports = %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tmih06/better-firewall/internal/rule"
 	"github.com/tmih06/better-firewall/internal/store"
 )
 
@@ -24,6 +25,39 @@ func BenchmarkThreatBanSetCompile(b *testing.B) {
 			}
 			b.ReportAllocs()
 			b.ReportMetric(float64(count), "bans/op")
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := compile(st, nil); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkRulesetCompile measures the full compiler path for ordinary
+// user rules at the same cardinalities used by the hosted firewall benchmark.
+func BenchmarkRulesetCompile(b *testing.B) {
+	for _, count := range []int{10, 100, 500, 1000} {
+		b.Run(strconv.Itoa(count), func(b *testing.B) {
+			st := store.Defaults()
+			st.Rules4 = make([]rule.Rule, count)
+			for i := range st.Rules4 {
+				port := uint16(10001 + i)
+				st.Rules4[i] = rule.Rule{
+					ID:        "r" + strconv.Itoa(i+1),
+					Action:    rule.ActionAllow,
+					Direction: rule.DirIn,
+					Proto:     "tcp",
+					Src:       rule.AddrSpec{IP: "any"},
+					Dst: rule.AddrSpec{
+						IP:    "any",
+						Ports: []rule.PortRange{{Lo: port, Hi: port, Proto: "tcp"}},
+					},
+				}
+			}
+			b.ReportAllocs()
+			b.ReportMetric(float64(count), "rules/op")
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				if _, err := compile(st, nil); err != nil {

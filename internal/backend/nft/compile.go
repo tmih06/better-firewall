@@ -627,7 +627,8 @@ func (c *compiled) compileRule(r *rule.Rule, v6 bool, now int64) error {
 	userChain := "bfw-user-" + base
 	logChain := "bfw-user-logging-" + base
 
-	for _, proto := range protoVariants(r) {
+	variants, variantCount := protoVariants(r)
+	for _, proto := range variants[:variantCount] {
 		match, err := c.ruleMatch(r, proto, v6)
 		if err != nil {
 			return err
@@ -830,13 +831,17 @@ func (c *compiled) endpointAddr(a *rule.AddrSpec, which string, v6 bool) []expr.
 // portExprs emits sport/dport matches for the ranges of one proto.
 // Single port → cmp; lo:hi → range; multiple → anonymous set lookup.
 func (c *compiled) portExprs(ports []rule.PortRange, which, proto string) []expr.Any {
-	var rs []rule.PortRange
+	var first rule.PortRange
+	matched := 0
 	for _, p := range ports {
 		if p.Proto == "" || p.Proto == "any" || p.Proto == proto {
-			rs = append(rs, p)
+			matched++
+			if matched == 1 {
+				first = p
+			}
 		}
 	}
-	if len(rs) == 0 {
+	if matched == 0 {
 		return nil
 	}
 	offset := uint32(0)
@@ -844,20 +849,25 @@ func (c *compiled) portExprs(ports []rule.PortRange, which, proto string) []expr
 		offset = 2
 	}
 	load := &expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: offset, Len: 2}
-	if len(rs) == 1 {
-		p := rs[0]
-		if p.Lo == p.Hi {
-			return []expr.Any{load, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.BigEndian.PutUint16(p.Lo)}}
+	if matched == 1 {
+		if first.Lo == first.Hi {
+			return []expr.Any{load, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.BigEndian.PutUint16(first.Lo)}}
 		}
 		return []expr.Any{load, &expr.Range{
 			Op: expr.CmpOpEq, Register: 1,
-			FromData: binaryutil.BigEndian.PutUint16(p.Lo),
-			ToData:   binaryutil.BigEndian.PutUint16(p.Hi),
+			FromData: binaryutil.BigEndian.PutUint16(first.Lo),
+			ToData:   binaryutil.BigEndian.PutUint16(first.Hi),
 		}}
 	}
-	// multiport → anonymous set (interval when any range present)
+
+	// Multiport rules alone need a retained filtered list for set creation.
+	rs := make([]rule.PortRange, 0, matched)
 	interval := false
-	for _, p := range rs {
+	for _, p := range ports {
+		if p.Proto != "" && p.Proto != "any" && p.Proto != proto {
+			continue
+		}
+		rs = append(rs, p)
 		if p.Multi() {
 			interval = true
 		}
@@ -1035,30 +1045,49 @@ func protoNum(p string) (byte, error) {
 // protoVariants expands a rule into per-proto compile passes. proto "any"
 // with port specs expands to the referenced protos (ufw expands bare ports
 // to tcp+udp); without ports it stays a single proto-less match.
-func protoVariants(r *rule.Rule) []string {
+func protoVariants(r *rule.Rule) ([2]string, int) {
+	var out [2]string
 	if r.Proto != "any" && r.Proto != "" {
-		return []string{r.Proto}
+		out[0] = r.Proto
+		return out, 1
 	}
-	set := map[string]bool{}
-	ports := append(append([]rule.PortRange{}, r.Src.Ports...), r.Dst.Ports...)
-	for _, p := range ports {
+
+	hasTCP, hasUDP := false, false
+	for _, p := range r.Src.Ports {
 		switch p.Proto {
-		case "tcp", "udp":
-			set[p.Proto] = true
+		case "tcp":
+			hasTCP = true
+		case "udp":
+			hasUDP = true
 		default:
-			set["tcp"], set["udp"] = true, true
+			hasTCP, hasUDP = true, true
 		}
 	}
-	if len(set) == 0 {
-		return []string{"any"}
-	}
-	out := []string{}
-	for _, s := range []string{"tcp", "udp"} {
-		if set[s] {
-			out = append(out, s)
+	for _, p := range r.Dst.Ports {
+		switch p.Proto {
+		case "tcp":
+			hasTCP = true
+		case "udp":
+			hasUDP = true
+		default:
+			hasTCP, hasUDP = true, true
 		}
 	}
-	return out
+	if !hasTCP && !hasUDP {
+		out[0] = "any"
+		return out, 1
+	}
+
+	count := 0
+	if hasTCP {
+		out[count] = "tcp"
+		count++
+	}
+	if hasUDP {
+		out[count] = "udp"
+		count++
+	}
+	return out, count
 }
 
 func iif(name string) []expr.Any { return ifaceMatch(expr.MetaKeyIIFNAME, name) }
