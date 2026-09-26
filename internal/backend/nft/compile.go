@@ -71,6 +71,7 @@ type compiled struct {
 	chainIndex  map[string]*nftables.Chain
 	sets        []*nftables.Set
 	elems       map[*nftables.Set][]nftables.SetElement
+	setIndex    map[uint32]*nftables.Set
 	limitSets   map[string]*nftables.Set
 	rules       []*nftables.Rule
 	natTables   []*nftables.Table
@@ -103,6 +104,20 @@ func (c *compiled) addRule(chain string, exprs ...expr.Any) {
 	})
 }
 
+// addSet records a set in compile order and indexes anonymous sets by their
+// pre-assigned kernel ID for constant-time rendering. Set IDs are unique
+// within one batch; retaining the slice order keeps netlink and diff output
+// stable.
+func (c *compiled) addSet(s *nftables.Set, elems []nftables.SetElement) {
+	c.sets = append(c.sets, s)
+	if s.Anonymous && s.ID != 0 {
+		c.setIndex[s.ID] = s
+	}
+	if elems != nil {
+		c.elems[s] = elems
+	}
+}
+
 // compile builds the complete ruleset for st. etc carries /etc/default
 // values; IPV6 there overrides st.IPv6 when present (same precedence ufw
 // gives /etc/default/ufw).
@@ -118,7 +133,7 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 			limitCount++
 		}
 	}
-	ruleReserve, setReserve := 128, 2+2*len(st.Sets)+limitCount
+	ruleReserve, setReserve, anonymousSetReserve := 128, 2+2*len(st.Sets)+limitCount, 0
 	reserveRules := func(rules []rule.Rule) {
 		for _, r := range rules {
 			variants := 1
@@ -134,9 +149,11 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 			}
 			if len(r.Src.Ports) > 1 {
 				setReserve += variants
+				anonymousSetReserve += variants
 			}
 			if len(r.Dst.Ports) > 1 {
 				setReserve += variants
+				anonymousSetReserve += variants
 			}
 		}
 	}
@@ -154,6 +171,7 @@ func compile(st *store.State, etc map[string]string) (*compiled, error) {
 		sets:       make([]*nftables.Set, 0, setReserve),
 		chainIndex: make(map[string]*nftables.Chain, 48),
 		elems:      make(map[*nftables.Set][]nftables.SetElement, setReserve),
+		setIndex:   make(map[uint32]*nftables.Set, anonymousSetReserve),
 		limitSets:  make(map[string]*nftables.Set, limitCount),
 	}
 
@@ -603,7 +621,8 @@ func (c *compiled) compileAddressSet(name4, name6, source string, elements []str
 		Table: c.table, Name: name6, ID: c.newSetID(),
 		KeyType: nftables.TypeIP6Addr, Interval: true,
 	}
-	c.sets = append(c.sets, v4, v6)
+	c.addSet(v4, nil)
+	c.addSet(v6, nil)
 	var iv4, iv6 [][2][]byte // [start, endExclusive)
 	for _, element := range elements {
 		_, ipnet, err := net.ParseCIDR(element)
@@ -762,7 +781,7 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 			// the rule fails open. nft defaults meter sets to 65535.
 			Size: 65535,
 		}
-		c.sets = append(c.sets, set)
+		c.addSet(set, nil)
 		c.limitSets[name] = set
 	}
 
@@ -950,8 +969,7 @@ func (c *compiled) appendPortExprs(dst []expr.Any, ports []rule.PortRange, which
 			elems = append(elems, nftables.SetElement{Key: binaryutil.BigEndian.PutUint16(p.Lo)})
 		}
 	}
-	c.sets = append(c.sets, set)
-	c.elems[set] = elems
+	c.addSet(set, elems)
 	return append(dst, load, &expr.Lookup{SourceRegister: 1, SetName: set.Name, SetID: set.ID})
 }
 
