@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1120" height="520" viewBox="0 0 1120 520" role="img" aria-labelledby="title desc">
   <title id="title">Defender container resources</title>
-  <desc id="desc">Two panels of grouped horizontal bars. The CPU panel shows average and peak server CPU percent for no firewall, bfw, and UFW. The memory panel shows average and peak server memory in mebibytes for the same three scenarios.</desc>
+  <desc id="desc">Two panels of grouped horizontal bars. The CPU panel shows average and peak server CPU percent for no firewall, bfw, and UFW at 1,000 rules under the mixed profile. The memory panel shows average and peak server memory in mebibytes for the same scenarios.</desc>
   <style>
     text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #172554; }
     .muted { fill: #64748b; }
@@ -12,6 +12,7 @@
     .bfw { fill: #0f9d8a; }
     .ufw { fill: #3b82f6; }
     .peak { fill-opacity: 0.42; }
+    .prev { fill: #cbd5e1; }
   </style>
   <rect width="1120" height="520" fill="#f1f5f9"/>
   <text x="32" y="38" font-size="24" font-weight="700">Defender container resources</text>
@@ -29,20 +30,20 @@
   <line class="grid" x1="156.0" y1="144" x2="156.0" y2="396"/>
   <text x="156.0" y="412" text-anchor="middle" font-size="10" class="muted">0.0</text>
   <text x="44" y="200.7" font-size="12">No firewall</text>
-  <rect class="base" x="156" y="172.7" width="256.1" height="17" rx="4"/>
-  <text x="419.1" y="185.7" font-size="10.5" font-weight="650" fill="#64748b">81.3</text>
-  <rect class="base peak" x="156" y="194.7" width="356.6" height="17" rx="4"/>
-  <text x="519.6" y="207.7" font-size="10.5" font-weight="650" fill="#64748b">113.2</text>
+  <rect class="base" x="156" y="172.7" width="233.1" height="17" rx="4"/>
+  <text x="396.1" y="185.7" font-size="10.5" font-weight="650" fill="#64748b">74.0</text>
+  <rect class="base peak" x="156" y="194.7" width="333.5" height="17" rx="4"/>
+  <text x="496.5" y="207.7" font-size="10.5" font-weight="650" fill="#64748b">105.9</text>
   <text x="44" y="282.0" font-size="12">bfw</text>
-  <rect class="bfw" x="156" y="254.0" width="241.2" height="17" rx="4"/>
-  <text x="404.2" y="267.0" font-size="10.5" font-weight="650" fill="#0f9d8a">76.6</text>
-  <rect class="bfw peak" x="156" y="276.0" width="351.9" height="17" rx="4"/>
-  <text x="514.9" y="289.0" font-size="10.5" font-weight="650" fill="#0f9d8a">111.7</text>
+  <rect class="bfw" x="156" y="254.0" width="220.9" height="17" rx="4"/>
+  <text x="383.9" y="267.0" font-size="10.5" font-weight="650" fill="#0f9d8a">70.1</text>
+  <rect class="bfw peak" x="156" y="276.0" width="333.6" height="17" rx="4"/>
+  <text x="496.6" y="289.0" font-size="10.5" font-weight="650" fill="#0f9d8a">105.9</text>
   <text x="44" y="363.3" font-size="12">UFW</text>
-  <rect class="ufw" x="156" y="335.3" width="227.8" height="17" rx="4"/>
-  <text x="390.8" y="348.3" font-size="10.5" font-weight="650" fill="#3b82f6">72.3</text>
-  <rect class="ufw peak" x="156" y="357.3" width="349.8" height="17" rx="4"/>
-  <text x="512.8" y="370.3" font-size="10.5" font-weight="650" fill="#3b82f6">111.0</text>
+  <rect class="ufw" x="156" y="335.3" width="213.7" height="17" rx="4"/>
+  <text x="376.7" y="348.3" font-size="10.5" font-weight="650" fill="#3b82f6">67.8</text>
+  <rect class="ufw peak" x="156" y="357.3" width="331.2" height="17" rx="4"/>
+  <text x="494.2" y="370.3" font-size="10.5" font-weight="650" fill="#3b82f6">105.1</text>
   <rect class="panel" x="572" y="104" width="536" height="316" rx="14"/>
   <text x="592" y="132" font-size="14" font-weight="650">Memory (MiB)</text>
   <line class="grid" x1="1082.0" y1="144" x2="1082.0" y2="396"/>
@@ -56,20 +57,20 @@
   <line class="grid" x1="704.0" y1="144" x2="704.0" y2="396"/>
   <text x="704.0" y="412" text-anchor="middle" font-size="10" class="muted">0.0</text>
   <text x="592" y="200.7" font-size="12">No firewall</text>
-  <rect class="base" x="704" y="172.7" width="206.6" height="17" rx="4"/>
-  <text x="917.6" y="185.7" font-size="10.5" font-weight="650" fill="#64748b">26.2</text>
-  <rect class="base peak" x="704" y="194.7" width="333.4" height="17" rx="4"/>
-  <text x="1044.4" y="207.7" font-size="10.5" font-weight="650" fill="#64748b">42.3</text>
+  <rect class="base" x="704" y="172.7" width="200.5" height="17" rx="4"/>
+  <text x="911.5" y="185.7" font-size="10.5" font-weight="650" fill="#64748b">25.5</text>
+  <rect class="base peak" x="704" y="194.7" width="270.1" height="17" rx="4"/>
+  <text x="981.1" y="207.7" font-size="10.5" font-weight="650" fill="#64748b">34.3</text>
   <text x="592" y="282.0" font-size="12">bfw</text>
-  <rect class="bfw" x="704" y="254.0" width="233.8" height="17" rx="4"/>
-  <text x="944.8" y="267.0" font-size="10.5" font-weight="650" fill="#0f9d8a">29.7</text>
-  <rect class="bfw peak" x="704" y="276.0" width="345.9" height="17" rx="4"/>
-  <text x="1056.9" y="289.0" font-size="10.5" font-weight="650" fill="#0f9d8a">43.9</text>
+  <rect class="bfw" x="704" y="254.0" width="231.2" height="17" rx="4"/>
+  <text x="942.2" y="267.0" font-size="10.5" font-weight="650" fill="#0f9d8a">29.4</text>
+  <rect class="bfw peak" x="704" y="276.0" width="274.0" height="17" rx="4"/>
+  <text x="985.0" y="289.0" font-size="10.5" font-weight="650" fill="#0f9d8a">34.8</text>
   <text x="592" y="363.3" font-size="12">UFW</text>
-  <rect class="ufw" x="704" y="335.3" width="269.5" height="17" rx="4"/>
-  <text x="980.5" y="348.3" font-size="10.5" font-weight="650" fill="#3b82f6">34.2</text>
-  <rect class="ufw peak" x="704" y="357.3" width="327.5" height="17" rx="4"/>
-  <text x="1038.5" y="370.3" font-size="10.5" font-weight="650" fill="#3b82f6">41.6</text>
+  <rect class="ufw" x="704" y="335.3" width="270.7" height="17" rx="4"/>
+  <text x="981.7" y="348.3" font-size="10.5" font-weight="650" fill="#3b82f6">34.4</text>
+  <rect class="ufw peak" x="704" y="357.3" width="343.7" height="17" rx="4"/>
+  <text x="1054.7" y="370.3" font-size="10.5" font-weight="650" fill="#3b82f6">43.6</text>
   <rect x="24" y="476" width="12" height="12" rx="3" class="bfw"/>
   <text x="42" y="486" font-size="12">Average</text>
   <rect x="105" y="476" width="12" height="12" rx="3" class="peak"/>

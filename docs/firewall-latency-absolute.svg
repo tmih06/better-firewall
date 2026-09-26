@@ -12,6 +12,7 @@
     .bfw { fill: #0f9d8a; }
     .ufw { fill: #3b82f6; }
     .peak { fill-opacity: 0.42; }
+    .prev { fill: #cbd5e1; }
   </style>
   <rect width="1120" height="760" fill="#f1f5f9"/>
   <text x="32" y="38" font-size="24" font-weight="700">p95 latency in milliseconds</text>
@@ -26,34 +27,34 @@
   <text x="82" y="190.0" text-anchor="end" font-size="10" class="muted">0.8</text>
   <line class="grid" x1="92" y1="146.0" x2="1070" y2="146.0"/>
   <text x="82" y="150.0" text-anchor="end" font-size="10" class="muted">1.2</text>
-  <rect class="base" x="139.2" y="161.9" width="46.0" height="104.1" rx="3"><title>No firewall, 10 rules: 1.041 ms</title></rect>
-  <text x="162.2" y="156.9" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">1.041</text>
-  <rect class="bfw" x="191.2" y="164.7" width="46.0" height="101.3" rx="3"><title>bfw, 10 rules: 1.013 ms</title></rect>
-  <text x="214.2" y="159.7" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">1.013</text>
-  <rect class="ufw" x="243.2" y="166.4" width="46.0" height="99.6" rx="3"><title>UFW, 10 rules: 0.996 ms</title></rect>
-  <text x="266.2" y="161.4" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.996</text>
+  <rect class="base" x="139.2" y="163.5" width="46.0" height="102.5" rx="3"><title>No firewall, 10 rules: 1.025 ms</title></rect>
+  <text x="162.2" y="158.5" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">1.025</text>
+  <rect class="bfw" x="191.2" y="167.5" width="46.0" height="98.5" rx="3"><title>bfw, 10 rules: 0.985 ms</title></rect>
+  <text x="214.2" y="162.5" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.985</text>
+  <rect class="ufw" x="243.2" y="166.9" width="46.0" height="99.1" rx="3"><title>UFW, 10 rules: 0.991 ms</title></rect>
+  <text x="266.2" y="161.9" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.991</text>
   <text x="214.2" y="282.0" text-anchor="middle" font-size="11" class="muted">10</text>
-  <rect class="base" x="383.8" y="159.2" width="46.0" height="106.8" rx="3"><title>No firewall, 100 rules: 1.068 ms</title></rect>
-  <text x="406.8" y="154.2" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">1.068</text>
-  <rect class="bfw" x="435.8" y="163.7" width="46.0" height="102.3" rx="3"><title>bfw, 100 rules: 1.023 ms</title></rect>
-  <text x="458.8" y="158.7" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">1.023</text>
-  <rect class="ufw" x="487.8" y="165.1" width="46.0" height="100.9" rx="3"><title>UFW, 100 rules: 1.009 ms</title></rect>
-  <text x="510.8" y="160.1" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">1.009</text>
+  <rect class="base" x="383.8" y="227.2" width="46.0" height="38.8" rx="3"><title>No firewall, 100 rules: 0.388 ms</title></rect>
+  <text x="406.8" y="222.2" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">0.388</text>
+  <rect class="bfw" x="435.8" y="227.5" width="46.0" height="38.5" rx="3"><title>bfw, 100 rules: 0.385 ms</title></rect>
+  <text x="458.8" y="222.5" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.385</text>
+  <rect class="ufw" x="487.8" y="228.2" width="46.0" height="37.8" rx="3"><title>UFW, 100 rules: 0.378 ms</title></rect>
+  <text x="510.8" y="223.2" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.378</text>
   <text x="458.8" y="282.0" text-anchor="middle" font-size="11" class="muted">100</text>
-  <rect class="base" x="628.2" y="201.9" width="46.0" height="64.1" rx="3"><title>No firewall, 500 rules: 0.641 ms</title></rect>
-  <text x="651.2" y="196.9" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">0.641</text>
-  <rect class="bfw" x="680.2" y="205.1" width="46.0" height="60.9" rx="3"><title>bfw, 500 rules: 0.609 ms</title></rect>
-  <text x="703.2" y="200.1" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.609</text>
-  <rect class="ufw" x="732.2" y="204.9" width="46.0" height="61.1" rx="3"><title>UFW, 500 rules: 0.611 ms</title></rect>
-  <text x="755.2" y="199.9" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.611</text>
-  <text x="703.2" y="282.0" text-anchor="middle" font-size="11" class="muted">500</text>
-  <rect class="base" x="872.8" y="160.4" width="46.0" height="105.6" rx="3"><title>No firewall, 1,000 rules: 1.056 ms</title></rect>
-  <text x="895.8" y="155.4" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">1.056</text>
-  <rect class="bfw" x="924.8" y="166.5" width="46.0" height="99.5" rx="3"><title>bfw, 1,000 rules: 0.995 ms</title></rect>
-  <text x="947.8" y="161.5" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.995</text>
-  <rect class="ufw" x="976.8" y="166.7" width="46.0" height="99.3" rx="3"><title>UFW, 1,000 rules: 0.993 ms</title></rect>
-  <text x="999.8" y="161.7" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.993</text>
-  <text x="947.8" y="282.0" text-anchor="middle" font-size="11" class="muted">1,000</text>
+  <rect class="base" x="628.4" y="204.0" width="46.0" height="62.0" rx="3"><title>No firewall, 500 rules: 0.620 ms</title></rect>
+  <text x="651.4" y="199.0" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">0.620</text>
+  <rect class="bfw" x="680.4" y="204.7" width="46.0" height="61.3" rx="3"><title>bfw, 500 rules: 0.613 ms</title></rect>
+  <text x="703.4" y="199.7" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.613</text>
+  <rect class="ufw" x="732.4" y="204.8" width="46.0" height="61.2" rx="3"><title>UFW, 500 rules: 0.612 ms</title></rect>
+  <text x="755.4" y="199.8" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.612</text>
+  <text x="703.4" y="282.0" text-anchor="middle" font-size="11" class="muted">500</text>
+  <rect class="base" x="873.0" y="182.8" width="46.0" height="83.2" rx="3"><title>No firewall, 1,000 rules: 0.832 ms</title></rect>
+  <text x="896.0" y="177.8" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">0.832</text>
+  <rect class="bfw" x="925.0" y="188.7" width="46.0" height="77.3" rx="3"><title>bfw, 1,000 rules: 0.773 ms</title></rect>
+  <text x="948.0" y="183.7" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.773</text>
+  <rect class="ufw" x="977.0" y="187.4" width="46.0" height="78.6" rx="3"><title>UFW, 1,000 rules: 0.786 ms</title></rect>
+  <text x="1000.0" y="182.4" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.786</text>
+  <text x="948.0" y="282.0" text-anchor="middle" font-size="11" class="muted">1,000</text>
   <line class="axis" x1="92" y1="266" x2="1070" y2="266"/>
   <rect class="panel" x="24" y="308" width="1072" height="196" rx="14"/>
   <text x="48" y="336" font-size="14" font-weight="650">Connection churn · p95 (ms)</text>
@@ -65,34 +66,34 @@
   <text x="82" y="398.0" text-anchor="end" font-size="10" class="muted">0.3</text>
   <line class="grid" x1="92" y1="354.0" x2="1070" y2="354.0"/>
   <text x="82" y="358.0" text-anchor="end" font-size="10" class="muted">0.45</text>
-  <rect class="base" x="139.2" y="391.6" width="46.0" height="82.4" rx="3"><title>No firewall, 10 rules: 0.309 ms</title></rect>
-  <text x="162.2" y="386.6" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">0.309</text>
-  <rect class="bfw" x="191.2" y="392.9" width="46.0" height="81.1" rx="3"><title>bfw, 10 rules: 0.304 ms</title></rect>
-  <text x="214.2" y="387.9" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.304</text>
-  <rect class="ufw" x="243.2" y="389.5" width="46.0" height="84.5" rx="3"><title>UFW, 10 rules: 0.317 ms</title></rect>
-  <text x="266.2" y="384.5" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.317</text>
+  <rect class="base" x="139.2" y="396.4" width="46.0" height="77.6" rx="3"><title>No firewall, 10 rules: 0.291 ms</title></rect>
+  <text x="162.2" y="391.4" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">0.291</text>
+  <rect class="bfw" x="191.2" y="395.9" width="46.0" height="78.1" rx="3"><title>bfw, 10 rules: 0.293 ms</title></rect>
+  <text x="214.2" y="390.9" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.293</text>
+  <rect class="ufw" x="243.2" y="396.1" width="46.0" height="77.9" rx="3"><title>UFW, 10 rules: 0.292 ms</title></rect>
+  <text x="266.2" y="391.1" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.292</text>
   <text x="214.2" y="490.0" text-anchor="middle" font-size="11" class="muted">10</text>
-  <rect class="base" x="383.8" y="372.1" width="46.0" height="101.9" rx="3"><title>No firewall, 100 rules: 0.382 ms</title></rect>
-  <text x="406.8" y="367.1" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">0.382</text>
-  <rect class="bfw" x="435.8" y="385.2" width="46.0" height="88.8" rx="3"><title>bfw, 100 rules: 0.333 ms</title></rect>
-  <text x="458.8" y="380.2" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.333</text>
-  <rect class="ufw" x="487.8" y="378.8" width="46.0" height="95.2" rx="3"><title>UFW, 100 rules: 0.357 ms</title></rect>
-  <text x="510.8" y="373.8" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.357</text>
+  <rect class="base" x="383.8" y="430.0" width="46.0" height="44.0" rx="3"><title>No firewall, 100 rules: 0.165 ms</title></rect>
+  <text x="406.8" y="425.0" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">0.165</text>
+  <rect class="bfw" x="435.8" y="430.3" width="46.0" height="43.7" rx="3"><title>bfw, 100 rules: 0.164 ms</title></rect>
+  <text x="458.8" y="425.3" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.164</text>
+  <rect class="ufw" x="487.8" y="431.1" width="46.0" height="42.9" rx="3"><title>UFW, 100 rules: 0.161 ms</title></rect>
+  <text x="510.8" y="426.1" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.161</text>
   <text x="458.8" y="490.0" text-anchor="middle" font-size="11" class="muted">100</text>
-  <rect class="base" x="628.2" y="415.6" width="46.0" height="58.4" rx="3"><title>No firewall, 500 rules: 0.219 ms</title></rect>
-  <text x="651.2" y="410.6" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">0.219</text>
-  <rect class="bfw" x="680.2" y="416.7" width="46.0" height="57.3" rx="3"><title>bfw, 500 rules: 0.215 ms</title></rect>
-  <text x="703.2" y="411.7" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.215</text>
-  <rect class="ufw" x="732.2" y="414.0" width="46.0" height="60.0" rx="3"><title>UFW, 500 rules: 0.225 ms</title></rect>
-  <text x="755.2" y="409.0" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.225</text>
-  <text x="703.2" y="490.0" text-anchor="middle" font-size="11" class="muted">500</text>
-  <rect class="base" x="872.8" y="394.0" width="46.0" height="80.0" rx="3"><title>No firewall, 1,000 rules: 0.300 ms</title></rect>
-  <text x="895.8" y="389.0" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">0.300</text>
-  <rect class="bfw" x="924.8" y="395.3" width="46.0" height="78.7" rx="3"><title>bfw, 1,000 rules: 0.295 ms</title></rect>
-  <text x="947.8" y="390.3" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.295</text>
-  <rect class="ufw" x="976.8" y="396.9" width="46.0" height="77.1" rx="3"><title>UFW, 1,000 rules: 0.289 ms</title></rect>
-  <text x="999.8" y="391.9" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.289</text>
-  <text x="947.8" y="490.0" text-anchor="middle" font-size="11" class="muted">1,000</text>
+  <rect class="base" x="628.4" y="416.4" width="46.0" height="57.6" rx="3"><title>No firewall, 500 rules: 0.216 ms</title></rect>
+  <text x="651.4" y="411.4" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">0.216</text>
+  <rect class="bfw" x="680.4" y="413.7" width="46.0" height="60.3" rx="3"><title>bfw, 500 rules: 0.226 ms</title></rect>
+  <text x="703.4" y="408.7" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.226</text>
+  <rect class="ufw" x="732.4" y="412.9" width="46.0" height="61.1" rx="3"><title>UFW, 500 rules: 0.229 ms</title></rect>
+  <text x="755.4" y="407.9" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.229</text>
+  <text x="703.4" y="490.0" text-anchor="middle" font-size="11" class="muted">500</text>
+  <rect class="base" x="873.0" y="383.3" width="46.0" height="90.7" rx="3"><title>No firewall, 1,000 rules: 0.340 ms</title></rect>
+  <text x="896.0" y="378.3" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">0.340</text>
+  <rect class="bfw" x="925.0" y="389.5" width="46.0" height="84.5" rx="3"><title>bfw, 1,000 rules: 0.317 ms</title></rect>
+  <text x="948.0" y="384.5" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">0.317</text>
+  <rect class="ufw" x="977.0" y="387.9" width="46.0" height="86.1" rx="3"><title>UFW, 1,000 rules: 0.323 ms</title></rect>
+  <text x="1000.0" y="382.9" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">0.323</text>
+  <text x="948.0" y="490.0" text-anchor="middle" font-size="11" class="muted">1,000</text>
   <line class="axis" x1="92" y1="474" x2="1070" y2="474"/>
   <rect class="panel" x="24" y="516" width="1072" height="196" rx="14"/>
   <text x="48" y="544" font-size="14" font-weight="650">Mixed payload · p95 (ms)</text>
@@ -104,34 +105,34 @@
   <text x="82" y="606.0" text-anchor="end" font-size="10" class="muted">4</text>
   <line class="grid" x1="92" y1="562.0" x2="1070" y2="562.0"/>
   <text x="82" y="566.0" text-anchor="end" font-size="10" class="muted">6</text>
-  <rect class="base" x="139.2" y="581.8" width="46.0" height="100.2" rx="3"><title>No firewall, 10 rules: 5.009 ms</title></rect>
-  <text x="162.2" y="576.8" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">5.009</text>
-  <rect class="bfw" x="191.2" y="579.7" width="46.0" height="102.3" rx="3"><title>bfw, 10 rules: 5.117 ms</title></rect>
-  <text x="214.2" y="574.7" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">5.117</text>
-  <rect class="ufw" x="243.2" y="580.3" width="46.0" height="101.7" rx="3"><title>UFW, 10 rules: 5.085 ms</title></rect>
-  <text x="266.2" y="575.3" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">5.085</text>
+  <rect class="base" x="139.2" y="583.5" width="46.0" height="98.5" rx="3"><title>No firewall, 10 rules: 4.927 ms</title></rect>
+  <text x="162.2" y="578.5" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">4.927</text>
+  <rect class="bfw" x="191.2" y="580.2" width="46.0" height="101.8" rx="3"><title>bfw, 10 rules: 5.092 ms</title></rect>
+  <text x="214.2" y="575.2" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">5.092</text>
+  <rect class="ufw" x="243.2" y="582.0" width="46.0" height="100.0" rx="3"><title>UFW, 10 rules: 4.998 ms</title></rect>
+  <text x="266.2" y="577.0" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">4.998</text>
   <text x="214.2" y="698.0" text-anchor="middle" font-size="11" class="muted">10</text>
-  <rect class="base" x="383.8" y="579.6" width="46.0" height="102.4" rx="3"><title>No firewall, 100 rules: 5.122 ms</title></rect>
-  <text x="406.8" y="574.6" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">5.122</text>
-  <rect class="bfw" x="435.8" y="579.2" width="46.0" height="102.8" rx="3"><title>bfw, 100 rules: 5.138 ms</title></rect>
-  <text x="458.8" y="574.2" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">5.138</text>
-  <rect class="ufw" x="487.8" y="579.7" width="46.0" height="102.3" rx="3"><title>UFW, 100 rules: 5.114 ms</title></rect>
-  <text x="510.8" y="574.7" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">5.114</text>
+  <rect class="base" x="383.8" y="638.0" width="46.0" height="44.0" rx="3"><title>No firewall, 100 rules: 2.201 ms</title></rect>
+  <text x="406.8" y="633.0" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">2.201</text>
+  <rect class="bfw" x="435.8" y="636.9" width="46.0" height="45.1" rx="3"><title>bfw, 100 rules: 2.257 ms</title></rect>
+  <text x="458.8" y="631.9" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">2.257</text>
+  <rect class="ufw" x="487.8" y="638.6" width="46.0" height="43.4" rx="3"><title>UFW, 100 rules: 2.170 ms</title></rect>
+  <text x="510.8" y="633.6" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">2.170</text>
   <text x="458.8" y="698.0" text-anchor="middle" font-size="11" class="muted">100</text>
-  <rect class="base" x="628.2" y="618.4" width="46.0" height="63.6" rx="3"><title>No firewall, 500 rules: 3.179 ms</title></rect>
-  <text x="651.2" y="613.4" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">3.179</text>
-  <rect class="bfw" x="680.2" y="618.5" width="46.0" height="63.5" rx="3"><title>bfw, 500 rules: 3.175 ms</title></rect>
-  <text x="703.2" y="613.5" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">3.175</text>
-  <rect class="ufw" x="732.2" y="616.4" width="46.0" height="65.6" rx="3"><title>UFW, 500 rules: 3.280 ms</title></rect>
-  <text x="755.2" y="611.4" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">3.280</text>
-  <text x="703.2" y="698.0" text-anchor="middle" font-size="11" class="muted">500</text>
-  <rect class="base" x="872.8" y="582.6" width="46.0" height="99.4" rx="3"><title>No firewall, 1,000 rules: 4.970 ms</title></rect>
-  <text x="895.8" y="577.6" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">4.970</text>
-  <rect class="bfw" x="924.8" y="581.7" width="46.0" height="100.3" rx="3"><title>bfw, 1,000 rules: 5.014 ms</title></rect>
-  <text x="947.8" y="576.7" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">5.014</text>
-  <rect class="ufw" x="976.8" y="582.9" width="46.0" height="99.1" rx="3"><title>UFW, 1,000 rules: 4.953 ms</title></rect>
-  <text x="999.8" y="577.9" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">4.953</text>
-  <text x="947.8" y="698.0" text-anchor="middle" font-size="11" class="muted">1,000</text>
+  <rect class="base" x="628.4" y="618.0" width="46.0" height="64.0" rx="3"><title>No firewall, 500 rules: 3.198 ms</title></rect>
+  <text x="651.4" y="613.0" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">3.198</text>
+  <rect class="bfw" x="680.4" y="617.2" width="46.0" height="64.8" rx="3"><title>bfw, 500 rules: 3.242 ms</title></rect>
+  <text x="703.4" y="612.2" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">3.242</text>
+  <rect class="ufw" x="732.4" y="615.1" width="46.0" height="66.9" rx="3"><title>UFW, 500 rules: 3.347 ms</title></rect>
+  <text x="755.4" y="610.1" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">3.347</text>
+  <text x="703.4" y="698.0" text-anchor="middle" font-size="11" class="muted">500</text>
+  <rect class="base" x="873.0" y="600.7" width="46.0" height="81.3" rx="3"><title>No firewall, 1,000 rules: 4.066 ms</title></rect>
+  <text x="896.0" y="595.7" text-anchor="middle" font-size="9.5" font-weight="650" fill="#64748b">4.066</text>
+  <rect class="bfw" x="925.0" y="600.4" width="46.0" height="81.6" rx="3"><title>bfw, 1,000 rules: 4.082 ms</title></rect>
+  <text x="948.0" y="595.4" text-anchor="middle" font-size="9.5" font-weight="650" fill="#0f9d8a">4.082</text>
+  <rect class="ufw" x="977.0" y="599.7" width="46.0" height="82.3" rx="3"><title>UFW, 1,000 rules: 4.117 ms</title></rect>
+  <text x="1000.0" y="594.7" text-anchor="middle" font-size="9.5" font-weight="650" fill="#3b82f6">4.117</text>
+  <text x="948.0" y="698.0" text-anchor="middle" font-size="11" class="muted">1,000</text>
   <line class="axis" x1="92" y1="682" x2="1070" y2="682"/>
   <text x="581.0" y="714.0" text-anchor="middle" font-size="11" class="muted">Rule count</text>
   <rect x="24" y="720" width="12" height="12" rx="3" class="base"/>
