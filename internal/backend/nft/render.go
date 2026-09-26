@@ -288,69 +288,110 @@ type pend struct {
 	imm  []byte // non-nil for Immediate loads (raw value)
 }
 
+// renderRegs mirrors nftables' four data registers without allocating a map
+// for every rule. The overflow map is created only for malformed or future
+// expressions using an ID outside the kernel's four data registers, preserving
+// the renderer's previous behavior for those inputs.
+type renderRegs struct {
+	values [int(unix.NFT_REG_MAX) + 1]pend
+	extra  map[uint32]pend
+}
+
+func (r *renderRegs) set(register uint32, value pend) {
+	if register < uint32(len(r.values)) {
+		r.values[register] = value
+		return
+	}
+	if r.extra == nil {
+		r.extra = make(map[uint32]pend)
+	}
+	r.extra[register] = value
+}
+
+func (r *renderRegs) get(register uint32) pend {
+	if register < uint32(len(r.values)) {
+		return r.values[register]
+	}
+	if r.extra != nil {
+		return r.extra[register]
+	}
+	return pend{}
+}
+
 func renderRule(c *compiled, r *nftables.Rule) string {
-	regs := map[uint32]pend{}
-	var toks []string
+	var regs renderRegs
+	var out strings.Builder
+	// Rule text is small and roughly proportional to its expression count;
+	// reserve one buffer so repeated token writes do not repeatedly grow it.
+	out.Grow(len(r.Exprs) * 16)
+	first := true
 	lastL4 := byte(0)
+	addToken := func(token string) {
+		if !first {
+			out.WriteByte(' ')
+		}
+		out.WriteString(token)
+		first = false
+	}
 
 	for _, e := range r.Exprs {
 		switch x := e.(type) {
 		case *expr.Meta:
-			regs[x.Register] = pend{text: metaText(x.Key)}
+			regs.set(x.Register, pend{text: metaText(x.Key)})
 		case *expr.Payload:
-			regs[x.DestRegister] = pend{text: payloadText(x, lastL4)}
+			regs.set(x.DestRegister, pend{text: payloadText(x, lastL4)})
 		case *expr.Bitwise:
-			p := regs[x.DestRegister]
+			p := regs.get(x.DestRegister)
 			p.mask = x.Mask
-			regs[x.DestRegister] = p
+			regs.set(x.DestRegister, p)
 		case *expr.Immediate:
-			regs[x.Register] = pend{text: "imm", imm: x.Data}
+			regs.set(x.Register, pend{text: "imm", imm: x.Data})
 		case *expr.Cmp:
-			p := regs[x.Register]
-			toks = append(toks, renderCmp(p, x))
+			p := regs.get(x.Register)
+			addToken(renderCmp(p, x))
 		case *expr.Range:
-			p := regs[x.Register]
-			toks = append(toks, fmt.Sprintf("%s %d-%d", p.text,
+			p := regs.get(x.Register)
+			addToken(fmt.Sprintf("%s %d-%d", p.text,
 				binaryutil.BigEndian.Uint16(x.FromData),
 				binaryutil.BigEndian.Uint16(x.ToData)))
 		case *expr.Lookup:
-			p := regs[x.SourceRegister]
-			toks = append(toks, renderLookup(c, p, x))
+			p := regs.get(x.SourceRegister)
+			addToken(renderLookup(c, p, x))
 		case *expr.Ct:
-			regs[x.Register] = pend{text: "ct state"}
+			regs.set(x.Register, pend{text: "ct state"})
 		case *expr.Fib:
-			regs[x.Register] = pend{text: fibText(x)}
+			regs.set(x.Register, pend{text: fibText(x)})
 		case *expr.Exthdr:
-			regs[x.DestRegister] = pend{text: exthdrText(x)}
+			regs.set(x.DestRegister, pend{text: exthdrText(x)})
 		case *expr.Dynset:
-			toks = append(toks, renderDynset(regs, x, lastL4))
+			addToken(renderDynset(&regs, x, lastL4))
 		case *expr.Limit:
-			toks = append(toks, renderLimit(x))
+			addToken(renderLimit(x))
 		case *expr.Log:
-			toks = append(toks, fmt.Sprintf("log prefix %q", string(x.Data)))
+			addToken(fmt.Sprintf("log prefix %q", string(x.Data)))
 		case *expr.Counter:
-			toks = append(toks, "counter")
+			addToken("counter")
 		case *expr.Verdict:
-			toks = append(toks, renderVerdict(x))
+			addToken(renderVerdict(x))
 		case *expr.Reject:
-			toks = append(toks, "reject")
+			addToken("reject")
 		case *expr.Masq:
-			toks = append(toks, "masquerade")
+			addToken("masquerade")
 		case *expr.NAT:
-			toks = append(toks, renderNAT(regs, x))
+			addToken(renderNAT(&regs, x))
 		case *expr.Notrack:
-			toks = append(toks, "notrack")
+			addToken("notrack")
 		default:
-			toks = append(toks, fmt.Sprintf("# unsupported expr %T", e))
+			addToken(fmt.Sprintf("# unsupported expr %T", e))
 		}
 		// track last l4proto for payload naming
 		if cmp, ok := e.(*expr.Cmp); ok {
-			if p, ok2 := regs[cmp.Register]; ok2 && p.text == "meta l4proto" && len(cmp.Data) == 1 {
+			if p := regs.get(cmp.Register); p.text == "meta l4proto" && len(cmp.Data) == 1 {
 				lastL4 = cmp.Data[0]
 			}
 		}
 	}
-	return strings.Join(toks, " ")
+	return out.String()
 }
 
 func metaText(k expr.MetaKey) string {
@@ -670,18 +711,26 @@ func exthdrText(x *expr.Exthdr) string {
 	return fmt.Sprintf("exthdr %d @ %d", x.Type, x.Offset)
 }
 
-func renderDynset(regs map[uint32]pend, x *expr.Dynset, lastL4 byte) string {
-	key := regs[x.SrcRegKey].text
+func renderDynset(regs *renderRegs, x *expr.Dynset, lastL4 byte) string {
+	key := regs.get(x.SrcRegKey).text
 	// find the port register: the next reg32 slot after the addr
 	portText := ""
-	for reg, p := range regs {
-		if reg != x.SrcRegKey && p.text != "" && (strings.HasSuffix(p.text, "dport") || p.text == "imm") {
-			if p.text == "imm" && len(p.imm) == 2 {
-				portText = strconv.Itoa(int(binaryutil.BigEndian.Uint16(p.imm)))
-			} else {
-				portText = p.text
-			}
+	setPortText := func(reg uint32, p pend) {
+		if portText != "" || reg == x.SrcRegKey || p.text == "" ||
+			(!strings.HasSuffix(p.text, "dport") && p.text != "imm") {
+			return
 		}
+		if p.text == "imm" && len(p.imm) == 2 {
+			portText = strconv.Itoa(int(binaryutil.BigEndian.Uint16(p.imm)))
+		} else {
+			portText = p.text
+		}
+	}
+	for reg := uint32(1); reg < uint32(len(regs.values)); reg++ {
+		setPortText(reg, regs.get(reg))
+	}
+	for reg, p := range regs.extra {
+		setPortText(reg, p)
 	}
 	if portText == "" {
 		portText = l4Name(lastL4) + " dport"
@@ -745,14 +794,14 @@ func renderVerdict(v *expr.Verdict) string {
 	}
 }
 
-func renderNAT(regs map[uint32]pend, x *expr.NAT) string {
+func renderNAT(regs *renderRegs, x *expr.NAT) string {
 	addr := ""
-	if p, ok := regs[x.RegAddrMin]; ok && len(p.imm) > 0 {
+	if p := regs.get(x.RegAddrMin); len(p.imm) > 0 {
 		addr = net.IP(p.imm).String()
 	}
 	port := ""
 	if x.RegProtoMin != 0 {
-		if p, ok := regs[x.RegProtoMin]; ok && len(p.imm) == 2 {
+		if p := regs.get(x.RegProtoMin); len(p.imm) == 2 {
 			port = ":" + strconv.Itoa(int(binaryutil.BigEndian.Uint16(p.imm)))
 		}
 	}
