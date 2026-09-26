@@ -136,10 +136,14 @@ packet filtering. CI should be used for cross-machine comparisons.
 `BenchmarkRulesetRender` covers the `bfw diff`/dry-run text path with 1,000
 multi-port rules. After the set index but before builder sizing, it measured
 2.10 ms, 793,153 B/op, and 16,096 allocations/op on the local arm64 run.
-The current streaming renderer measures about 0.67 ms, 385,027 B/op, and
-98 allocations/op. A 1,000-rule limit-render run measures about 2.86 ms,
-2,624,749 B/op, and 2,118 allocations/op. The renderer keeps the compiled
+The current streaming renderer measures about 0.65 ms, 385,027 B/op, and
+98 allocations/op. A 1,000-rule limit-render run measures about 3.17 ms,
+2,624,700 B/op, and 2,118 allocations/op. The renderer keeps the compiled
 object order and output text deterministic.
+
+`BenchmarkRuleMatch1000` covers the duplicate/update scan used by CLI rule
+mutations. Comparing 1,000 candidates now takes about 58 µs with zero heap
+bytes and zero allocations per operation.
 
 ## Firewall comparison and resource usage
 
