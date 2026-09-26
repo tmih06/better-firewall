@@ -1,45 +1,90 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="560" viewBox="0 0 1120 560" role="img" aria-labelledby="title desc">
-  <title id="title">bfw versus UFW p95 latency</title>
-  <desc id="desc">Line graph of bfw divided by UFW p95 latency across 10, 100, 500, and 1,000 rules. Separate lines show keep-alive, connection-churn, and mixed profiles. Ratios below 1.0 mean bfw had lower p95 latency. Ratios range from 0.933 to 1.021.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="470" viewBox="0 0 1120 470" role="img" aria-labelledby="title desc">
+  <title id="title">p95 latency: bfw / UFW</title>
+  <desc id="desc">Three dot-plot panels, one per traffic profile, showing the ratio of bfw to UFW p95 latency at 10, 100, 500, and 1,000 rules. A dashed line marks the 1.000× parity value.</desc>
   <style>
     text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #172554; }
     .muted { fill: #64748b; }
-    .panel { fill: #fff; stroke: #dbe4f0; stroke-width: 1; }
+    .panel { fill: #ffffff; stroke: #dbe4f0; stroke-width: 1; }
     .grid { stroke: #e2e8f0; stroke-width: 1; }
-    .parity { stroke: #334155; stroke-width: 1.6; stroke-dasharray: 5 4; }
-    .line { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .axis { stroke: #94a3b8; stroke-width: 1.2; }
+    .parity { stroke: #334155; stroke-width: 1.4; stroke-dasharray: 5 4; }
+    .base { fill: #64748b; }
+    .bfw { fill: #0f9d8a; }
+    .ufw { fill: #3b82f6; }
+    .peak { fill-opacity: 0.42; }
   </style>
-  <rect width="1120" height="560" fill="#f1f5f9"/>
-  <text x="32" y="36" font-size="24" font-weight="700">p95 latency: bfw / UFW</text>
-  <text x="32" y="60" font-size="13" class="muted">Ratio across rule-count scenarios · lower is better · 3 repeats</text>
-  <rect class="panel" x="24" y="80" width="1072" height="440" rx="14"/>
-  <line class="grid" x1="160" y1="140" x2="800" y2="140"/>
-  <line class="grid" x1="160" y1="188.3" x2="800" y2="188.3"/>
-  <line class="grid" x1="160" y1="260.8" x2="800" y2="260.8"/>
-  <line class="grid" x1="160" y1="333.3" x2="800" y2="333.3"/>
-  <line class="grid" x1="160" y1="405.8" x2="800" y2="405.8"/>
-  <line class="grid" x1="160" y1="430" x2="800" y2="430"/>
-  <line class="parity" x1="160" y1="236.7" x2="800" y2="236.7"/>
-  <text x="145" y="144" text-anchor="end" font-size="11" class="muted">1.040×</text>
-  <text x="145" y="192" text-anchor="end" font-size="11" class="muted">1.020×</text>
-  <text x="145" y="241" text-anchor="end" font-size="11" font-weight="650">1.000×</text>
-  <text x="145" y="265" text-anchor="end" font-size="11" class="muted">0.990×</text>
-  <text x="145" y="338" text-anchor="end" font-size="11" class="muted">0.960×</text>
-  <text x="145" y="411" text-anchor="end" font-size="11" class="muted">0.930×</text>
-  <text x="160" y="456" text-anchor="middle" font-size="11" class="muted">10</text>
-  <text x="373.3" y="456" text-anchor="middle" font-size="11" class="muted">100</text>
-  <text x="586.7" y="456" text-anchor="middle" font-size="11" class="muted">500</text>
-  <text x="800" y="456" text-anchor="middle" font-size="11" class="muted">1,000</text>
-  <text x="480" y="482" text-anchor="middle" font-size="12" class="muted">Rules</text>
-  <polyline class="line" stroke="#0f9d8a" points="160,195.6 373.3,202.8 586.7,243.9 800,231.8"/>
-  <circle cx="160" cy="195.6" r="5" fill="#0f9d8a"/><circle cx="373.3" cy="202.8" r="5" fill="#0f9d8a"/><circle cx="586.7" cy="243.9" r="5" fill="#0f9d8a"/><circle cx="800" cy="231.8" r="5" fill="#0f9d8a"/>
-  <polyline class="line" stroke="#8b5cf6" points="160,335.8 373.3,398.6 586.7,343 800,185.9"/>
-  <circle cx="160" cy="335.8" r="5" fill="#8b5cf6"/><circle cx="373.3" cy="398.6" r="5" fill="#8b5cf6"/><circle cx="586.7" cy="343" r="5" fill="#8b5cf6"/><circle cx="800" cy="185.9" r="5" fill="#8b5cf6"/>
-  <polyline class="line" stroke="#f97316" points="160,222.2 373.3,224.6 586.7,314 800,207.7"/>
-  <circle cx="160" cy="222.2" r="5" fill="#f97316"/><circle cx="373.3" cy="224.6" r="5" fill="#f97316"/><circle cx="586.7" cy="314" r="5" fill="#f97316"/><circle cx="800" cy="207.7" r="5" fill="#f97316"/>
-  <line x1="850" y1="175" x2="880" y2="175" stroke="#0f9d8a" stroke-width="3"/><circle cx="865" cy="175" r="5" fill="#0f9d8a"/><text x="891" y="179" font-size="12">Keep-alive</text>
-  <line x1="850" y1="210" x2="880" y2="210" stroke="#8b5cf6" stroke-width="3"/><circle cx="865" cy="210" r="5" fill="#8b5cf6"/><text x="891" y="214" font-size="12">Connection churn</text>
-  <line x1="850" y1="245" x2="880" y2="245" stroke="#f97316" stroke-width="3"/><circle cx="865" cy="245" r="5" fill="#f97316"/><text x="891" y="249" font-size="12">Mixed</text>
-  <text x="850" y="300" font-size="11" class="muted">Below 1.0:</text><text x="850" y="317" font-size="11" class="muted">bfw lower p95</text><text x="850" y="334" font-size="11" class="muted">latency.</text>
-  <text x="52" y="503" font-size="11" class="muted">Parity at 1.000×. Full absolute latency values are in the report.</text>
+  <rect width="1120" height="470" fill="#f1f5f9"/>
+  <text x="32" y="38" font-size="24" font-weight="700">p95 latency: bfw / UFW</text>
+  <text x="32" y="62" font-size="13" class="muted">p95 latency ratio by traffic profile · 3 repeats · 1.000× means equal p95 latency</text>
+  <rect class="panel" x="24.0" y="104" width="348.0" height="300" rx="14"/>
+  <text x="44.0" y="132" font-size="14" font-weight="650">Keep-alive</text>
+  <line class="parity" x1="267.4" y1="144" x2="267.4" y2="378"/>
+  <line class="axis" x1="102.0" y1="378" x2="354.0" y2="378"/>
+  <text x="102.0" y="392" text-anchor="start" font-size="10" class="muted">0.916×</text>
+  <text x="354.0" y="392" text-anchor="end" font-size="10" class="muted">1.044×</text>
+  <text x="267.4" y="156" text-anchor="middle" font-size="10" font-weight="650">1.000×</text>
+  <text x="44.0" y="197.0" font-size="11" class="muted">10</text>
+  <line class="axis" x1="102.0" y1="193.0" x2="354.0" y2="193.0"/>
+  <circle cx="301.0" cy="193.0" r="5.5" fill="#0f9d8a"><title>10 rules: 1.0171×</title></circle>
+  <text x="290.0" y="197.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0171×</text>
+  <text x="44.0" y="251.0" font-size="11" class="muted">100</text>
+  <line class="axis" x1="102.0" y1="247.0" x2="354.0" y2="247.0"/>
+  <circle cx="294.7" cy="247.0" r="5.5" fill="#0f9d8a"><title>100 rules: 1.0139×</title></circle>
+  <text x="305.7" y="251.0" text-anchor="start" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0139×</text>
+  <text x="44.0" y="305.0" font-size="11" class="muted">500</text>
+  <line class="axis" x1="102.0" y1="301.0" x2="354.0" y2="301.0"/>
+  <circle cx="260.9" cy="301.0" r="5.5" fill="#0f9d8a"><title>500 rules: 0.9967×</title></circle>
+  <text x="249.9" y="305.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9967×</text>
+  <text x="44.0" y="359.0" font-size="11" class="muted">1,000</text>
+  <line class="axis" x1="102.0" y1="355.0" x2="354.0" y2="355.0"/>
+  <circle cx="271.3" cy="355.0" r="5.5" fill="#0f9d8a"><title>1,000 rules: 1.0020×</title></circle>
+  <text x="282.3" y="359.0" text-anchor="start" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0020×</text>
+  <rect class="panel" x="386.0" y="104" width="348.0" height="300" rx="14"/>
+  <text x="406.0" y="132" font-size="14" font-weight="650">Connection churn</text>
+  <line class="parity" x1="629.4" y1="144" x2="629.4" y2="378"/>
+  <line class="axis" x1="464.0" y1="378" x2="716.0" y2="378"/>
+  <text x="464.0" y="392" text-anchor="start" font-size="10" class="muted">0.916×</text>
+  <text x="716.0" y="392" text-anchor="end" font-size="10" class="muted">1.044×</text>
+  <text x="629.4" y="156" text-anchor="middle" font-size="10" font-weight="650">1.000×</text>
+  <text x="406.0" y="197.0" font-size="11" class="muted">10</text>
+  <line class="axis" x1="464.0" y1="193.0" x2="716.0" y2="193.0"/>
+  <circle cx="548.7" cy="193.0" r="5.5" fill="#0f9d8a"><title>10 rules: 0.9590×</title></circle>
+  <text x="537.7" y="197.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9590×</text>
+  <text x="406.0" y="251.0" font-size="11" class="muted">100</text>
+  <line class="axis" x1="464.0" y1="247.0" x2="716.0" y2="247.0"/>
+  <circle cx="497.1" cy="247.0" r="5.5" fill="#0f9d8a"><title>100 rules: 0.9328×</title></circle>
+  <text x="486.1" y="251.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9328×</text>
+  <text x="406.0" y="305.0" font-size="11" class="muted">500</text>
+  <line class="axis" x1="464.0" y1="301.0" x2="716.0" y2="301.0"/>
+  <circle cx="542.0" cy="301.0" r="5.5" fill="#0f9d8a"><title>500 rules: 0.9556×</title></circle>
+  <text x="531.0" y="305.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9556×</text>
+  <text x="406.0" y="359.0" font-size="11" class="muted">1,000</text>
+  <line class="axis" x1="464.0" y1="355.0" x2="716.0" y2="355.0"/>
+  <circle cx="670.3" cy="355.0" r="5.5" fill="#0f9d8a"><title>1,000 rules: 1.0208×</title></circle>
+  <text x="659.3" y="359.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0208×</text>
+  <rect class="panel" x="748.0" y="104" width="348.0" height="300" rx="14"/>
+  <text x="768.0" y="132" font-size="14" font-weight="650">Mixed payload</text>
+  <line class="parity" x1="991.4" y1="144" x2="991.4" y2="378"/>
+  <line class="axis" x1="826.0" y1="378" x2="1078.0" y2="378"/>
+  <text x="826.0" y="392" text-anchor="start" font-size="10" class="muted">0.916×</text>
+  <text x="1078.0" y="392" text-anchor="end" font-size="10" class="muted">1.044×</text>
+  <text x="991.4" y="156" text-anchor="middle" font-size="10" font-weight="650">1.000×</text>
+  <text x="768.0" y="197.0" font-size="11" class="muted">10</text>
+  <line class="axis" x1="826.0" y1="193.0" x2="1078.0" y2="193.0"/>
+  <circle cx="1003.8" cy="193.0" r="5.5" fill="#0f9d8a"><title>10 rules: 1.0063×</title></circle>
+  <text x="1014.8" y="197.0" text-anchor="start" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0063×</text>
+  <text x="768.0" y="251.0" font-size="11" class="muted">100</text>
+  <line class="axis" x1="826.0" y1="247.0" x2="1078.0" y2="247.0"/>
+  <circle cx="1000.6" cy="247.0" r="5.5" fill="#0f9d8a"><title>100 rules: 1.0047×</title></circle>
+  <text x="1011.6" y="251.0" text-anchor="start" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0047×</text>
+  <text x="768.0" y="305.0" font-size="11" class="muted">500</text>
+  <line class="axis" x1="826.0" y1="301.0" x2="1078.0" y2="301.0"/>
+  <circle cx="928.4" cy="301.0" r="5.5" fill="#0f9d8a"><title>500 rules: 0.9680×</title></circle>
+  <text x="917.4" y="305.0" text-anchor="end" font-size="10.5" font-weight="650" fill="#0f9d8a">0.9680×</text>
+  <text x="768.0" y="359.0" font-size="11" class="muted">1,000</text>
+  <line class="axis" x1="826.0" y1="355.0" x2="1078.0" y2="355.0"/>
+  <circle cx="1015.6" cy="355.0" r="5.5" fill="#0f9d8a"><title>1,000 rules: 1.0123×</title></circle>
+  <text x="1026.6" y="359.0" text-anchor="start" font-size="10.5" font-weight="650" fill="#0f9d8a">1.0123×</text>
+  <text x="24" y="424" font-size="11" class="muted">Each dot is the bfw-to-UFW p95 ratio for that rule count; dots right of the dashed line favour bfw (lower p95).</text>
+  <text x="24" y="442" font-size="11" class="muted">The horizontal axis is linear and zoomed to the measured range, so small gaps look larger than they are.</text>
 </svg>

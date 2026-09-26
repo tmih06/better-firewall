@@ -101,30 +101,40 @@ Set `"jails": []` if you want CrowdSec only. Only IP and range bans are enforced
 
 ## Benchmark evidence
 
-Measured with `make benchmark-protect` on **Linux arm64, Go 1.27.0**. This is
-one sample; times vary by machine. Every graph uses a logarithmic axis so the
-small and large workloads remain visible. These microbenchmarks do not measure
-firewall packet throughput or a protection-disabled baseline.
+Measured by the `protection-benchmarks` CI job (`make benchmark-protect`) on
+**Linux x86_64, Go 1.27.x, AMD EPYC**; the job's raw output is in the
+[`protection-benchmarks` artifact](https://github.com/tmih06/better-firewall/actions/workflows/ci.yml).
+One sample per case, and times vary by machine. Every panel uses a logarithmic
+axis so the small and large workloads stay comparable. These microbenchmarks do
+not measure firewall packet throughput or a protection-disabled baseline.
 
-**Latency per operation**
-
-![Latency for journal detection, CrowdSec decoding, and nft set compilation at 100, 1,000, and 10,000 bans](docs/protection-benchmark-latency.svg)
-
-**Memory allocated per operation**
-
-![Bytes allocated by each of the five protection benchmark cases](docs/protection-benchmark-memory.svg)
-
-**Allocations per operation**
-
-![Go allocations by each of the five protection benchmark cases](docs/protection-benchmark-allocations.svg)
+![Time, heap bytes, and heap allocations per operation for journal failure detection, CrowdSec decoding, and nft ban-set compilation at 100, 1,000, and 10,000 bans](docs/protection-benchmark.svg)
 
 | Path | Work per operation | Time | B/op | Allocs/op | Throughput |
 |---|---:|---:|---:|---:|---:|
-| Journal failure detector | 1 failed-login event | 1.810 µs | 122 | 2 | — |
-| CrowdSec JSON decode | 100 decisions | 140.668 µs | 26,086 | 119 | 87.48 MB/s |
-| nft ban-set compile | 100 bans | 218.293 µs | 204,371 | 2,470 | — |
-| nft ban-set compile | 1,000 bans | 0.995 ms | 1,138,720 | 6,980 | — |
-| nft ban-set compile | 10,000 bans | 14.535 ms | 17,119,184 | 52,005 | — |
+| Journal failure detector | 1 failed-login event | 0.905 µs | 122 | 2 | — |
+| CrowdSec JSON decode | 100 decisions | 56.86 µs | 26,085 | 119 | 216.4 MB/s |
+| nft ban-set compile | 100 bans | 78.20 µs | 204,369 | 2,470 | — |
+| nft ban-set compile | 1,000 bans | 0.347 ms | 1,138,708 | 6,980 | — |
+| nft ban-set compile | 10,000 bans | 8.039 ms | 17,119,158 | 52,005 | — |
+
+### Ruleset compilation cost
+
+`BenchmarkRulesetCompile` measures the configuration path that turns a rule list
+into an nftables ruleset, not packet filtering. Compiling 1,000 rules on Linux
+arm64 (Go 1.22.2, three runs of `-benchmem -benchtime=1s`):
+
+| 1,000-rule compile | Allocations | Bytes |
+|---|---:|---:|
+| Before `0c98593` | 23,944 | 1,049,586 |
+| After `0c98593` | 21,944 | 1,009,581 |
+
+That is 2,000 fewer allocations (−8.4%) and about 40 KB less per compile
+(−3.8%). Wall-clock time moved less than the run-to-run spread, so treat this as
+an allocation win rather than a claimed speedup. The hosted
+`protection-benchmarks` job reproduces the post-change figures on x86_64
+(21,945 allocs/op, 1,009,375 B/op). Filtering behaviour is unchanged and stays
+covered by the compiler tests.
 
 ## Firewall comparison and resource usage
 
@@ -134,11 +144,19 @@ separate hosted test compares no firewall, bfw, and UFW with 10, 100, 500, and
 repeats each). The snapshot below is from [CI run #14](https://github.com/tmih06/better-firewall/actions/runs/36213832378),
 commit `a558b00`: Linux 6.17 x86_64, bfw 0.1.0, UFW 0.36.2, and k6 2.3.0.
 
-**Network throughput: bfw/UFW** — ratios near 1.0 indicate similar throughput.
+**p95 latency in milliseconds** — direct measurements rather than ratios. Each
+panel has its own linear scale, so compare bar heights inside a panel only.
+
+![mean p95 latency for no firewall, bfw, and UFW at 10, 100, 500, and 1,000 rules](docs/firewall-latency-absolute.svg)
+
+**Network throughput: bfw/UFW** — 1.000× means equal requests per second. Rule
+counts are categories, so each profile is a separate dot plot rather than one
+line through them.
 
 ![bfw-to-UFW request-throughput ratio for all traffic profiles and rule counts](docs/firewall-throughput.svg)
 
-**p95 latency: bfw/UFW** — lower than 1.0 means bfw had lower p95 latency.
+**p95 latency: bfw/UFW** — right of the dashed 1.000× line means bfw had lower
+p95 latency.
 
 ![bfw-to-UFW p95 latency ratio for all traffic profiles and rule counts](docs/firewall-latency.svg)
 
@@ -150,8 +168,9 @@ At 1,000 rules, all three profiles had zero request errors:
 | Connection churn | 200.1 | 200.1 | 1.000× | 0.29 | 0.29 |
 | Mixed | 12,530.8 | 12,703.9 | 0.986× | 5.01 | 4.95 |
 
-**Rule setup + firewall enable** — mean wall-clock time across three repeats;
-this is configuration/apply time, not packet-processing latency.
+**Rule setup + firewall enable** — one bfw bar and one UFW bar per rule count.
+Bar length is logarithmic, so UFW's much longer setup stays readable next to
+bfw's; this is configuration/apply time, not packet-processing latency.
 
 ![bfw and UFW time to add rules and enable the firewall](docs/firewall-setup-time.svg)
 
