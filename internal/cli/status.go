@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/tmih06/better-firewall/internal/rule"
 	"github.com/tmih06/better-firewall/internal/store"
@@ -61,15 +62,20 @@ func portStr(ports []rule.PortRange) string {
 	if len(ports) == 0 {
 		return "any"
 	}
-	parts := make([]string, len(ports))
+	var b strings.Builder
+	b.Grow(len(ports) * 12)
 	for i, p := range ports {
-		s := strconv.Itoa(int(p.Lo))
-		if p.Hi != p.Lo {
-			s += ":" + strconv.Itoa(int(p.Hi))
+		if i != 0 {
+			b.WriteByte(',')
 		}
-		parts[i] = s
+		var digits [5]byte
+		b.Write(strconv.AppendUint(digits[:0], uint64(p.Lo), 10))
+		if p.Hi != p.Lo {
+			b.WriteByte(':')
+			b.Write(strconv.AppendUint(digits[:0], uint64(p.Hi), 10))
+		}
 	}
-	return strings.Join(parts, ",")
+	return b.String()
 }
 
 // portsEqual compares port lists the way ufw does: by rendered string,
@@ -359,7 +365,61 @@ func RuleLine(r *rule.Rule, verbose, numbered bool) (to, action, from, attribs s
 
 // statusLine formats one table row with ufw's exact column widths.
 func statusLine(to, action, from, attribs, suffix string) string {
-	return fmt.Sprintf("%-26s %-12s%-26s%s%s", to, action, from, attribs, suffix)
+	return formatStatusLine(0, false, to, action, from, attribs, suffix)
+}
+
+func numberedStatusLine(number int, to, action, from, attribs, suffix string) string {
+	return formatStatusLine(number, true, to, action, from, attribs, suffix)
+}
+
+func formatStatusLine(number int, numbered bool, to, action, from, attribs, suffix string) string {
+	digits, divisor := 0, 1
+	if numbered {
+		digits = 1
+		for n := number; n >= 10; n /= 10 {
+			digits++
+			divisor *= 10
+		}
+	}
+	var b strings.Builder
+	// The three columns occupy 26 + 1 + 12 + 26 bytes when their values fit
+	// the ufw widths. Reserve that fixed part plus the variable suffix; long
+	// or multibyte values are allowed to grow naturally below.
+	reserve := 65 + len(attribs) + len(suffix)
+	if numbered {
+		if digits < 2 {
+			digits = 2
+		}
+		reserve += digits + 3 // brackets and trailing space.
+	}
+	b.Grow(reserve)
+	if numbered {
+		b.WriteByte('[')
+		if number < 10 {
+			b.WriteByte(' ')
+		}
+		for divisor > 0 {
+			b.WriteByte(byte('0' + number/divisor%10))
+			divisor /= 10
+		}
+		b.WriteString("] ")
+	}
+	writeStatusField(&b, to, 26)
+	b.WriteByte(' ')
+	writeStatusField(&b, action, 12)
+	writeStatusField(&b, from, 26)
+	b.WriteString(attribs)
+	b.WriteString(suffix)
+	return b.String()
+}
+
+func writeStatusField(b *strings.Builder, value string, width int) {
+	b.WriteString(value)
+	if padding := width - utf8.RuneCountInString(value); padding > 0 {
+		for i := 0; i < padding; i++ {
+			b.WriteByte(' ')
+		}
+	}
 }
 
 // StatusLines renders the full `status` body (without the leading
@@ -380,40 +440,51 @@ func StatusLines(st *store.State, numbered, verbose bool) []string {
 	var inLines, outLines, rteLines, allLines []string
 	seen := map[string]bool{}
 	count := 1
-	for _, r := range combined(st) {
-		if !verbose && (r.Dapp != "" || r.Sapp != "") {
-			t := r.AppTuple()
-			if seen[t] {
-				continue
+	for family := 0; family < 2; family++ {
+		rules := st.Rules4
+		v6 := false
+		if family == 1 {
+			rules = st.Rules6
+			v6 = true
+		}
+		for i := range rules {
+			rules[i].SetV6(v6)
+			r := &rules[i]
+			if !verbose && (r.Dapp != "" || r.Sapp != "") {
+				t := r.AppTuple()
+				if seen[t] {
+					continue
+				}
+				seen[t] = true
 			}
-			seen[t] = true
-		}
-		to, action, from, attribs := RuleLine(r, verbose, numbered)
-		suffix := ""
-		if r.Comment != "" {
-			suffix = " # " + r.Comment
-		}
-		if r.Disabled {
-			suffix += " (disabled)"
-		}
-		line := ""
-		if numbered {
-			line = fmt.Sprintf("[%2d] ", count)
-		}
-		line += statusLine(to, action, from, attribs, suffix)
-		if numbered {
-			allLines = append(allLines, line)
-		} else {
-			switch {
-			case r.Forward():
-				rteLines = append(rteLines, line)
-			case r.Direction == rule.DirOut:
-				outLines = append(outLines, line)
-			default:
-				inLines = append(inLines, line)
+			to, action, from, attribs := RuleLine(r, verbose, numbered)
+			suffix := ""
+			if r.Comment != "" {
+				suffix = " # " + r.Comment
 			}
+			if r.Disabled {
+				suffix += " (disabled)"
+			}
+			line := ""
+			if numbered {
+				line = numberedStatusLine(count, to, action, from, attribs, suffix)
+			} else {
+				line = statusLine(to, action, from, attribs, suffix)
+			}
+			if numbered {
+				allLines = append(allLines, line)
+			} else {
+				switch {
+				case r.Forward():
+					rteLines = append(rteLines, line)
+				case r.Direction == rule.DirOut:
+					outLines = append(outLines, line)
+				default:
+					inLines = append(inLines, line)
+				}
+			}
+			count++
 		}
-		count++
 	}
 
 	s := strings.Join(inLines, "\n")
