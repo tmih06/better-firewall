@@ -175,10 +175,10 @@ func writeAddrKey(b *strings.Builder, a AddrSpec) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		b.WriteString(strconv.Itoa(int(p.Lo)))
+		writeUint16(b, p.Lo)
 		if p.Hi != p.Lo {
 			b.WriteByte(':')
-			b.WriteString(strconv.Itoa(int(p.Hi)))
+			writeUint16(b, p.Hi)
 		}
 		if p.Proto != "" && p.Proto != "any" {
 			b.WriteByte('/')
@@ -186,6 +186,13 @@ func writeAddrKey(b *strings.Builder, a AddrSpec) {
 		}
 	}
 	b.WriteByte('}')
+}
+
+// writeUint16 formats a port through a stack buffer so builders do not pay
+// strconv.Itoa's heap allocation for ports ≥ 100.
+func writeUint16(b *strings.Builder, port uint16) {
+	var tmp [5]byte
+	b.Write(strconv.AppendUint(tmp[:0], uint64(port), 10))
 }
 
 // MatchCode mirrors ufw UFWRule.match return codes.
@@ -322,10 +329,10 @@ func writePortList(b *strings.Builder, ports []PortRange) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		b.WriteString(strconv.Itoa(int(p.Lo)))
+		writeUint16(b, p.Lo)
 		if p.Hi != p.Lo {
 			b.WriteByte(':')
-			b.WriteString(strconv.Itoa(int(p.Hi)))
+			writeUint16(b, p.Hi)
 		}
 		if p.Proto != "" && p.Proto != "any" {
 			b.WriteByte('/')

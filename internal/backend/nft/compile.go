@@ -16,9 +16,8 @@
 package nft
 
 import (
-	"bytes"
 	"fmt"
-	"net"
+	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
@@ -411,6 +410,7 @@ type compiled struct {
 	chainArenas [][]nftables.Chain
 	chainIndex  map[string]*nftables.Chain
 	sets        []*nftables.Set
+	setArenas   [][]nftables.Set
 	elems       map[*nftables.Set][]nftables.SetElement
 	setIndex    map[uint32]*nftables.Set
 	limitSets   map[string]*nftables.Set
@@ -420,6 +420,8 @@ type compiled struct {
 	exprArenas  []exprArena
 	cmpArenas   [][]expr.Cmp
 	rangeArenas [][]expr.Range
+	dynArenas   [][]expr.Dynset
+	byteArenas  [][]byte
 	natTables   []*nftables.Table
 	setID       uint32
 	threatBans4 *nftables.Set
@@ -521,6 +523,75 @@ func (c *compiled) portRange(from, to []byte) *expr.Range {
 	}
 	arena := &c.rangeArenas[len(c.rangeArenas)-1]
 	*arena = append(*arena, expr.Range{Op: expr.CmpOpEq, Register: 1, FromData: from, ToData: to})
+	return &(*arena)[len(*arena)-1]
+}
+
+// newSet stores limit and anonymous port sets in stable chunks for the same
+// reason addRuleObject chunks rules: sets are retained by pointer for the
+// life of the compiled ruleset.
+func (c *compiled) newSet() *nftables.Set {
+	if len(c.setArenas) == 0 || len(c.setArenas[len(c.setArenas)-1]) == cap(c.setArenas[len(c.setArenas)-1]) {
+		c.setArenas = append(c.setArenas, make([]nftables.Set, 0, 64))
+	}
+	arena := &c.setArenas[len(c.setArenas)-1]
+	*arena = append(*arena, nftables.Set{})
+	return &(*arena)[len(*arena)-1]
+}
+
+// arenaBytes reserves n zeroed bytes in a chunk-owned slice so data retained
+// by compiled objects stays valid without one heap allocation per use.
+func (c *compiled) arenaBytes(n int) []byte {
+	if len(c.byteArenas) == 0 || len(c.byteArenas[len(c.byteArenas)-1])+n > cap(c.byteArenas[len(c.byteArenas)-1]) {
+		c.byteArenas = append(c.byteArenas, make([]byte, 0, 4096))
+	}
+	arena := &c.byteArenas[len(c.byteArenas)-1]
+	off := len(*arena)
+	*arena = append(*arena, make([]byte, n)...)
+	return (*arena)[off : off+n]
+}
+
+// addrBytes copies an address into a chunk-owned byte slice so set-element
+// keys stay valid for the life of the compiled ruleset without one heap
+// allocation per interval bound.
+func (c *compiled) addrBytes(addr netip.Addr, v6 bool) []byte {
+	n := 4
+	if v6 {
+		n = 16
+	}
+	out := c.arenaBytes(n)
+	if v6 {
+		b := addr.As16()
+		copy(out, b[:])
+	} else {
+		b := addr.As4()
+		copy(out, b[:])
+	}
+	return out
+}
+
+// addrEndBytes encodes the end-exclusive bound. An invalid Addr (the range
+// ran past the family maximum) is emitted as all-zeros, the same convention
+// the kernel and nft use for an interval ending at the top of the space.
+func (c *compiled) addrEndBytes(end netip.Addr, v6 bool) []byte {
+	if end.IsValid() {
+		return c.addrBytes(end, v6)
+	}
+	n := 4
+	if v6 {
+		n = 16
+	}
+	return c.arenaBytes(n)
+}
+
+// newDynset stores per-rule dynset expressions in stable chunks. The kernel
+// operation fields differ per rule only in set name/ID, but each limit rule
+// still needs its own object.
+func (c *compiled) newDynset() *expr.Dynset {
+	if len(c.dynArenas) == 0 || len(c.dynArenas[len(c.dynArenas)-1]) == cap(c.dynArenas[len(c.dynArenas)-1]) {
+		c.dynArenas = append(c.dynArenas, make([]expr.Dynset, 0, 256))
+	}
+	arena := &c.dynArenas[len(c.dynArenas)-1]
+	*arena = append(*arena, expr.Dynset{})
 	return &(*arena)[len(*arena)-1]
 }
 
@@ -1029,58 +1100,114 @@ func (c *compiled) compileAddressSet(name4, name6, source string, elements []str
 			v4Cap++
 		}
 	}
-	iv4 := make([][2][]byte, 0, v4Cap) // [start, endExclusive)
-	iv6 := make([][2][]byte, 0, v6Cap)
+	iv4 := make([]addrInterval, 0, v4Cap) // [start, endExclusive)
+	iv6 := make([]addrInterval, 0, v6Cap)
 	for _, element := range elements {
-		_, ipnet, err := net.ParseCIDR(element)
+		addr, bits, err := parseAddrOrPrefix(element)
 		if err != nil {
-			ip := net.ParseIP(element)
-			if ip == nil {
-				return nil, nil, fmt.Errorf("%s: bad element %q", source, element)
-			}
-			bits := 128
-			if ip.To4() != nil {
-				bits = 32
-			}
-			ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)}
+			return nil, nil, fmt.Errorf("%s: bad element %q", source, element)
 		}
-		start := canonIP(ipnet.IP.Mask(ipnet.Mask))
-		end := addOne(canonIP(lastAddr(ipnet)))
-		if len(start) == 16 {
-			iv6 = append(iv6, [2][]byte{start, end})
+		prefix := netip.PrefixFrom(addr, bits).Masked()
+		end := intervalEnd(prefix.Addr(), bits) // invalid Addr = past family max
+		if addr.Is4() {
+			iv4 = append(iv4, addrInterval{prefix.Addr(), end})
 		} else {
-			iv4 = append(iv4, [2][]byte{start, end})
+			iv6 = append(iv6, addrInterval{prefix.Addr(), end})
 		}
 	}
 	// Overlapping intervals make the kernel reject the whole batch
 	// (__nft_rbtree_insert ENOTEMPTY); merge like nft does. Build the final
 	// element slices with their exact size so large ban lists do not repeatedly
 	// grow and copy the map values.
-	setIntervals := func(set *nftables.Set, intervals [][2][]byte) {
-		merged := mergeIntervals(intervals)
+	setIntervals := func(set *nftables.Set, intervals []addrInterval, v6 bool) {
+		merged := mergeAddrIntervals(intervals)
+		if len(merged) == 0 {
+			return
+		}
 		elems := make([]nftables.SetElement, 0, len(merged)*2)
 		for _, interval := range merged {
 			elems = append(elems,
-				nftables.SetElement{Key: interval[0]},
-				nftables.SetElement{Key: interval[1], IntervalEnd: true})
+				nftables.SetElement{Key: c.addrBytes(interval.start, v6)},
+				nftables.SetElement{Key: c.addrEndBytes(interval.end, v6), IntervalEnd: true})
 		}
-		if len(elems) != 0 {
-			c.elems[set] = elems
-		}
+		c.elems[set] = elems
 	}
-	setIntervals(v4, iv4)
-	setIntervals(v6, iv6)
+	setIntervals(v4, iv4, false)
+	setIntervals(v6, iv6, true)
 	return v4, v6, nil
 }
 
-// mergeIntervals sorts and coalesces overlapping/adjacent [start,end)
-// intervals so the kernel accepts them in one batch.
-func mergeIntervals(ivs [][2][]byte) [][2][]byte {
+// addrInterval is a [start, endExclusive) address range. An invalid end Addr
+// means the range runs past the family maximum (the end-exclusive marker is
+// emitted as all-zeros, matching nft's interval convention).
+type addrInterval struct {
+	start netip.Addr
+	end   netip.Addr
+}
+
+// parseAddrOrPrefix accepts a CIDR or bare IP and returns the address and its
+// prefix length in bits. IPv4-mapped IPv6 inputs are unmapped to keep the
+// v4/v6 split consistent with element text. The '/' pre-check avoids
+// ParsePrefix's quoted error string on the common bare-IP path.
+func parseAddrOrPrefix(s string) (netip.Addr, int, error) {
+	if strings.IndexByte(s, '/') >= 0 {
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			return netip.Addr{}, 0, err
+		}
+		addr := p.Addr()
+		bits := p.Bits()
+		if addr.Is4In6() && bits >= 96 {
+			// A 4in6 prefix whose bits cover only the mapped tail is a v4
+			// network: net.ParseCIDR produced a 4-byte result for these.
+			return addr.Unmap(), bits - 96, nil
+		}
+		return addr, bits, nil
+	}
+	addr, err := netip.ParseAddr(s)
+	if err != nil {
+		return netip.Addr{}, 0, err
+	}
+	addr = addr.Unmap()
+	bits := 128
+	if addr.Is4() {
+		bits = 32
+	}
+	return addr, bits, nil
+}
+
+// intervalEnd returns the end-exclusive bound of a prefix: its masked last
+// address plus one. A prefix ending at the family maximum overflows Addr and
+// returns the invalid Addr, which mergeAddrIntervals treats as +∞.
+func intervalEnd(addr netip.Addr, bits int) netip.Addr {
+	n := 16
+	if addr.Is4() {
+		n = 4
+	}
+	var b [16]byte
+	if addr.Is4() {
+		b4 := addr.As4()
+		copy(b[:4], b4[:])
+	} else {
+		b = addr.As16()
+	}
+	for i := bits; i < 8*n; i++ {
+		b[i/8] |= 1 << (7 - uint(i%8))
+	}
+	if addr.Is4() {
+		return netip.AddrFrom4([4]byte(b[:4])).Next()
+	}
+	return netip.AddrFrom16(b).Next()
+}
+
+// mergeAddrIntervals sorts and coalesces overlapping/adjacent
+// [start,endExclusive) intervals so the kernel accepts them in one batch.
+func mergeAddrIntervals(ivs []addrInterval) []addrInterval {
 	if len(ivs) == 0 {
 		return nil
 	}
 	sort.Slice(ivs, func(i, j int) bool {
-		return bytes.Compare(ivs[i][0], ivs[j][0]) < 0
+		return ivs[i].start.Compare(ivs[j].start) < 0
 	})
 	// Compact in the caller-owned interval backing array. The range below
 	// reads each source element before any append can overwrite that same
@@ -1088,14 +1215,15 @@ func mergeIntervals(ivs [][2][]byte) [][2][]byte {
 	out := ivs[:1]
 	for _, iv := range ivs[1:] {
 		last := &out[len(out)-1]
-		// iv.start <= last.end → overlap or adjacency: extend end.
-		if bytes.Compare(iv[0], last[1]) <= 0 {
-			if bytes.Compare(iv[1], last[1]) > 0 {
-				last[1] = iv[1]
-			}
+		// iv.start <= last.end → overlap or adjacency: extend end. An
+		// invalid end is +∞ within the family.
+		if last.end.IsValid() && iv.start.Compare(last.end) > 0 {
+			out = append(out, iv)
 			continue
 		}
-		out = append(out, iv)
+		if !last.end.IsValid() || !iv.end.IsValid() || iv.end.Compare(last.end) > 0 {
+			last.end = iv.end
+		}
 	}
 	return out
 }
@@ -1185,7 +1313,8 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 	// twice would double it in render/diff (the kernel dedups by name).
 	set := c.limitSets[name]
 	if set == nil {
-		set = &nftables.Set{
+		set = c.newSet()
+		*set = nftables.Set{
 			Table:         c.table,
 			Name:          name,
 			ID:            c.newSetID(),
@@ -1223,20 +1352,18 @@ func (c *compiled) compileLimit(r *rule.Rule, proto string, v6 bool, match []exp
 	} else {
 		ex = append(ex, cachedLimitPortImmediate[family])
 	}
-	ex = append(ex,
-		&expr.Dynset{
-			SrcRegKey: sreg,
-			SetName:   set.Name,
-			SetID:     set.ID,
-			Operation: unix.NFT_DYNSET_OP_UPDATE,
-			Timeout:   30 * time.Second,
-			Exprs:     cachedLimitOverExprs,
-		},
-		cachedLimitCounter,
-		cachedLimitJump,
-	)
+	dyn := c.newDynset()
+	*dyn = expr.Dynset{
+		SrcRegKey: sreg,
+		SetName:   set.Name,
+		SetID:     set.ID,
+		Operation: unix.NFT_DYNSET_OP_UPDATE,
+		Timeout:   30 * time.Second,
+		Exprs:     cachedLimitOverExprs,
+	}
+	ex = append(ex, dyn, cachedLimitCounter, cachedLimitJump)
 	c.addRule(userChain, ex...)
-	acceptMatch := append([]expr.Any(nil), match[:baseLen]...)
+	acceptMatch := append(c.exprSlice(baseLen+2), match[:baseLen]...)
 	c.addRule(userChain, append(acceptMatch, cachedLimitCounter, cachedLimitAcceptJump)...)
 	return nil
 }
@@ -1395,7 +1522,8 @@ func (c *compiled) appendPortExprs(dst []expr.Any, ports []rule.PortRange, which
 			interval = true
 		}
 	}
-	set := &nftables.Set{
+	set := c.newSet()
+	*set = nftables.Set{
 		Table: c.table, Anonymous: true, Constant: true,
 		ID:      c.newSetID(),
 		KeyType: nftables.TypeInetService, Interval: interval,
@@ -1482,15 +1610,16 @@ func (c *compiled) compileNAT(st *store.State) error {
 			c.addRuleObject(t, post[t], ex)
 		case "dnat":
 			host, portStr := splitToDest(nr.ToDest)
-			ip := net.ParseIP(host)
-			if ip == nil {
+			ip, err := netip.ParseAddr(host)
+			if err != nil || ip.Zone() != "" {
 				return fmt.Errorf("nat rule %d: bad to-destination %q", i, nr.ToDest)
 			}
-			if (ip.To4() == nil) != v6 {
+			ip = ip.Unmap()
+			if ip.Is4() == v6 {
 				return fmt.Errorf("nat rule %d: to-destination family mismatch", i)
 			}
 			nat := &expr.NAT{Type: expr.NATTypeDestNAT, Family: natFamily(v6), RegAddrMin: unix.NFT_REG_1}
-			ex = append(ex, &expr.Immediate{Register: unix.NFT_REG_1, Data: canonIP(ip)})
+			ex = append(ex, &expr.Immediate{Register: unix.NFT_REG_1, Data: c.addrBytes(ip, v6)})
 			if portStr != "" {
 				p, err := strconv.ParseUint(portStr, 10, 16)
 				if err != nil {
@@ -1698,31 +1827,9 @@ func (c *compiled) appendAddrMatch(dst []expr.Any, which, cidr string, v6 bool) 
 }
 
 func appendAddrMatchTo(dst []expr.Any, which, cidr string, v6 bool, c *compiled) []expr.Any {
-	_, ipnet, err := net.ParseCIDR(cidr)
-	if err != nil {
-		ip := net.ParseIP(cidr)
-		if ip == nil {
-			// Fail closed: two contradictory cmps on reg 1 can never both
-			// hold, so the rule matches nothing rather than everything.
-			if c != nil {
-				cmp := c.cmpEq([]byte{0})
-				return append(dst, cmp, c.cmpEq([]byte{1}))
-			}
-			return append(dst,
-				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0}},
-				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{1}},
-			)
-		}
-		bits := 128
-		if ip.To4() != nil {
-			bits = 32
-		}
-		ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)}
-	}
-	addr := canonIP(ipnet.IP.Mask(ipnet.Mask))
-	// Family mismatch (v4 addr in a v6 rule or vice versa) would emit a
-	// wrong-length payload load — fail closed instead of a garbage match.
-	if (len(addr) == 16) != v6 {
+	failClosed := func() []expr.Any {
+		// Two contradictory cmps on reg 1 can never both hold, so the rule
+		// matches nothing rather than everything.
 		if c != nil {
 			cmp := c.cmpEq([]byte{0})
 			return append(dst, cmp, c.cmpEq([]byte{1}))
@@ -1732,8 +1839,21 @@ func appendAddrMatchTo(dst []expr.Any, which, cidr string, v6 bool, c *compiled)
 			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{1}},
 		)
 	}
+	addr, bits, err := parseAddrOrPrefix(cidr)
+	if err != nil || addr.Zone() != "" {
+		// Unparseable input: callers validate upstream, but fail closed.
+		return failClosed()
+	}
+	addr = netip.PrefixFrom(addr, bits).Masked().Addr()
+	// Family mismatch (v4 addr in a v6 rule or vice versa) would emit a
+	// wrong-length payload load — fail closed instead of a garbage match.
+	if addr.Is4() == v6 {
+		return failClosed()
+	}
+	n := 4
 	family := 0
 	if v6 {
+		n = 16
 		family = 1
 	}
 	endpoint := 0
@@ -1741,63 +1861,75 @@ func appendAddrMatchTo(dst []expr.Any, which, cidr string, v6 bool, c *compiled)
 		endpoint = 1
 	}
 	load := cachedAddrPayload[family][endpoint]
-	ones, bits := ipnet.Mask.Size()
-	if ones == bits {
-		if c != nil {
-			return append(dst, load, c.cmpEq(addr))
-		}
-		return append(dst, load, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: addr})
-	}
-	var cmp expr.Any = &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: addr}
+	var data []byte
 	if c != nil {
-		cmp = c.cmpEq(addr)
+		data = c.addrBytes(addr, v6)
+	} else if v6 {
+		b := addr.As16()
+		data = b[:]
+	} else {
+		b := addr.As4()
+		data = b[:]
+	}
+	if bits == 8*n {
+		// Host route: payload + cmp only.
+		if c != nil {
+			return append(dst, load, c.cmpEq(data))
+		}
+		return append(dst, load, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: data})
+	}
+	mask := cidrMaskBytes(c, bits, n)
+	xor := zeroBytes(c, n)
+	var cmp expr.Any = &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: data}
+	if c != nil {
+		cmp = c.cmpEq(data)
 	}
 	return append(dst,
 		load,
 		&expr.Bitwise{
-			SourceRegister: 1, DestRegister: 1, Len: uint32(len(addr)),
-			Mask: []byte(ipnet.Mask), Xor: make([]byte, len(addr)),
+			SourceRegister: 1, DestRegister: 1, Len: uint32(n),
+			Mask: mask, Xor: xor,
 		},
 		cmp,
 	)
 }
 
-func canonIP(ip net.IP) []byte {
-	if v4 := ip.To4(); v4 != nil {
-		return v4
+// cidrMaskBytes returns the n-byte big-endian mask for a prefix of ones bits.
+func cidrMaskBytes(c *compiled, ones, n int) []byte {
+	if c != nil {
+		mask := c.arenaBytes(n)
+		for i := range n {
+			switch {
+			case 8*i+8 <= ones:
+				mask[i] = 0xff
+			case 8*i >= ones:
+				mask[i] = 0
+			default:
+				mask[i] = 0xff << (8 - uint(ones%8))
+			}
+		}
+		return mask
 	}
-	return ip.To16()
-}
-
-func lastAddr(ipnet *net.IPNet) net.IP {
-	ip := canonIP(ipnet.IP.Mask(ipnet.Mask))
-	mask := ipnet.Mask
-	// canonIP may shrink a v4-mapped-v6 IP to 4 bytes while the mask stays
-	// 16; take the mask's last len(ip) bytes so lengths always match.
-	if len(mask) != len(ip) {
-		if len(mask) > len(ip) {
-			mask = mask[len(mask)-len(ip):]
-		} else {
-			mask = canonIP(net.IP(mask))
+	mask := make([]byte, n)
+	for i := range n {
+		switch {
+		case 8*i+8 <= ones:
+			mask[i] = 0xff
+		case 8*i >= ones:
+			mask[i] = 0
+		default:
+			mask[i] = 0xff << (8 - uint(ones%8))
 		}
 	}
-	out := make(net.IP, len(ip))
-	for i := range ip {
-		out[i] = ip[i] | ^mask[i]
-	}
-	return out
+	return mask
 }
 
-func addOne(ip net.IP) net.IP {
-	out := make(net.IP, len(ip))
-	copy(out, ip)
-	for i := len(out) - 1; i >= 0; i-- {
-		out[i]++
-		if out[i] != 0 {
-			break
-		}
+// zeroBytes returns n zero bytes, arena-backed when c is present.
+func zeroBytes(c *compiled, n int) []byte {
+	if c == nil {
+		return make([]byte, n)
 	}
-	return out
+	return c.arenaBytes(n)
 }
 
 // portIntervalElems encodes [lo,hi] as an interval-set element pair
@@ -1949,7 +2081,7 @@ func natRuleV6(nr *store.NATRule) bool {
 		if s == "" || s == "any" {
 			continue
 		}
-		if ip := natHostIP(s); ip != nil && ip.To4() == nil {
+		if ip := natHostIP(s); ip.IsValid() && !ip.Is4() {
 			return true
 		}
 	}
@@ -1957,24 +2089,31 @@ func natRuleV6(nr *store.NATRule) bool {
 }
 
 // natHostIP extracts the IP from a NAT field that may be a bare IP, a CIDR,
-// a v4 host:port, or a [v6]:port. Returns nil when unparseable.
-func natHostIP(s string) net.IP {
-	if ip, _, err := net.ParseCIDR(s); err == nil {
-		return ip
+// a v4 host:port, or a [v6]:port. Returns the invalid Addr when unparseable.
+func natHostIP(s string) netip.Addr {
+	if strings.IndexByte(s, '/') >= 0 {
+		if p, err := netip.ParsePrefix(s); err == nil {
+			return p.Addr().Unmap()
+		}
 	}
-	if ip := net.ParseIP(s); ip != nil {
-		return ip // bare v4 or v6
+	if ip, err := netip.ParseAddr(s); err == nil {
+		return ip.Unmap() // bare v4 or v6
 	}
 	// host:port — strip a bracketed v6 host or split on the last colon.
 	if strings.HasPrefix(s, "[") {
 		if h, _, ok := strings.Cut(s[1:], "]"); ok {
-			return net.ParseIP(h)
+			if ip, err := netip.ParseAddr(h); err == nil {
+				return ip.Unmap()
+			}
+			return netip.Addr{}
 		}
 	}
 	if i := strings.LastIndex(s, ":"); i > 0 {
-		return net.ParseIP(s[:i])
+		if ip, err := netip.ParseAddr(s[:i]); err == nil {
+			return ip.Unmap()
+		}
 	}
-	return nil
+	return netip.Addr{}
 }
 
 func natFamily(v6 bool) uint32 {

@@ -353,12 +353,14 @@ type pend struct {
 	imm  []byte // non-nil for Immediate loads (raw value)
 }
 
-// renderRegs mirrors nftables' four data registers without allocating a map
-// for every rule. The overflow map is created only for malformed or future
-// expressions using an ID outside the kernel's four data registers, preserving
-// the renderer's previous behavior for those inputs.
+// renderRegs mirrors nftables' data registers without allocating a map for
+// every rule. The array covers both the verdict/128-bit registers
+// (NFT_REG_1..NFT_REG_MAX) and the reg32 aliases (NFT_REG32_00..NFT_REG32_15,
+// IDs 8-23) that limit dynsets use for their saddr/dport keys. The overflow
+// map is created only for malformed or future expressions using an ID outside
+// that span, preserving the renderer's previous behavior for those inputs.
 type renderRegs struct {
-	values [int(unix.NFT_REG_MAX) + 1]pend
+	values [int(unix.NFT_REG32_15) + 1]pend
 	extra  map[uint32]pend
 }
 

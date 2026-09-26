@@ -1,0 +1,15 @@
+{
+  "jails": [
+    {
+      "name": "ssh",
+      "identifiers": ["sshd"],
+      "patterns": [
+        "(?i)failed password for (?:invalid user )?\\S+ from (?P<ip>[a-f0-9:.]+) port [0-9]+"
+      ],
+      "max_retries": 5,
+      "find_time": "10m",
+      "ban_time": "1h",
+      "ignore_ips": ["127.0.0.0/8", "::1/128"]
+    }
+  ]
+}
