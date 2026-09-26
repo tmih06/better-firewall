@@ -102,18 +102,29 @@ Set `"jails": []` if you want CrowdSec only. Only IP and range bans are enforced
 ## Benchmark evidence
 
 Measured with `make benchmark-protect` on **Linux arm64, Go 1.27.0**. This is
-one sample; results vary by machine. It measures only the listed protection
-paths—not packet throughput or a protection-disabled baseline.
+one sample; times vary by machine. Every graph uses a logarithmic axis so the
+small and large workloads remain visible. These microbenchmarks do not measure
+firewall packet throughput or a protection-disabled baseline.
 
-![Protection microbenchmark charts: journal detection 1.762 microseconds, CrowdSec decoding 142.504 microseconds per 100-decision response, nft set compilation 0.248 to 11.594 milliseconds for 100 to 10,000 bans](docs/protection-benchmarks.svg)
+**Latency per operation**
 
-| Path | Work per operation | Time | Memory | Allocations |
-|---|---:|---:|---:|---:|
-| Journal failure detector | 1 failed-login event | 1.762 µs | 122 B | 2 |
-| CrowdSec JSON decode | 100 decisions | 142.504 µs | 26,086 B | 119 |
-| nft ban-set compile | 100 bans | 248.035 µs | 204,372 B | 2,470 |
-| nft ban-set compile | 1,000 bans | 1.225 ms | 1,138,717 B | 6,980 |
-| nft ban-set compile | 10,000 bans | 11.594 ms | 17,119,167 B | 52,005 |
+![Latency for journal detection, CrowdSec decoding, and nft set compilation at 100, 1,000, and 10,000 bans](docs/protection-benchmark-latency.svg)
+
+**Memory allocated per operation**
+
+![Bytes allocated by each of the five protection benchmark cases](docs/protection-benchmark-memory.svg)
+
+**Allocations per operation**
+
+![Go allocations by each of the five protection benchmark cases](docs/protection-benchmark-allocations.svg)
+
+| Path | Work per operation | Time | B/op | Allocs/op | Throughput |
+|---|---:|---:|---:|---:|---:|
+| Journal failure detector | 1 failed-login event | 1.810 µs | 122 | 2 | — |
+| CrowdSec JSON decode | 100 decisions | 140.668 µs | 26,086 | 119 | 87.48 MB/s |
+| nft ban-set compile | 100 bans | 218.293 µs | 204,371 | 2,470 | — |
+| nft ban-set compile | 1,000 bans | 0.995 ms | 1,138,720 | 6,980 | — |
+| nft ban-set compile | 10,000 bans | 14.535 ms | 17,119,184 | 52,005 | — |
 
 The separate CI `performance` job compares firewall traffic with UFW using isolated containers; its results are not mixed with these protection microbenchmarks.
 
