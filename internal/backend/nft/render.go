@@ -98,7 +98,9 @@ func renderSet(b *strings.Builder, c *compiled, s *nftables.Set) {
 		fmt.Fprintf(b, "\t\ttimeout %s\n", renderDuration(s.Timeout))
 	}
 	if elems := c.elems[s]; len(elems) > 0 {
-		fmt.Fprintf(b, "\t\telements = { %s }\n", renderElements(s, elems))
+		b.WriteString("\t\telements = { ")
+		writeElements(b, s, elems)
+		b.WriteString(" }\n")
 	}
 	b.WriteString("\t}\n")
 }
@@ -124,7 +126,9 @@ func renderChain(b *strings.Builder, c *compiled, ch *nftables.Chain) {
 	}
 	for _, r := range c.rules {
 		if r.Chain == ch {
-			fmt.Fprintf(b, "\t\t%s\n", renderRule(c, r))
+			b.WriteString("\t\t")
+			renderRule(b, c, r)
+			b.WriteByte('\n')
 		}
 	}
 	b.WriteString("\t}\n")
@@ -161,43 +165,53 @@ func renderSetType(t nftables.SetDatatype) string {
 
 func renderDuration(d interface{ String() string }) string { return d.String() }
 
-// renderElements formats set elements; interval sets are stored as
+// writeElements formats set elements; interval sets are stored as
 // (start, end-exclusive IntervalEnd) pairs.
-func renderElements(s *nftables.Set, elems []nftables.SetElement) string {
-	var parts []string
+func writeElements(b *strings.Builder, s *nftables.Set, elems []nftables.SetElement) {
+	first := true
 	for i := 0; i < len(elems); i++ {
 		e := elems[i]
+		if !first {
+			b.WriteString(", ")
+		}
+		first = false
 		if i+1 < len(elems) && elems[i+1].IntervalEnd {
-			parts = append(parts, renderRangeElem(s, e.Key, elems[i+1].Key))
+			writeRangeElem(b, s, e.Key, elems[i+1].Key)
 			i++
 			continue
 		}
-		parts = append(parts, renderKey(s, e.Key))
+		writeKey(b, s, e.Key)
 	}
-	return strings.Join(parts, ", ")
 }
 
-func renderKey(s *nftables.Set, key []byte) string {
+func writeKey(b *strings.Builder, s *nftables.Set, key []byte) {
 	switch s.KeyType {
 	case nftables.TypeIPAddr, nftables.TypeIP6Addr:
-		return net.IP(key).String()
+		b.WriteString(net.IP(key).String())
 	case nftables.TypeInetService:
 		if len(key) == 2 {
-			return strconv.Itoa(int(binaryutil.BigEndian.Uint16(key)))
+			writeUint(b, uint64(binaryutil.BigEndian.Uint16(key)))
+			return
 		}
 	}
-	return fmt.Sprintf("0x%x", key)
+	fmt.Fprintf(b, "0x%x", key)
 }
 
-// renderRangeElem renders start..endExclusive as CIDR when the span is a
+// writeRangeElem renders start..endExclusive as CIDR when the span is a
 // power-of-two prefix, else as a range.
-func renderRangeElem(s *nftables.Set, start, endEx []byte) string {
+func writeRangeElem(b *strings.Builder, s *nftables.Set, start, endEx []byte) {
 	if s.KeyType == nftables.TypeIPAddr || s.KeyType == nftables.TypeIP6Addr {
 		if ones, ok := prefixLen(start, endEx); ok {
-			return fmt.Sprintf("%s/%d", net.IP(start).String(), ones)
+			b.WriteString(net.IP(start).String())
+			b.WriteByte('/')
+			writeUint(b, uint64(ones))
+			return
 		}
 		end := decIP(endEx)
-		return fmt.Sprintf("%s-%s", net.IP(start).String(), net.IP(end).String())
+		b.WriteString(net.IP(start).String())
+		b.WriteByte('-')
+		b.WriteString(net.IP(end).String())
+		return
 	}
 	if s.KeyType == nftables.TypeInetService && len(start) == 2 && len(endEx) == 2 {
 		lo := binaryutil.BigEndian.Uint16(start)
@@ -209,11 +223,15 @@ func renderRangeElem(s *nftables.Set, start, endEx []byte) string {
 			hi = uint32(binaryutil.BigEndian.Uint16(endEx)) - 1
 		}
 		if uint32(lo) == hi {
-			return strconv.Itoa(int(lo))
+			writeUint(b, uint64(lo))
+			return
 		}
-		return fmt.Sprintf("%d-%d", lo, hi)
+		writeUint(b, uint64(lo))
+		b.WriteByte('-')
+		writeUint(b, uint64(hi))
+		return
 	}
-	return fmt.Sprintf("0x%x-0x%x", start, endEx)
+	fmt.Fprintf(b, "0x%x-0x%x", start, endEx)
 }
 
 // prefixLen reports the CIDR length when [start, endEx) is exactly one
@@ -318,12 +336,8 @@ func (r *renderRegs) get(register uint32) pend {
 	return pend{}
 }
 
-func renderRule(c *compiled, r *nftables.Rule) string {
+func renderRule(out *strings.Builder, c *compiled, r *nftables.Rule) {
 	var regs renderRegs
-	var out strings.Builder
-	// Rule text is small and roughly proportional to its expression count;
-	// reserve one buffer so repeated token writes do not repeatedly grow it.
-	out.Grow(len(r.Exprs) * 16)
 	first := true
 	lastL4 := byte(0)
 	addToken := func(token string) {
@@ -348,15 +362,20 @@ func renderRule(c *compiled, r *nftables.Rule) string {
 			regs.set(x.Register, pend{text: "imm", imm: x.Data})
 		case *expr.Cmp:
 			p := regs.get(x.Register)
-			addToken(renderCmp(p, x))
+			tokenPrefix(out, &first)
+			writeCmp(out, p, x)
 		case *expr.Range:
 			p := regs.get(x.Register)
-			addToken(fmt.Sprintf("%s %d-%d", p.text,
-				binaryutil.BigEndian.Uint16(x.FromData),
-				binaryutil.BigEndian.Uint16(x.ToData)))
+			tokenPrefix(out, &first)
+			out.WriteString(p.text)
+			out.WriteByte(' ')
+			writeUint(out, uint64(binaryutil.BigEndian.Uint16(x.FromData)))
+			out.WriteByte('-')
+			writeUint(out, uint64(binaryutil.BigEndian.Uint16(x.ToData)))
 		case *expr.Lookup:
 			p := regs.get(x.SourceRegister)
-			addToken(renderLookup(c, p, x))
+			tokenPrefix(out, &first)
+			writeLookup(out, c, p, x)
 		case *expr.Ct:
 			regs.set(x.Register, pend{text: "ct state"})
 		case *expr.Fib:
@@ -391,7 +410,6 @@ func renderRule(c *compiled, r *nftables.Rule) string {
 			}
 		}
 	}
-	return out.String()
 }
 
 func metaText(k expr.MetaKey) string {
@@ -439,16 +457,12 @@ func payloadText(p *expr.Payload, lastL4 byte) string {
 		return fmt.Sprintf("@nh,%d,%d", p.Offset*8, p.Len*8)
 	}
 	if p.Base == expr.PayloadBaseTransportHeader {
-		proto := l4Name(lastL4)
-		if proto == "" {
-			proto = "@th"
-		}
 		if p.Len == 2 {
 			switch p.Offset {
 			case 0:
-				return proto + " sport"
+				return l4PortName(lastL4, "sport")
 			case 2:
-				return proto + " dport"
+				return l4PortName(lastL4, "dport")
 			}
 		}
 		if p.Len == 1 && p.Offset == 0 {
@@ -462,6 +476,26 @@ func payloadText(p *expr.Payload, lastL4 byte) string {
 		return fmt.Sprintf("@th,%d,%d", p.Offset*8, p.Len*8)
 	}
 	return fmt.Sprintf("@%d,%d,%d", p.Base, p.Offset*8, p.Len*8)
+}
+
+func l4PortName(proto byte, port string) string {
+	switch proto {
+	case unix.IPPROTO_TCP:
+		if port == "sport" {
+			return "tcp sport"
+		}
+		return "tcp dport"
+	case unix.IPPROTO_UDP:
+		if port == "sport" {
+			return "udp sport"
+		}
+		return "udp dport"
+	default:
+		if name := l4Name(proto); name != "" {
+			return name + " " + port
+		}
+		return "@th " + port
+	}
 }
 
 func l4Name(num byte) string {
@@ -491,7 +525,14 @@ func l4Name(num byte) string {
 	}
 }
 
-func renderCmp(p pend, x *expr.Cmp) string {
+func tokenPrefix(out *strings.Builder, first *bool) {
+	if !*first {
+		out.WriteByte(' ')
+	}
+	*first = false
+}
+
+func writeCmp(out *strings.Builder, p pend, x *expr.Cmp) {
 	op := " "
 	if x.Op == expr.CmpOpNeq {
 		op = " != "
@@ -500,7 +541,9 @@ func renderCmp(p pend, x *expr.Cmp) string {
 			op = " "
 		}
 	}
-	return p.text + op + cmpValue(p, x.Data)
+	out.WriteString(p.text)
+	out.WriteString(op)
+	writeCmpValue(out, p, x.Data)
 }
 
 func isZero(b []byte) bool {
@@ -512,73 +555,99 @@ func isZero(b []byte) bool {
 	return true
 }
 
-func cmpValue(p pend, data []byte) string {
+func writeCmpValue(out *strings.Builder, p pend, data []byte) {
 	switch p.text {
 	case "meta nfproto":
 		if len(data) == 1 && data[0] == unix.NFPROTO_IPV4 {
-			return "ipv4"
+			out.WriteString("ipv4")
+			return
 		}
 		if len(data) == 1 && data[0] == unix.NFPROTO_IPV6 {
-			return "ipv6"
+			out.WriteString("ipv6")
+			return
 		}
 	case "meta l4proto":
 		if len(data) == 1 {
 			if n := l4Name(data[0]); n != "" {
-				return n
+				out.WriteString(n)
+				return
 			}
-			return strconv.Itoa(int(data[0]))
+			writeUint(out, uint64(data[0]))
+			return
 		}
 	case "iifname", "oifname":
-		return strconv.Quote(strings.TrimRight(string(data), "\x00"))
+		var quoted [64]byte
+		out.Write(strconv.AppendQuote(quoted[:0], strings.TrimRight(string(data), "\x00")))
+		return
 	case "ct state":
 		// ct state matches encode as bitwise mask + cmp neq 0; the state
 		// bits live in the mask, not the cmp data. Host-order register →
 		// native-endian decode.
 		if len(p.mask) == 4 {
-			return ctStateName(binaryutil.NativeEndian.Uint32(p.mask))
+			writeCtStateName(out, binaryutil.NativeEndian.Uint32(p.mask))
+			return
 		}
 		if len(data) == 4 {
-			return ctStateName(binaryutil.NativeEndian.Uint32(data))
+			writeCtStateName(out, binaryutil.NativeEndian.Uint32(data))
+			return
 		}
 	case "fib daddr type":
 		if len(data) == 4 {
-			return addrTypeName(binaryutil.NativeEndian.Uint32(data))
+			writeAddrTypeName(out, binaryutil.NativeEndian.Uint32(data))
+			return
 		}
 	case "icmp type":
 		if len(data) == 1 {
-			return icmpTypeName(data[0])
+			writeICMPTypeName(out, data[0])
+			return
 		}
 	case "icmpv6 type":
 		if len(data) == 1 {
-			return icmpv6TypeName(data[0])
+			writeICMPv6TypeName(out, data[0])
+			return
 		}
 	case "rt type":
 		if len(data) == 1 {
-			return strconv.Itoa(int(data[0]))
+			writeUint(out, uint64(data[0]))
+			return
 		}
 	case "ip saddr", "ip daddr", "ip6 saddr", "ip6 daddr":
 		if p.mask != nil {
 			if ones, ok := maskPrefix(p.mask); ok {
-				return fmt.Sprintf("%s/%d", net.IP(data).String(), ones)
+				out.WriteString(net.IP(data).String())
+				out.WriteByte('/')
+				writeUint(out, uint64(ones))
+				return
 			}
-			return fmt.Sprintf("%s & %s", net.IP(data).String(), net.IP(p.mask).String())
+			out.WriteString(net.IP(data).String())
+			out.WriteString(" & ")
+			out.WriteString(net.IP(p.mask).String())
+			return
 		}
-		return net.IP(data).String()
+		out.WriteString(net.IP(data).String())
+		return
 	default:
 		if strings.HasSuffix(p.text, "sport") || strings.HasSuffix(p.text, "dport") {
 			if len(data) == 2 {
-				return strconv.Itoa(int(binaryutil.BigEndian.Uint16(data)))
+				writeUint(out, uint64(binaryutil.BigEndian.Uint16(data)))
+				return
 			}
 		}
 		if p.text == "ip6 hoplimit" && len(data) == 1 {
-			return strconv.Itoa(int(data[0]))
+			writeUint(out, uint64(data[0]))
+			return
 		}
 	}
-	return fmt.Sprintf("0x%x", data)
+	fmt.Fprintf(out, "0x%x", data)
 }
 
-func ctStateName(bits uint32) string {
-	var names []string
+func writeUint(out *strings.Builder, n uint64) {
+	var buf [20]byte
+	out.Write(strconv.AppendUint(buf[:0], n, 10))
+}
+
+func writeCtStateName(out *strings.Builder, bits uint32) {
+	first := true
 	for _, s := range []struct {
 		bit  uint32
 		name string
@@ -590,72 +659,75 @@ func ctStateName(bits uint32) string {
 		{expr.CtStateBitUNTRACKED, "untracked"},
 	} {
 		if bits&s.bit != 0 {
-			names = append(names, s.name)
+			if !first {
+				out.WriteByte(',')
+			}
+			out.WriteString(s.name)
+			first = false
 		}
 	}
-	return strings.Join(names, ",")
 }
 
-func addrTypeName(rtn uint32) string {
+func writeAddrTypeName(out *strings.Builder, rtn uint32) {
 	switch rtn {
 	case unix.RTN_LOCAL:
-		return "local"
+		out.WriteString("local")
 	case unix.RTN_BROADCAST:
-		return "broadcast"
+		out.WriteString("broadcast")
 	case unix.RTN_MULTICAST:
-		return "multicast"
+		out.WriteString("multicast")
 	case unix.RTN_ANYCAST:
-		return "anycast"
+		out.WriteString("anycast")
 	default:
-		return strconv.Itoa(int(rtn))
+		writeUint(out, uint64(rtn))
 	}
 }
 
-func icmpTypeName(t byte) string {
+func writeICMPTypeName(out *strings.Builder, t byte) {
 	switch t {
 	case 0:
-		return "echo-reply"
+		out.WriteString("echo-reply")
 	case 3:
-		return "destination-unreachable"
+		out.WriteString("destination-unreachable")
 	case 4:
-		return "source-quench"
+		out.WriteString("source-quench")
 	case 5:
-		return "redirect"
+		out.WriteString("redirect")
 	case 8:
-		return "echo-request"
+		out.WriteString("echo-request")
 	case 11:
-		return "time-exceeded"
+		out.WriteString("time-exceeded")
 	case 12:
-		return "parameter-problem"
+		out.WriteString("parameter-problem")
 	default:
-		return strconv.Itoa(int(t))
+		writeUint(out, uint64(t))
 	}
 }
 
-func icmpv6TypeName(t byte) string {
+func writeICMPv6TypeName(out *strings.Builder, t byte) {
 	switch t {
 	case 1:
-		return "destination-unreachable"
+		out.WriteString("destination-unreachable")
 	case 2:
-		return "packet-too-big"
+		out.WriteString("packet-too-big")
 	case 3:
-		return "time-exceeded"
+		out.WriteString("time-exceeded")
 	case 4:
-		return "parameter-problem"
+		out.WriteString("parameter-problem")
 	case 128:
-		return "echo-request"
+		out.WriteString("echo-request")
 	case 129:
-		return "echo-reply"
+		out.WriteString("echo-reply")
 	case 133:
-		return "router-solicitation"
+		out.WriteString("router-solicitation")
 	case 134:
-		return "router-advertisement"
+		out.WriteString("router-advertisement")
 	case 135:
-		return "neighbour-solicitation"
+		out.WriteString("neighbour-solicitation")
 	case 136:
-		return "neighbour-advertisement"
+		out.WriteString("neighbour-advertisement")
 	default:
-		return strconv.Itoa(int(t))
+		writeUint(out, uint64(t))
 	}
 }
 
@@ -677,19 +749,25 @@ func maskPrefix(mask []byte) (int, bool) {
 	return ones, true
 }
 
-func renderLookup(c *compiled, p pend, x *expr.Lookup) string {
+func writeLookup(out *strings.Builder, c *compiled, p pend, x *expr.Lookup) {
 	name := x.SetName
 	if strings.HasPrefix(name, "__set") {
 		// anonymous set: render elements inline
 		if s := c.setIndex[x.SetID]; s != nil {
-			return fmt.Sprintf("%s { %s }", p.text, renderElements(s, c.elems[s]))
+			out.WriteString(p.text)
+			out.WriteString(" { ")
+			writeElements(out, s, c.elems[s])
+			out.WriteString(" }")
+			return
 		}
 	}
-	inv := ""
+	out.WriteString(p.text)
+	out.WriteByte(' ')
 	if x.Invert {
-		inv = "!= "
+		out.WriteString("!= ")
 	}
-	return fmt.Sprintf("%s %s@%s", p.text, inv, name)
+	out.WriteByte('@')
+	out.WriteString(name)
 }
 
 func fibText(x *expr.Fib) string {
