@@ -145,7 +145,10 @@ object order and output text deterministic.
 mutations. Comparing 1,000 candidates now takes about 58 µs with zero heap
 bytes and zero allocations per operation. `BenchmarkTupleKey1000`, used by
 import/export indexing, takes about 0.25 ms, 116,000 B/op, and 2,000
-allocations/op for the same 1,000-rule workload.
+allocations/op for the same 1,000-rule workload. `BenchmarkAppTuple1000`, used
+by application-profile grouping in status and rule mutation commands, takes
+about 0.082 ms, 64,000 B/op, and 1,000 allocations/op after streaming the
+canonical tuple directly into its result.
 
 ## Firewall comparison and resource usage
 

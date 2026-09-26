@@ -34,7 +34,7 @@ test:
 	go test ./...
 
 benchmark-protect:
-	go test ./internal/protect ./internal/backend/nft ./internal/rule -run '^$$' -bench 'Benchmark(JournalFailureDetection|CrowdSecDecisionDecode|ThreatBanSetCompile|RulesetCompile|LimitRulesetCompile|RulesetRender|LimitRulesetRender|RuleMatch1000|TupleKey1000)$$' -benchmem
+	go test ./internal/protect ./internal/backend/nft ./internal/rule -run '^$$' -bench 'Benchmark(JournalFailureDetection|CrowdSecDecisionDecode|ThreatBanSetCompile|RulesetCompile|LimitRulesetCompile|RulesetRender|LimitRulesetRender|RuleMatch1000|TupleKey1000|AppTuple1000)$$' -benchmem
 
 # Privileged tests run only on disposable GitHub-hosted CI runners through the
 # fail-closed namespace wrapper. Never run them locally; the wrapper refuses

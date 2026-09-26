@@ -10,7 +10,6 @@ package rule
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"net"
 	"sort"
 	"strconv"
@@ -268,25 +267,38 @@ func (r *Rule) AppTuple() string {
 	dst := canonWild(r.Dst.IP, r.v6)
 	src := canonWild(r.Src.IP, r.v6)
 	dside := r.Dapp
-	if dside == "" {
-		dside = portListStr(r.Dst.Ports)
-	}
 	sside := r.Sapp
-	if sside == "" {
-		sside = portListStr(r.Src.Ports)
+	var b strings.Builder
+	b.Grow(len(dside) + len(dst) + len(sside) + len(src) + 32)
+	if dside != "" {
+		b.WriteString(dside)
+	} else {
+		writePortList(&b, r.Dst.Ports)
 	}
-	tupl := fmt.Sprintf("%s %s %s %s", dside, dst, sside, src)
+	b.WriteByte(' ')
+	b.WriteString(dst)
+	b.WriteByte(' ')
+	if sside != "" {
+		b.WriteString(sside)
+	} else {
+		writePortList(&b, r.Src.Ports)
+	}
+	b.WriteByte(' ')
+	b.WriteString(src)
 	if r.IfaceIn == "" && r.IfaceOut == "" {
-		tupl += " " + r.Direction
+		b.WriteByte(' ')
+		b.WriteString(r.Direction)
 	} else {
 		if r.IfaceIn != "" {
-			tupl += " in_" + r.IfaceIn
+			b.WriteString(" in_")
+			b.WriteString(r.IfaceIn)
 		}
 		if r.IfaceOut != "" {
-			tupl += " out_" + r.IfaceOut
+			b.WriteString(" out_")
+			b.WriteString(r.IfaceOut)
 		}
 	}
-	return tupl
+	return b.String()
 }
 
 // canonWild maps a stored endpoint to the family-canonical wildcard so
@@ -304,14 +316,30 @@ func canonWild(ip string, v6 bool) string {
 // portListStr renders a port list the way ufw's dport/sport strings look
 // ("any", "80", "80,443", "8080:8090").
 func portListStr(ports []PortRange) string {
+	var b strings.Builder
+	writePortList(&b, ports)
+	return b.String()
+}
+
+func writePortList(b *strings.Builder, ports []PortRange) {
 	if len(ports) == 0 {
-		return "any"
+		b.WriteString("any")
+		return
 	}
-	var ps []string
-	for _, p := range ports {
-		ps = append(ps, p.String())
+	for i, p := range ports {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.Itoa(int(p.Lo)))
+		if p.Hi != p.Lo {
+			b.WriteByte(':')
+			b.WriteString(strconv.Itoa(int(p.Hi)))
+		}
+		if p.Proto != "" && p.Proto != "any" {
+			b.WriteByte('/')
+			b.WriteString(p.Proto)
+		}
 	}
-	return strings.Join(ps, ",")
 }
 
 // Normalize canonicalizes addresses and port lists in place, returning true
