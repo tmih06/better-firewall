@@ -310,7 +310,7 @@ jobs:
         run: scripts/perf/run_attack.sh
       - name: Publish attack-lab report
         if: always()
-        run: cat artifacts/attack/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+        run: cat artifacts/attack/attack-summary.md >> "$GITHUB_STEP_SUMMARY" || true
       - name: Upload attack artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

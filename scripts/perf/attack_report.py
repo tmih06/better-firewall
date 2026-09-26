@@ -41,17 +41,20 @@ def load(raw, name):
     except json.JSONDecodeError:
         return None
 
-
 def nmap_stats(path):
+    """Parse one nmap run: open port list, closed/filtered counts, scan time."""
     if not path or not path.exists():
-        return {"open": None, "closed": None, "filtered": None}
+        return {"open_ports": [], "open": None, "closed": None, "filtered": None, "seconds": None}
     text = path.read_text()
-    open_ports = len(re.findall(r"^\d+/tcp\s+open\b", text, re.M))
+    open_ports = sorted({int(m.group(1)) for m in re.finditer(r"^(\d+)/tcp\s+open\b", text, re.M)})
     m = re.search(r"Not shown: (\d+) closed", text)
     closed = int(m.group(1)) if m else 0
     m = re.search(r"Not shown: (\d+) filtered", text)
     filtered = int(m.group(1)) if m else 0
-    return {"open": open_ports, "closed": closed, "filtered": filtered}
+    m = re.search(r"scanned in ([\d.]+) seconds", text)
+    seconds = float(m.group(1)) if m else None
+    return {"open_ports": open_ports, "open": len(open_ports),
+            "closed": closed, "filtered": filtered, "seconds": seconds}
 
 
 def fmt_ms(stats):
@@ -78,6 +81,7 @@ def main():
             "setup": load(raw, f"setup_{e}.json"),
             "reach": load(raw, f"reach_{e}.json"),
             "nmap": nmap_stats(raw / f"nmap_{e}.txt"),
+            "nmap_window": nmap_stats(raw / f"nmap_window_{e}.txt"),
             "calm": load(raw, f"legit_calm_{e}.json"),
             "attacks": {},
         }
@@ -87,6 +91,7 @@ def main():
                 "cpu": load(raw, f"cpu_{a}_{e}.json"),
             }
         engines[e] = entry
+
 
         # Gate: service reachable, denied port closed.
         reach = entry["reach"] or {}
@@ -132,11 +137,15 @@ def main():
 
     def nmap_cell(e):
         n = engines[e]["nmap"]
+        w = engines[e]["nmap_window"]
         if n["open"] is None:
             return "—"
-        return f"{n['open']} open / {n['filtered']} filtered"
+        wide = (f"{n['filtered']} filtered/{n['closed']} closed in {n['seconds']:.0f}s"
+                if n["seconds"] is not None else "?")
+        win = ",".join(map(str, w["open_ports"])) if w["open_ports"] else "none"
+        return f"1–2000: {wide}; open 8070–8110: {win}"
 
-    lines.append(f"| nmap 1–2000 result | {nmap_cell('none')} | {nmap_cell('bfw')} | {nmap_cell('ufw')} |")
+    lines.append(f"| nmap recon | {nmap_cell('none')} | {nmap_cell('bfw')} | {nmap_cell('ufw')} |")
     lines.append("")
 
     lines += [

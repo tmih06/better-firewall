@@ -1,0 +1,224 @@
+{
+  "metadata": {
+    "kernel": "Linux 6.17.0-1022-azure x86_64",
+    "rules": 10,
+    "flood_seconds": 6,
+    "bfw_version": "bfw 0.1.0",
+    "ufw_version": "ufw 0.36.2",
+    "hping3_version": "hping3 version 3.0.0-alpha-2 ($Id: release.h,v 1.4 2004/04/09 23:38:56 antirez Exp $)",
+    "nmap_version": "Nmap version 7.93 ( https://nmap.org )"
+  },
+  "engines": {
+    "none": {
+      "setup": {
+        "engine": "none",
+        "rules": 0,
+        "setup_s": 0
+      },
+      "reach": {
+        "engine": "none",
+        "open_8080": 1,
+        "open_8081": 1
+      },
+      "nmap": {
+        "open": 0,
+        "closed": 2000,
+        "filtered": 0
+      },
+      "calm": {
+        "ok": 48848,
+        "req_fail": 0,
+        "connect_fail": 0,
+        "p50_ms": 0.641,
+        "p95_ms": 0.756,
+        "max_ms": 1.339,
+        "requests": 48848
+      },
+      "attacks": {
+        "synflood_denied": {
+          "legit": {
+            "ok": 87166,
+            "req_fail": 0,
+            "connect_fail": 0,
+            "p50_ms": 0.801,
+            "p95_ms": 1.349,
+            "max_ms": 3.856,
+            "requests": 87166
+          },
+          "cpu": {
+            "server_cpu": 58.05
+          }
+        },
+        "synflood_allowed": {
+          "legit": {
+            "ok": 101598,
+            "req_fail": 0,
+            "connect_fail": 0,
+            "p50_ms": 0.773,
+            "p95_ms": 0.989,
+            "max_ms": 3.662,
+            "requests": 101598
+          },
+          "cpu": {
+            "server_cpu": 56.32
+          }
+        },
+        "connectflood": {
+          "legit": {
+            "ok": 77038,
+            "req_fail": 0,
+            "connect_fail": 0,
+            "p50_ms": 0.661,
+            "p95_ms": 2.289,
+            "max_ms": 8.947,
+            "requests": 77038
+          },
+          "cpu": {
+            "server_cpu": 82.46
+          }
+        }
+      }
+    },
+    "bfw": {
+      "setup": {
+        "engine": "bfw",
+        "rules": 10,
+        "setup_s": 1.791
+      },
+      "reach": {
+        "engine": "bfw",
+        "open_8080": 1,
+        "open_8081": 0
+      },
+      "nmap": {
+        "open": 0,
+        "closed": 0,
+        "filtered": 2000
+      },
+      "calm": {
+        "ok": 44606,
+        "req_fail": 0,
+        "connect_fail": 0,
+        "p50_ms": 0.706,
+        "p95_ms": 0.798,
+        "max_ms": 1.426,
+        "requests": 44606
+      },
+      "attacks": {
+        "synflood_denied": {
+          "legit": {
+            "ok": 85537,
+            "req_fail": 0,
+            "connect_fail": 0,
+            "p50_ms": 0.924,
+            "p95_ms": 1.214,
+            "max_ms": 5.384,
+            "requests": 85537
+          },
+          "cpu": {
+            "server_cpu": 58.1
+          }
+        },
+        "synflood_allowed": {
+          "legit": {
+            "ok": 86547,
+            "req_fail": 0,
+            "connect_fail": 0,
+            "p50_ms": 0.797,
+            "p95_ms": 1.257,
+            "max_ms": 3.25,
+            "requests": 86547
+          },
+          "cpu": {
+            "server_cpu": 62.23
+          }
+        },
+        "connectflood": {
+          "legit": {
+            "ok": 68511,
+            "req_fail": 0,
+            "connect_fail": 0,
+            "p50_ms": 0.783,
+            "p95_ms": 2.416,
+            "max_ms": 7.42,
+            "requests": 68511
+          },
+          "cpu": {
+            "server_cpu": 82.03
+          }
+        }
+      }
+    },
+    "ufw": {
+      "setup": {
+        "engine": "ufw",
+        "rules": 10,
+        "setup_s": 4.008
+      },
+      "reach": {
+        "engine": "ufw",
+        "open_8080": 1,
+        "open_8081": 0
+      },
+      "nmap": {
+        "open": 0,
+        "closed": 0,
+        "filtered": 2000
+      },
+      "calm": {
+        "ok": 43213,
+        "req_fail": 0,
+        "connect_fail": 0,
+        "p50_ms": 0.72,
+        "p95_ms": 0.833,
+        "max_ms": 1.4,
+        "requests": 43213
+      },
+      "attacks": {
+        "synflood_denied": {
+          "legit": {
+            "ok": 84677,
+            "req_fail": 0,
+            "connect_fail": 0,
+            "p50_ms": 0.831,
+            "p95_ms": 1.314,
+            "max_ms": 3.275,
+            "requests": 84677
+          },
+          "cpu": {
+            "server_cpu": 63.14
+          }
+        },
+        "synflood_allowed": {
+          "legit": {
+            "ok": 94633,
+            "req_fail": 0,
+            "connect_fail": 0,
+            "p50_ms": 0.776,
+            "p95_ms": 1.212,
+            "max_ms": 2.51,
+            "requests": 94633
+          },
+          "cpu": {
+            "server_cpu": 60.5
+          }
+        },
+        "connectflood": {
+          "legit": {
+            "ok": 69642,
+            "req_fail": 0,
+            "connect_fail": 0,
+            "p50_ms": 0.801,
+            "p95_ms": 2.361,
+            "max_ms": 6.489,
+            "requests": 69642
+          },
+          "cpu": {
+            "server_cpu": 81.43
+          }
+        }
+      }
+    }
+  },
+  "gates_failed": []
+}

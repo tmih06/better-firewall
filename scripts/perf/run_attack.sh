@@ -137,7 +137,6 @@ META="$RAW_DIR/metadata.json"
 for ENGINE in none bfw ufw; do
     echo "[attack] === engine: $ENGINE (${RULES} rules) ==="
     reset_firewalls
-
     if [ "$ENGINE" != none ]; then
         T0=$(date +%s.%N)
         add_rules "$ENGINE"
@@ -155,9 +154,13 @@ for ENGINE in none bfw ufw; do
     echo "{\"engine\":\"$ENGINE\",\"open_${HTTP_PORT}\":${OPEN_OK:-0},\"open_${DENIED_PORT}\":${DENIED_OK:-0}}" \
         > "$RAW_DIR/reach_${ENGINE}.json"
 
-    # Recon: nmap connect scan over ports 1-2000.
+    # Recon: nmap connect scan over ports 1-2000 (drop policy slows it down),
+    # plus a windowed scan covering the real service/denied ports to show
+    # exactly which ports each engine exposes to an attacker.
     ax nmap -Pn -p 1-2000 --max-retries 1 -T4 server \
         > "$RAW_DIR/nmap_${ENGINE}.txt" 2>&1 || true
+    ax nmap -Pn -p 8070-8110 --max-retries 1 -T4 server \
+        > "$RAW_DIR/nmap_window_${ENGINE}.txt" 2>&1 || true
 
     # Calm baseline for this engine's steady-state rule path.
     legit "$CALM_S" > "$RAW_DIR/legit_calm_${ENGINE}.json"
@@ -181,7 +184,6 @@ reset_firewalls
 echo "[attack] Generating comparison report..."
 python3 "$REPO_ROOT/scripts/perf/attack_report.py" \
     --raw-dir "$RAW_DIR" \
-    --output-json "$ARTIFACTS_DIR/summary.json" \
-    --output-md "$ARTIFACTS_DIR/summary.md"
-
+    --output-json "$ARTIFACTS_DIR/attack-summary.json" \
+    --output-md "$ARTIFACTS_DIR/attack-summary.md"
 echo "[attack] Done. Artifacts in $ARTIFACTS_DIR/"

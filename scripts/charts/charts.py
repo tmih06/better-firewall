@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DATA = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent / "testdata"
 SUM = json.load(open(DATA / "summary.json"))
 TXT = (DATA / "protection-benchmarks.txt").read_text()
+ATTACK = json.load(open(DATA / "attack-summary.json")) if (DATA / "attack-summary.json").exists() else None
 
 STYLE = """  <style>
     text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #172554; }
@@ -310,6 +311,71 @@ out = {
     "docs/firewall-setup-time.svg": setup_svg(),
     "docs/firewall-resources.svg": resources_svg(),
 }
+
+def attack_svg():
+    W, H = 1120, 730
+    eng = ATTACK["engines"]
+    meta = ATTACK.get("metadata", {})
+    W, H = 1120, 700
+    ENGINES = [("none", "No firewall", "#64748b"), ("bfw", "bfw", "#0f9d8a"), ("ufw", "UFW", "#3b82f6")]
+    ATTACKS = [
+        ("synflood_denied", "SYN flood → denied port"),
+        ("synflood_allowed", "SYN flood → allowed port"),
+        ("connectflood", "TCP connect flood → allowed port"),
+    ]
+    s = head(W, H, "Attack lab: bfw vs UFW",
+             "Comparison board from the containerized attack-lab CI job. Top panel: nmap recon time over ports 1-2000 and which ports in 8070-8110 answered. Lower panels: legitimate keep-alive HTTP requests completed and their p95 latency while each attack ran against the defended service.",
+             f"Isolated Docker network · {meta.get('rules','?')} allow rules · {meta.get('flood_seconds','?')}s per attack · {meta.get('kernel','')} · single CI run")
+    # Panel 1: recon
+    s += '  <rect class="panel" x="24" y="104" width="1072" height="150" rx="14"/>\n'
+    s += '  <text x="48" y="132" font-size="14" font-weight="650">Recon: nmap scan of ports 1–2000 (lower = attacker sees more, faster)</text>\n'
+    times = {k: (eng[k]["nmap"] or {}).get("seconds") for k, _, _ in ENGINES}
+    tmax = max([t for t in times.values() if t] or [1]) * 1.15
+    x0, x1 = 560, 900
+    for i, (k, label, color) in enumerate(ENGINES):
+        y = 156 + i * 30
+        t = times[k] or 0
+        n = eng[k]["nmap"]
+        w = eng[k].get("nmap_window") or {}
+        win = ",".join(map(str, w.get("open_ports", []))) or "none open"
+        detail = (f"{n['filtered']} filtered" if n.get("filtered") else f"{n.get('closed','?')} closed")
+        s += f'  <text x="48" y="{y+14}" font-size="12" font-weight="650">{label}</text>\n'
+        s += f'  <text x="150" y="{y+14}" font-size="11" class="muted">{detail}; ports 8070–8110: {win}</text>\n'
+        bw = max((x1 - x0) * t / tmax, 1.2)
+        s += f'  <rect x="{x0}" y="{y}" width="{bw:.1f}" height="16" rx="4" fill="{color}"/>\n'
+        tlab = f"{t:.2f} s" if times[k] is not None else "n/a"
+        s += f'  <text x="{x0 + bw + 8:.1f}" y="{y+13}" font-size="11" font-weight="650" fill="{color}">{tlab}</text>\n'
+    # Panels 2-4: legit traffic during each attack
+    for pi, (akey, atitle) in enumerate(ATTACKS):
+        y0 = 284 + pi * 144
+        s += f'  <rect class="panel" x="24" y="{y0}" width="1072" height="128" rx="14"/>\n'
+        s += f'  <text x="48" y="{y0+26}" font-size="14" font-weight="650">{atitle} — legit requests completed</text>\n'
+        oks = {k: (eng[k]["attacks"][akey]["legit"] or {}).get("ok", 0) for k, _, _ in ENGINES}
+        vmax = max(oks.values() or [1]) * 1.18
+        for i, (k, label, color) in enumerate(ENGINES):
+            y = y0 + 42 + i * 28
+            st = eng[k]["attacks"][akey]["legit"] or {}
+            bw = max((x1 - x0) * oks[k] / vmax, 1.2)
+            s += f'  <text x="48" y="{y+14}" font-size="12" font-weight="650">{label}</text>\n'
+            s += f'  <rect x="{x0}" y="{y}" width="{bw:.1f}" height="16" rx="4" fill="{color}"/>\n'
+            p95 = st.get("p95_ms")
+            note = f" · p95 {p95:.2f} ms" if p95 is not None else ""
+            s += f'  <text x="{x0 + bw + 8:.1f}" y="{y+13}" font-size="11" font-weight="650" fill="{color}">{oks[k]:,} ok{note}</text>\n'
+            fails = st.get("req_fail", 0) + st.get("connect_fail", 0)
+            if fails:
+                s += f'  <text x="{x0 + bw + 160:.1f}" y="{y+13}" font-size="10.5" fill="#ef4444">{fails} failed</text>\n'
+    s += '  <rect x="24" y="700" width="12" height="12" rx="3" class="base"/>\n'
+    s += '  <text x="42" y="710" font-size="11">No firewall</text>\n'
+    s += '  <rect x="120" y="700" width="12" height="12" rx="3" class="bfw"/>\n'
+    s += '  <text x="138" y="710" font-size="11">bfw</text>\n'
+    s += '  <rect x="176" y="700" width="12" height="12" rx="3" class="ufw"/>\n'
+    s += '  <text x="194" y="710" font-size="11">UFW</text>\n'
+    s += '  <text x="240" y="710" font-size="10.5" class="muted">Bars: requests completed during the attack window · gates: denied port closed, service reachable, legit p95 &lt; 2 s</text>\n'
+    s += "</svg>\n"
+    return s
+
+if ATTACK:
+    out["docs/attack-lab.svg"] = attack_svg()
 for path, svg in out.items():
     dest = ROOT / path
     dest.write_text(svg)
