@@ -67,7 +67,9 @@ def check_readme_figures(failures):
     """Every performance figure the README states must come from the snapshot."""
     summary = json.load(open(SNAPSHOT / "summary.json"))
     attack = json.load(open(SNAPSHOT / "attack-summary.json"))
-    readme = README.read_text()
+    # The README uses typographic dashes and thousands separators; normalise so a
+    # figure is matched on its digits rather than on the glyph chosen for them.
+    readme = README.read_text().replace("\u2212", "-").replace("\u2013", "-")
     scen = summary["scenarios"]
 
     def stated(claim, ok):
@@ -83,6 +85,36 @@ def check_readme_figures(failures):
     stated("total response checks", f"{sum(v['check_passes'] for v in scen.values()):,}" in readme)
     stated("zero request errors", sum(v["error_count"] for v in scen.values()) == 0)
     stated("zero dropped iterations", sum(v["dropped_iterations"] for v in scen.values()) == 0)
+
+    # The reliability chart plots p95 deviation from the no-firewall container,
+    # so the README's worst-case and "faster than no firewall" claims are derived
+    # from the same arithmetic the chart does.
+    p95_dev = {}
+    for profile in ("keepalive", "churn", "mixed"):
+        for k in (10, 100, 500, 1000):
+            base = scen[f"baseline_{k}_{profile}"]["latency_p95_ms"]
+            for engine in ("bfw", "ufw"):
+                v = scen[f"{engine}_{k}_{profile}"]["latency_p95_ms"]
+                p95_dev[(profile, k, engine)] = (v - base) / base * 100
+    worst = max(abs(v) for v in p95_dev.values())
+    faster = sum(1 for (p, k, e), v in p95_dev.items() if e == "bfw" and v < 0)
+    stated(f"worst p95 deviation {worst:.1f}%", f"{worst:.1f}%" in readme)
+    stated(f"bfw faster than no firewall in {faster} of 12 cells",
+           re.search(rf"{faster} of (?:the )?12 cells", readme) is not None)
+
+    # The README explains why p99 is not charted; that claim is churn p99 swing.
+    churn_p99 = []
+    for k in (10, 100, 500, 1000):
+        base = scen[f"baseline_{k}_churn"]["latency_p99_ms"]
+        churn_p99.append((scen[f"bfw_{k}_churn"]["latency_p99_ms"] - base) / base * 100)
+    stated(f"churn p99 low {min(churn_p99):.1f}%", f"{min(churn_p99):.1f}%" in readme)
+    stated(f"churn p99 high {max(churn_p99):+.1f}%", f"{max(churn_p99):+.1f}%" in readme)
+
+    # The README records the bfw/UFW ratio range that got the old charts dropped.
+    ratios = ([c["throughput_ratio_bfw_vs_ufw"] for c in summary["comparisons"]]
+              + [c["p95_latency_ratio_bfw_vs_ufw"] for c in summary["comparisons"]])
+    stated(f"ratio range min {min(ratios):.3f}", f"{min(ratios):.3f}" in readme)
+    stated(f"ratio range max {max(ratios):.3f}", f"{max(ratios):.3f}" in readme)
 
     for engine in ("none", "bfw", "ufw"):
         nmap = attack["engines"][engine]["nmap"]

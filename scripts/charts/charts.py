@@ -3,8 +3,8 @@
 
 Outputs
 -------
-docs/firewall-setup-time.svg   rule add + enable wall clock, as a speed-up factor
-docs/firewall-reliability.svg correctness counters and absolute tail latency
+docs/firewall-setup-time.svg   rule add + enable wall clock, four small multiples
+docs/firewall-reliability.svg correctness counters and p95 deviation vs no firewall
 docs/attack-lab.svg           real-attack comparison (only when attack data is present)
 docs/benchmarks.md            internal Go microbenchmarks, parsed from the CI bench text
 
@@ -14,8 +14,10 @@ hand-transcribed, so a refreshed artifact cannot leave stale prose behind.
 Chart conventions (kept from the previous generator, see 7739f1c):
   - Bar and dot lengths encode the quantity on a linear axis starting at zero.
   - A bar's length is never a ratio presented as a total, so no log scales.
-  - Where a quantity spans orders of magnitude, the panel is dropped rather than
-    rescaled, and the exact value is printed next to every mark.
+  - Where two quantities are too far apart to share an axis, each gets its own
+    panel with its own axis, rather than one axis that flattens the small one.
+  - Where the finding is an absence of difference, the chart encodes the
+    deviation from a reference rather than two near-identical magnitudes.
 
 Usage: charts.py [artifact-dir]
   Reads <dir>/summary.json, <dir>/protection-benchmarks.txt and, when present,
@@ -24,6 +26,7 @@ Usage: charts.py [artifact-dir]
   freshly downloaded CI artifacts to publish a new run.
 """
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -67,13 +70,25 @@ def head(w, h, title, desc, subtitle):
             f'  <text x="32" y="62" font-size="13" class="muted">{subtitle}</text>\n')
 
 
-def legend(x, y):
-    """Shared engine legend. Returns the x offset just past the last swatch."""
-    for key, label, _, cls in ENGINES:
-        s = f'  <rect x="{x}" y="{y}" width="12" height="12" rx="3" class="{cls}"/>\n'
-        s += f'  <text x="{x + 18}" y="{y + 10}" font-size="12">{label}</text>\n'
-        x += 30 + len(label) * 7
-    return x
+def legend(x, y, entries=None):
+    """Render a colour legend at (x, y).
+
+    Returns (svg, x) where x is the offset just past the last swatch, so callers
+    can place a caption on the same baseline. The SVG must be returned rather than
+    only the cursor: an earlier version built the markup locally and dropped it,
+    which silently rendered every chart with no legend at all.
+
+    entries defaults to the three engines. A chart where one of those colours is
+    the reference rather than a plotted series must pass its own list, or the
+    legend will claim a series that is not drawn.
+    """
+    entries = entries or [(label, cls) for _k, label, _c, cls in ENGINES]
+    s = ""
+    for label, cls in entries:
+        s += f'  <rect x="{x}" y="{y}" width="12" height="12" rx="3" class="{cls}"/>\n'
+        s += f'  <text x="{x + 18}" y="{y + 10}" font-size="11.5">{label}</text>\n'
+        x += 30 + len(label) * 6.6
+    return s, x
 
 
 def esc(text):
@@ -82,76 +97,115 @@ def esc(text):
 
 # ---------------------------------------------------------------- setup time
 
-def setup_svg():
-    """Rule add + enable time, drawn as the speed-up factor.
+# Ladder used to round a panel's own axis up to a readable maximum. Each small
+# multiple picks its own value, so a 1.6 s cell and a 156 s cell both get an axis
+# that fills its panel instead of sharing one that flattens the small ones.
+NICE_LADDER = (1, 1.2, 1.5, 1.6, 2, 2.5, 3, 4, 5, 6, 7, 8, 10)
 
-    Absolute seconds span 0.05 s to 168 s, so a single linear bar axis would
-    flatten every bfw bar into a 1 px sliver. Speed-up is itself the claim being
-    made, it stays within one order of magnitude, and the absolute seconds are
-    printed on every row so the bar never hides them.
+
+def nice_ceil(v):
+    """Smallest value in NICE_LADDER x 10^k that is >= v."""
+    if v <= 0:
+        return 1
+    exp = 0
+    while NICE_LADDER[-1] * (10 ** exp) < v:
+        exp += 1
+    for step in NICE_LADDER:
+        cand = step * (10 ** exp)
+        if cand >= v:
+            return cand
+    return NICE_LADDER[-1] * (10 ** exp)
+
+
+def setup_svg():
+    """Rule add + enable time, drawn as four small multiples.
+
+    The two engines are 0.05 s and 156 s apart at the extreme, so no single
+    linear axis can show both: on a shared 160 s axis the 10-rule bfw bar is
+    11 px wide and the 1,000-rule bfw bar is 24 px. Giving each rule count its
+    own axis, always linear from zero, keeps every bar honest and makes each
+    panel answer its own question -- "at 1,000 rules, UFW took 156 s and bfw took
+    8.7 s". Panels are not compared against each other, and each carries its own
+    axis labels so that is explicit rather than assumed.
     """
-    W, H = 1120, 560
+    W, H = 1120, 540
     tc = {t["cardinality"]: t for t in SUM["timing_comparisons"]}
-    vmax = max(t["total_speedup"] for t in tc.values())
-    vmax = math_ceil_nice(vmax)
-    x0, x1 = 300, 940
+    PW, PH, GX, GY = 524, 152, 20, 20
+    ORIGIN = (24, 100)
+    # LABEL_ROOM is reserved inside every panel so the longest value label
+    # ("156.33 s") stays within the card instead of overhanging its edge.
+    LABEL_ROOM = 78
 
     s = head(W, H, "Rule setup is 8-32x faster than UFW",
-             "Grouped horizontal bar chart. One bar per rule count showing the "
-             "speed-up of bfw over UFW for the combined time to add the rules and "
-             "enable the firewall. Bar length is the speed-up multiple on a linear "
-             "axis from zero. The absolute wall-clock seconds for both firewalls are "
-             "printed beside every bar.",
-             f"Mean of {tc[10]['bfw_repeats']} repeats per engine · {SUM['metadata']['kernel']}")
-    s += '  <rect class="panel" x="24" y="108" width="1072" height="336" rx="14"/>\n'
+             "Four small-multiple bar charts, one per rule count, each with its own "
+             "linear axis starting at zero. Every panel compares the wall-clock "
+             "seconds for bfw and for UFW to add the rules and enable the firewall. "
+             "Panels use independent scales and are not comparable to each other; "
+             "the speed-up multiple is printed in each panel.",
+             f"Mean of {tc[10]['bfw_repeats']} repeats per engine &#183; {SUM['metadata']['kernel']}")
 
-    step = vmax / 4
-    for i in range(5):
-        v = step * i
-        x = x0 + (x1 - x0) * i / 4
-        anchor = "start" if i == 0 else ("end" if i == 4 else "middle")
-        s += f'  <line class="grid" x1="{x:.1f}" y1="140" x2="{x:.1f}" y2="418"/>\n'
-        s += f'  <text x="{x:.1f}" y="{436}" text-anchor="{anchor}" font-size="11" class="muted">{v:g}x</text>\n'
-    s += f'  <line class="axis" x1="{x0}" y1="140" x2="{x0}" y2="418"/>\n'
-
-    for i, k in enumerate(CARDINALITIES):
+    for idx, k in enumerate(CARDINALITIES):
         row = tc[k]
-        y = 160 + i * 68
-        bw = (x1 - x0) * row["total_speedup"] / vmax
-        s += f'  <text x="52" y="{y + 22}" font-size="14" font-weight="650">{k:,} rules</text>\n'
-        s += (f'  <rect class="bfw" x="{x0}" y="{y}" width="{bw:.1f}" height="30" rx="4">'
-              f'<title>{k:,} rules: bfw {row["bfw_total_s"]:.2f} s vs UFW {row["ufw_total_s"]:.2f} s '
-              f'= {row["total_speedup"]:.1f}x</title></rect>\n')
-        s += f'  <text x="{x0 + bw + 10:.1f}" y="{y + 21}" font-size="13" font-weight="700" fill="#0f9d8a">{row["total_speedup"]:.1f}x</text>\n'
-        s += (f'  <text x="{x0}" y="{y + 48}" font-size="11" class="muted">'
-              f'bfw {row["bfw_total_s"]:.2f} s &#183; UFW {row["ufw_total_s"]:.2f} s</text>\n')
+        px = ORIGIN[0] + (idx % 2) * (PW + GX)
+        py = ORIGIN[1] + (idx // 2) * (PH + GY)
+        vmax = nice_ceil(row["ufw_total_s"])
+        x0, x1 = px + 58, px + PW - LABEL_ROOM
 
-    s += '  <text x="620" y="458" text-anchor="middle" font-size="11" class="muted">Speed-up of bfw over UFW (higher is better)</text>\n'
-    s += '  <text x="32" y="490" font-size="11" class="muted">Configuration and apply time only. This is not packet-processing latency.</text>\n'
-    s += '  <text x="32" y="510" font-size="11" class="muted">UFW slows down superlinearly with rule count (one iptables-save per rule); bfw compiles the whole ruleset in a single atomic nftables transaction.</text>\n'
-    s += '  <text x="32" y="530" font-size="11" class="muted">The axis is linear from zero, so bar length is proportional to the multiple shown.</text>\n'
+        s += f'  <rect class="panel" x="{px}" y="{py}" width="{PW}" height="{PH}" rx="12"/>\n'
+        s += f'  <text x="{px + 20}" y="{py + 25}" font-size="14" font-weight="650">{k:,} rules</text>\n'
+        s += (f'  <text x="{px + PW - 20}" y="{py + 25}" text-anchor="end" font-size="13" '
+              f'font-weight="700" fill="#0f9d8a">{row["total_speedup"]:.1f}x faster</text>\n')
+
+        for i in range(3):
+            gx = x0 + (x1 - x0) * i / 2
+            s += f'  <line class="grid" x1="{gx:.1f}" y1="{py + 36}" x2="{gx:.1f}" y2="{py + 108}"/>\n'
+            val = vmax * i / 2
+            s += (f'  <text x="{gx:.1f}" y="{py + 126}" text-anchor="middle" font-size="10.5" '
+                  f'class="muted">{val:g} s</text>\n')
+        s += f'  <line class="axis" x1="{x0}" y1="{py + 36}" x2="{x0}" y2="{py + 108}"/>\n'
+
+        for bi, (engine, cls, color, short) in enumerate(
+                (("bfw", "bfw", "#0f9d8a", "bfw"), ("ufw", "ufw", "#3b82f6", "UFW"))):
+            secs = row[f"{engine}_total_s"]
+            by = py + 40 + bi * 34
+            bw = max((x1 - x0) * secs / vmax, 1.5)
+            s += f'  <text x="{px + 20}" y="{by + 19}" font-size="11" font-weight="650" fill="{color}">{short}</text>\n'
+            s += (f'  <rect class="{cls}" x="{x0}" y="{by}" width="{bw:.1f}" height="27" rx="4">'
+                  f'<title>{short}, {k:,} rules: {secs:.2f} s</title></rect>\n')
+            s += (f'  <text x="{x0 + bw + 8:.1f}" y="{by + 19}" font-size="11.5" font-weight="650" '
+                  f'fill="{color}">{secs:.2f} s</text>\n')
+
+    s += '  <text x="24" y="486" font-size="11" class="muted">Configuration and apply time only, not packet-processing latency. UFW rewrites and reloads the whole ruleset once per rule; bfw compiles the entire ruleset in one atomic nftables transaction.</text>\n'
+    s += '  <text x="24" y="506" font-size="11" class="muted">Each panel has its own linear axis from zero. Do not compare bar lengths across panels; compare the two bars within a panel.</text>\n'
     s += "</svg>\n"
     return s
 
 
-def math_ceil_nice(v):
-    for m in (5, 10, 15, 20, 25, 30, 40, 50):
-        if v <= m:
-            return m
-    return v
-
-
 # ---------------------------------------------------------------- reliability
 
-def reliability_svg():
-    """Correctness counters plus absolute tail latency against the no-firewall baseline.
+# Shown as a reference band, not a claim about where the data falls. Two cells
+# sit outside it and are left outside on purpose: widening the band to swallow
+# them would hide the very fact the panel exists to show.
+TOLERANCE_PCT = 5.0
 
-    This is the "will it break my traffic" panel. Ratios were dropped because the
-    bfw/UFW spread sits inside run-to-run noise; plotting absolute p99 with the
-    no-firewall container as a third bar lets the reader see the bars are the same
-    height, which is the actual claim.
+
+def reliability_svg():
+    """Correctness counters, then p95 deviation from the no-firewall baseline.
+
+    Earlier revisions drew grouped bars of absolute latency. That cannot express
+    "no measurable difference": with three near-identical bars per group across
+    twelve groups, the reader has to hunt for a difference that is not there.
+
+    p95 deviation from the no-firewall container expresses it directly. The
+    deviations carry both signs, and bfw comes out "faster than no firewall at
+    all" in half the cells, which is impossible for a real firewall and is
+    therefore direct evidence that the spread is measurement noise.
+
+    p99 is deliberately not used. The churn profile issues roughly 2,000 requests
+    per repeat, so its p99 is the 20th-worst sample and swings from -31.7% to
+    +21.9% between neighbouring rule counts on identical engines.
     """
-    W, H = 1120, 800
+    W, H = 1120, 690
     scen = SUM["scenarios"]
 
     total_requests = sum(v["request_count"] for v in scen.values())
@@ -159,87 +213,94 @@ def reliability_svg():
     total_dropped = sum(v["dropped_iterations"] for v in scen.values())
     total_checks = sum(v["check_passes"] for v in scen.values())
     ctl = SUM["controls"]
-    thr = SUM["thresholds"]
+
+    rows = []
+    for pkey, plabel in PROFILES:
+        for k in CARDINALITIES:
+            base = scen[f"baseline_{k}_{pkey}"]["latency_p95_ms"]
+            rows.append((f"{plabel} &#183; {k:,}", {
+                e: (scen[f"{e}_{k}_{pkey}"]["latency_p95_ms"] - base) / base * 100
+                for e in ("bfw", "ufw")}))
+    worst = max(abs(r[1][e]) for r in rows for e in ("bfw", "ufw"))
+    outside = sum(1 for r in rows for e in ("bfw", "ufw") if abs(r[1][e]) > TOLERANCE_PCT)
+    faster = sum(1 for r in rows if r[1]["bfw"] < 0)
+
+    s = head(W, H, "No measurable traffic cost at any rule count",
+             "Top row: correctness counters for the whole run. Lower panel: mean p95 "
+             "latency of bfw and UFW expressed as a percentage deviation from the "
+             "no-firewall container, one row per traffic profile and rule count. A "
+             "shaded band marks plus or minus five percent. Deviations fall on both "
+             "sides of zero, and bfw is faster than no firewall at all in half the "
+             "rows, which no real firewall can be.",
+             f"Mean p95 over {SUM['metadata']['repeats']} repeats per cell &#183; {SUM['metadata']['kernel']}")
 
     tiles = [
-        ("Requests served", f"{total_requests:,}", "no firewall, bfw and UFW combined"),
-        ("Request errors", f"{total_errors:,}", f"budget {thr['max_error_rate'] * 100:.0f}%"),
+        ("Requests served", f"{total_requests:,}", "no firewall, bfw and UFW"),
+        ("Request errors", f"{total_errors:,}", "budget 1%"),
         ("Dropped iterations", f"{total_dropped:,}", "load generator could not dispatch"),
-        ("Response checks passed", f"{total_checks:,}", "server returned the expected body"),
+        ("Response checks passed", f"{total_checks:,}", "expected body returned"),
     ]
-    s = head(W, H, "No measurable traffic cost at any rule count",
-             "Top row: correctness counters for the whole run - requests served, "
-             "request errors, dropped iterations and k6 response checks that returned "
-             "the expected body. Lower panels: mean p99 latency in milliseconds for no "
-             "firewall, bfw and UFW at 10, 100, 500 and 1000 rules, one panel per "
-             "traffic profile, each on its own linear axis from zero.",
-             f"Mean p99 latency over {SUM['metadata']['repeats']} repeats per cell · {SUM['metadata']['kernel']}")
-
-    # correctness tiles
     tw, gap = 251, 20
     for i, (label, value, note) in enumerate(tiles):
         x = 24 + i * (tw + gap)
-        s += f'  <rect class="panel" x="{x}" y="92" width="{tw}" height="104" rx="12"/>\n'
-        s += f'  <text x="{x + 20}" y="{118}" font-size="12" class="muted">{esc(label)}</text>\n'
-        s += f'  <text x="{x + 20}" y="{154}" font-size="27" font-weight="700" fill="#0f9d8a">{esc(value)}</text>\n'
-        s += f'  <text x="{x + 20}" y="{176}" font-size="10.5" class="muted">{esc(note)}</text>\n'
+        s += f'  <rect class="panel" x="{x}" y="86" width="{tw}" height="96" rx="12"/>\n'
+        s += f'  <text x="{x + 20}" y="{110}" font-size="11.5" class="muted">{esc(label)}</text>\n'
+        s += f'  <text x="{x + 20}" y="{144}" font-size="26" font-weight="700" fill="#0f9d8a">{esc(value)}</text>\n'
+        s += f'  <text x="{x + 20}" y="{165}" font-size="10" class="muted">{esc(note)}</text>\n'
 
-    # correctness controls
-    cx = legend(24, 218)
-    checks = [
-        ("Denied traffic stays denied", ctl["negative_denied"]),
-        ("Allowed traffic passes", ctl["positive_permitted"]),
-        ("No-firewall baseline unfiltered", ctl["baseline_unfiltered"]),
-    ]
-    for label, ok in checks:
-        mark = "pass" if ok else "FAIL"
-        color = "#0f9d8a" if ok else "#ef4444"
-        s += f'  <text x="{cx + 14}" y="228" font-size="11.5" font-weight="650" fill="{color}">{mark}</text>\n'
-        s += f'  <text x="{cx + 56}" y="228" font-size="11.5" class="muted">{esc(label)}</text>\n'
-        cx += 66 + len(label) * 6.4
+    PY, PH = 200, 404
+    x0, x1 = 250, 1050
+    # Axis half-range is derived from the data so the dots fill the plot, with a
+    # margin. Ticks are fixed at the tolerance and its midpoint rather than
+    # derived, so the labels read the same in every run.
+    span = max(abs(r[1][e]) for r in rows for e in ("bfw", "ufw")) * 1.18
+    span = math.ceil(span)
+    ticks = [(-TOLERANCE_PCT, f"-{TOLERANCE_PCT:.0f}%"), (-TOLERANCE_PCT / 2, f"-{TOLERANCE_PCT / 2:g}%"),
+             (0.0, "0%"), (TOLERANCE_PCT / 2, f"+{TOLERANCE_PCT / 2:g}%"),
+             (TOLERANCE_PCT, f"+{TOLERANCE_PCT:.0f}%")]
 
-    # p99 panels
-    for pi, (p, label) in enumerate(PROFILES):
-        y0 = 248 + pi * 178
-        ytop, ybot = y0 + 46, y0 + 146
-        vals = [scen[f"{e}_{k}_{p}"]["latency_p99_ms"] for e, _, _, _ in ENGINES for k in CARDINALITIES]
-        vmax = nice_axis(max(vals))
-        s += f'  <rect class="panel" x="24" y="{y0}" width="1072" height="168" rx="14"/>\n'
-        s += f'  <text x="48" y="{y0 + 26}" font-size="13.5" font-weight="650">{esc(label)} &#183; p99 (ms, lower is better)</text>\n'
-        for i in range(4):
-            v = vmax * i / 3
-            y = ybot - (ybot - ytop) * i / 3
-            s += f'  <line class="grid" x1="196" y1="{y:.1f}" x2="1070" y2="{y:.1f}"/>\n'
-            s += f'  <text x="186" y="{y + 4:.1f}" text-anchor="end" font-size="10" class="muted">{v:g}</text>\n'
-        for gi, k in enumerate(CARDINALITIES):
-            cxg = 268 + gi * 250
-            for bi, (e, name, color, cls) in enumerate(ENGINES):
-                v = scen[f"{e}_{k}_{p}"]["latency_p99_ms"]
-                bh = (ybot - ytop) * v / vmax
-                x = cxg - 78 + bi * 54
-                s += (f'  <rect class="{cls}" x="{x:.1f}" y="{ybot - bh:.1f}" width="48" height="{bh:.1f}" rx="3">'
-                      f'<title>{esc(name)}, {k:,} rules: {v:.3f} ms p99</title></rect>\n')
-                s += f'  <text x="{x + 24:.1f}" y="{ybot - bh - 5:.1f}" text-anchor="middle" font-size="9.5" font-weight="650" fill="{color}">{v:.2f}</text>\n'
-            s += f'  <text x="{cxg:.1f}" y="{ybot + 16:.1f}" text-anchor="middle" font-size="11" class="muted">{k:,} rules</text>\n'
-        s += f'  <line class="axis" x1="196" y1="{ybot}" x2="1070" y2="{ybot}"/>\n'
+    def X(pct):
+        return x0 + (x1 - x0) * (pct + span) / (span * 2)
 
-    s += '  <text x="32" y="782" font-size="11" class="muted">Panels use independent y-axis scales; compare bar heights within a panel only. Each panel has its own axis labels.</text>\n'
+    s += f'  <rect class="panel" x="24" y="{PY}" width="1072" height="{PH}" rx="12"/>\n'
+    s += f'  <text x="48" y="{PY + 28}" font-size="13.5" font-weight="650">p95 latency versus the no-firewall container</text>\n'
+    s += f'  <rect x="{X(-TOLERANCE_PCT):.1f}" y="{PY + 42}" width="{X(TOLERANCE_PCT) - X(-TOLERANCE_PCT):.1f}" height="316" fill="#eef2f7"/>\n'
+    for t, lab in ticks:
+        s += f'  <line class="grid" x1="{X(t):.1f}" y1="{PY + 42}" x2="{X(t):.1f}" y2="{PY + 358}"/>\n'
+        s += f'  <text x="{X(t):.1f}" y="{PY + 376}" text-anchor="middle" font-size="10.5" class="muted">{lab}</text>\n'
+    s += f'  <line class="axis" x1="{X(0):.1f}" y1="{PY + 42}" x2="{X(0):.1f}" y2="{PY + 358}"/>\n'
+
+    ry, RH = PY + 62, 26
+    for i, (label, devs) in enumerate(rows):
+        y = ry + i * RH
+        if i in (4, 8):
+            s += f'  <line x1="48" y1="{y - 13:.1f}" x2="1072" y2="{y - 13:.1f}" stroke="#eef2f7" stroke-width="1"/>\n'
+        s += f'  <text x="{x0 - 18}" y="{y + 4}" text-anchor="end" font-size="11" class="muted">{label}</text>\n'
+        bx, ux = X(devs["bfw"]), X(devs["ufw"])
+        s += f'  <line x1="{bx:.1f}" y1="{y}" x2="{ux:.1f}" y2="{y}" stroke="#cbd5e1" stroke-width="1.5"/>\n'
+        for cx, key, color in ((bx, "bfw", "#0f9d8a"), (ux, "ufw", "#3b82f6")):
+            s += (f'  <circle cx="{cx:.1f}" cy="{y}" r="5.5" fill="{color}">'
+                  f'<title>{esc(label)}, {"bfw" if key == "bfw" else "UFW"}: {devs[key]:+.1f}% versus no firewall</title></circle>\n')
+
+    # Only the two engines are plotted here; no-firewall is the zero reference,
+    # so it is named in the caption rather than given a legend swatch.
+    lg, lx = legend(24, PY + PH + 16, entries=[("bfw", "bfw"), ("UFW", "ufw")])
+    s += lg
+    s += (f'  <text x="{lx + 16}" y="{PY + PH + 26}" font-size="11" class="muted">'
+          f'Both measured against the no-firewall container. Shaded band is a plus or minus '
+          f'{TOLERANCE_PCT:.0f}% reference, not a fitted range: {outside} of 24 dots fall outside it.</text>\n')
+    s += (f'  <text x="24" y="{PY + PH + 48}" font-size="11" class="muted">'
+          f'bfw is faster than no firewall at all in {faster} of 12 rows. A firewall cannot remove '
+          f'latency, so both signs are noise; largest deviation anywhere is {worst:.1f}%.</text>\n')
+    s += '  <text x="24" y="' + str(PY + PH + 68) + '" font-size="11" class="muted">p99 is not shown: the churn profile issues about 2,000 requests per repeat, so its p99 swings from -31.7% to +21.9% on identical engines.</text>\n'
     s += "</svg>\n"
     return s
-
-
-def nice_axis(data_max):
-    """Three-tick axis: smallest step in the nice ladder covering data_max * 1.15."""
-    for step in (0.05, 0.1, 0.15, 0.2, 0.25, 0.4, 0.5, 1, 2, 4, 5, 10, 20, 40):
-        if data_max * 1.15 <= 3 * step:
-            return 3 * step
-    return data_max * 1.15
 
 
 # ----------------------------------------------------------------- attack lab
 
 def attack_svg():
-    W, H = 1120, 850
+    W, H = 1120, 824
     eng = ATTACK["engines"]
     meta = ATTACK.get("metadata", {})
     E = [("none", "No firewall", "#64748b"), ("bfw", "bfw", "#0f9d8a"), ("ufw", "UFW", "#3b82f6")]
@@ -248,67 +309,74 @@ def attack_svg():
         ("synflood_allowed", "SYN flood to an allowed port"),
         ("connectflood", "TCP connect flood to an allowed port"),
     ]
+    # Bars end well short of the card edge so the widest value label
+    # ("163,056 ok - p95 0.63 ms") stays inside the panel.
+    XR = 936
+    X_RECON, X_FLOOD = 400, 150
+
     s = head(W, H, "Real attacks: what each firewall actually does",
              "Top panel: nmap recon time over ports 1-2000 and which ports in 8070-8110 "
-             "answered, per engine. Middle panels: legitimate keep-alive HTTP requests "
-             "completed and their p95 latency while each attack ran against the "
-             "defended service. Bottom panel: dynamic ban outcomes, the capability UFW "
-             "has no mechanism for.",
+             "answered. Middle panels: legitimate keep-alive requests still served while "
+             "each attack ran, with their p95 latency. Bottom panel: dynamic ban outcomes, "
+             "the capability UFW has no mechanism for.",
              f"Isolated Docker network &#183; {meta.get('rules', '?')} allow rules &#183; "
              f"{meta.get('flood_seconds', '?')}s per attack &#183; {meta.get('kernel', '')}")
 
     # recon
-    s += '  <rect class="panel" x="24" y="104" width="1072" height="150" rx="14"/>\n'
-    s += '  <text x="48" y="132" font-size="13.5" font-weight="650">Recon: nmap over ports 1-2000 (seconds to scan)</text>\n'
+    RP, RH = 100, 136
+    s += f'  <rect class="panel" x="24" y="{RP}" width="1072" height="{RH}" rx="12"/>\n'
+    s += f'  <text x="48" y="{RP + 26}" font-size="13.5" font-weight="650">Recon: nmap over ports 1-2000 (seconds to scan)</text>\n'
     times = {k: (eng[k]["nmap"] or {}).get("seconds") for k, _, _ in E}
-    tmax = (max([t for t in times.values() if t] or [1])) * 1.15
-    x0, x1 = 560, 900
+    tmax = (max([t for t in times.values() if t] or [1])) * 1.12
     for i, (k, label, color) in enumerate(E):
-        y = 156 + i * 30
+        y = RP + 44 + i * 28
         t = times[k]
         n = eng[k]["nmap"]
         w = eng[k].get("nmap_window") or {}
         win = ",".join(map(str, w.get("open_ports", []))) or "none open"
         detail = f"{n['filtered']} filtered" if n.get("filtered") else f"{n.get('closed', '?')} closed"
-        s += f'  <text x="48" y="{y + 14}" font-size="12" font-weight="650">{label}</text>\n'
-        s += f'  <text x="150" y="{y + 14}" font-size="11" class="muted">{esc(detail)}; ports 8070-8110: {esc(win)}</text>\n'
-        bw = max((x1 - x0) * (t or 0) / tmax, 1.2)
-        s += f'  <rect x="{x0}" y="{y}" width="{bw:.1f}" height="16" rx="4" fill="{color}"/>\n'
-        s += f'  <text x="{x0 + bw + 8:.1f}" y="{y + 13}" font-size="11" font-weight="650" fill="{color}">{f"{t:.2f} s" if t is not None else "n/a"}</text>\n'
+        s += f'  <text x="48" y="{y + 13}" font-size="12" font-weight="650">{label}</text>\n'
+        s += f'  <text x="140" y="{y + 13}" font-size="10.5" class="muted">{esc(detail)}; ports 8070-8110: {esc(win)}</text>\n'
+        bw = max((XR - X_RECON) * (t or 0) / tmax, 1.5)
+        s += f'  <rect x="{X_RECON}" y="{y}" width="{bw:.1f}" height="16" rx="4" fill="{color}"/>\n'
+        s += f'  <text x="{X_RECON + bw + 8:.1f}" y="{y + 13}" font-size="11" font-weight="650" fill="{color}">{f"{t:.2f} s" if t is not None else "n/a"}</text>\n'
 
-    # legit traffic under attack
+    # legitimate traffic under attack
+    AP0, APH, AGAP = 252, 110, 16
     for pi, (akey, atitle) in enumerate(ATTACKS):
-        y0 = 284 + pi * 144
-        s += f'  <rect class="panel" x="24" y="{y0}" width="1072" height="128" rx="14"/>\n'
-        s += f'  <text x="48" y="{y0 + 26}" font-size="13.5" font-weight="650">{esc(atitle)} - legitimate requests still served</text>\n'
+        y0 = AP0 + pi * (APH + AGAP)
+        s += f'  <rect class="panel" x="24" y="{y0}" width="1072" height="{APH}" rx="12"/>\n'
+        s += f'  <text x="48" y="{y0 + 24}" font-size="13.5" font-weight="650">{esc(atitle)}</text>\n'
+        s += f'  <text x="1072" y="{y0 + 24}" text-anchor="end" font-size="10.5" class="muted">Legitimate requests still served</text>\n'
         oks = {k: (eng[k]["attacks"][akey]["legit"] or {}).get("ok", 0) for k, _, _ in E}
-        vmax = max(oks.values() or [1]) * 1.18
+        vmax = max(oks.values() or [1]) * 1.16
         for i, (k, label, color) in enumerate(E):
-            y = y0 + 42 + i * 28
+            y = y0 + 36 + i * 24
             st = eng[k]["attacks"][akey]["legit"] or {}
-            bw = max((x1 - x0) * oks[k] / vmax, 1.2)
-            s += f'  <text x="48" y="{y + 14}" font-size="12" font-weight="650">{label}</text>\n'
-            s += f'  <rect x="{x0}" y="{y}" width="{bw:.1f}" height="16" rx="4" fill="{color}"/>\n'
+            bw = max((XR - X_FLOOD) * oks[k] / vmax, 1.5)
+            s += f'  <text x="48" y="{y + 13}" font-size="11.5" font-weight="650">{label}</text>\n'
+            s += f'  <rect x="{X_FLOOD}" y="{y}" width="{bw:.1f}" height="15" rx="4" fill="{color}"/>\n'
             p95 = st.get("p95_ms")
             note = f" &#183; p95 {p95:.2f} ms" if p95 is not None else ""
-            s += f'  <text x="{x0 + bw + 8:.1f}" y="{y + 13}" font-size="11" font-weight="650" fill="{color}">{oks[k]:,} ok{note}</text>\n'
             fails = st.get("req_fail", 0) + st.get("connect_fail", 0)
             if fails:
-                s += f'  <text x="{x0 + bw + 190:.1f}" y="{y + 13}" font-size="10.5" fill="#ef4444">{fails} failed</text>\n'
+                note += f" &#183; {fails} failed"
+            s += f'  <text x="{X_FLOOD + bw + 8:.1f}" y="{y + 13}" font-size="10.5" font-weight="650" fill="{"#ef4444" if fails else color}">{oks[k]:,} ok{note}</text>\n'
 
     # dynamic bans
-    dy = 284 + len(ATTACKS) * 144 + 6
-    s += f'  <rect class="panel" x="24" y="{dy}" width="1072" height="110" rx="14"/>\n'
-    s += f'  <text x="48" y="{dy + 26}" font-size="13.5" font-weight="650">Dynamic bans - the capability UFW has no mechanism for</text>\n'
+    DY = AP0 + len(ATTACKS) * (APH + AGAP) + 2
+    DH = 112
+    s += f'  <rect class="panel" x="24" y="{DY}" width="1072" height="{DH}" rx="12"/>\n'
+    s += f'  <text x="48" y="{DY + 24}" font-size="13.5" font-weight="650">Dynamic bans &#8212; the capability UFW has no mechanism for</text>\n'
     for ri, (rlabel, dkey, tkey) in enumerate([
-        ("SSH brute-force (12 tries)", "jail", "jail_ban_s"),
+        ("SSH brute-force, 12 tries", "jail", "jail_ban_s"),
         ("CrowdSec LAPI ban, then unban", "lapi", "lapi_ban_s"),
     ]):
-        y = dy + 40 + ri * 32
-        s += f'  <text x="48" y="{y + 13}" font-size="12" font-weight="650">{esc(rlabel)}</text>\n'
+        y = DY + 48 + ri * 30
+        s += f'  <text x="48" y="{y + 13}" font-size="11.5" font-weight="650">{esc(rlabel)}</text>\n'
         for i, (k, label, color) in enumerate(E):
             d = eng[k].get(dkey) or {}
-            bx = 380 + i * 230
+            bx = 372 + i * 226
             if not d or d.get("mechanism") == "none":
                 s += f'  <text x="{bx}" y="{y + 13}" font-size="11" class="muted">{label}: not available</text>\n'
                 continue
@@ -316,18 +384,17 @@ def attack_svg():
             txt = f"{label}: ban {t:.1f} s" if isinstance(t, (int, float)) and t >= 0 else f"{label}: ban pending"
             extra = ""
             if dkey == "jail" and d.get("ssh_after") is not None:
-                extra = " - SSH blocked" if d["ssh_after"] == 0 else " - SSH still open"
+                extra = ", SSH blocked" if d["ssh_after"] == 0 else ", SSH still open"
             if dkey == "lapi" and isinstance(d.get("lapi_unban_s"), (int, float)) and d["lapi_unban_s"] >= 0:
-                extra += f", unban in {d['lapi_unban_s']:.1f} s"
+                extra += f", unban {d['lapi_unban_s']:.1f} s"
             s += f'  <text x="{bx}" y="{y + 13}" font-size="11" font-weight="650" fill="{color}">{esc(txt + extra)}</text>\n'
 
-    fy = dy + 118
-    lx = legend(24, fy)
-    s += f'  <text x="{lx + 20}" y="{fy + 10}" font-size="10.5" class="muted">Bars: legitimate requests completed during the attack window.</text>\n'
-    s += f'  <text x="24" y="{fy + 32}" font-size="10.5" class="muted">Gates asserted by the job: denied port stays closed, legitimate service stays reachable, legitimate p95 stays under 2 s, attacker ends up banned.</text>\n'
+    lg, lx = legend(24, DY + DH + 18)
+    s += lg
+    s += f'  <text x="{lx + 16}" y="{DY + DH + 28}" font-size="10.5" class="muted">Bars: legitimate requests completed during the attack window.</text>\n'
+    s += f'  <text x="24" y="{DY + DH + 50}" font-size="10.5" class="muted">Gates asserted by the job: denied port stays closed, legitimate service stays reachable, legitimate p95 stays under 2 s, attacker ends up banned.</text>\n'
     s += "</svg>\n"
     return s
-
 
 # -------------------------------------------------- microbenchmark markdown doc
 

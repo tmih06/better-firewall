@@ -99,7 +99,7 @@ artifacts by `make charts`, so they cannot drift out of sync with the data.
 
 ### Rule setup is 8–32× faster than UFW
 
-![Rule add plus enable wall clock, as the speed-up of bfw over UFW at 10, 100, 500 and 1,000 rules](docs/firewall-setup-time.svg)
+![Four small-multiple bar charts, one per rule count, each with its own linear axis from zero, comparing bfw and UFW seconds to add the rules and enable the firewall](docs/firewall-setup-time.svg)
 
 | Rules | bfw | UFW | Faster by |
 |---:|---:|---:|---:|
@@ -111,11 +111,12 @@ artifacts by `make charts`, so they cannot drift out of sync with the data.
 UFW rewrites and reloads the whole ruleset once per rule, so its time grows
 superlinearly. bfw stores configuration and compiles the entire ruleset into a
 single atomic nftables transaction. This is configuration time, not packet
-latency.
+latency. Each panel has its own axis — compare the two bars inside a panel, not
+bar lengths across panels.
 
 ### No measurable traffic cost
 
-![Correctness counters and mean p99 latency for no firewall, bfw and UFW at 10, 100, 500 and 1,000 rules](docs/firewall-reliability.svg)
+![Correctness counters, and mean p95 latency of bfw and UFW as a percentage deviation from the no-firewall container for each traffic profile and rule count](docs/firewall-reliability.svg)
 
 Across every scenario in the run — no firewall, bfw and UFW, at 10, 100, 500 and
 1,000 rules, under keep-alive, connection-churn and mixed traffic:
@@ -124,16 +125,25 @@ Across every scenario in the run — no firewall, bfw and UFW, at 10, 100, 500 a
 - **28,565,489 response checks passed** (every request returned the expected body)
 - Denied traffic stayed denied, allowed traffic passed, and the no-firewall
   baseline stayed unfiltered
-- bfw and UFW p99 latency is within run-to-run noise of the no-firewall
-  container at every rule count
+- Largest p95 deviation from the no-firewall container anywhere in the run:
+  **7.1%**
 
-The job also asserts error rate, p95 latency and check-rate thresholds and fails
-CI on violation, so this is gated rather than merely observed.
+The deviations fall on both sides of zero: bfw comes out *faster than no firewall
+at all* in 6 of the 12 cells. A firewall cannot remove latency, so both signs are
+measurement noise rather than overhead. The job also asserts error-rate, p95
+latency and check-rate thresholds and fails CI on violation, so this is gated
+rather than merely observed.
 
-Earlier README revisions plotted bfw/UFW *ratios* for latency and throughput.
-Those charts were removed: across all twelve cells the ratios spanned 0.97–1.04,
-which is indistinguishable from the noise band, and the note explaining that was
-longer than the claim it qualified.
+Two earlier versions of this chart were removed. Grouped bars of absolute
+latency put three near-identical bars in each of twelve groups, which cannot
+express "no difference" — the reader has to hunt for a difference that is not
+there. Plotting bfw/UFW *ratios* was worse: all twelve values fell between 0.969
+and 1.040, and the note explaining that the spread was noise was longer than the
+claim it qualified.
+
+p99 is deliberately not charted. The churn profile issues about 2,000 requests
+per repeat, so its p99 is the 20th-worst sample and swings from −31.7% to +21.9%
+between neighbouring rule counts on identical engines.
 
 ### Real attacks
 
