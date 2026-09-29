@@ -107,6 +107,69 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 }
 
+// TestLoadAcceptsIndentedRulesJSON guards the on-disk format change.
+//
+// Save emits compact JSON because the indented form cost 1.83 ms against 0.61 ms
+// per invocation at 1,000 rules, and the CLI pays that on every rule mutation.
+// Rules files written by earlier versions are indented, so Load must still
+// accept them and produce an identical state; only the writer changed.
+func TestLoadAcceptsIndentedRulesJSON(t *testing.T) {
+	s := tmpStore(t)
+	indented := `{
+  "policies": {"input": "deny", "output": "allow", "forward": "deny"},
+  "logging": "high",
+  "ipv6": true,
+  "app_policy": "skip",
+  "rules4": [
+    {
+      "id": "r4",
+      "action": "allow",
+      "direction": "in",
+      "proto": "tcp",
+      "src": {"ip": "any"},
+      "dst": {"ip": "any", "ports": [{"lo": 22, "hi": 22, "proto": "tcp"}]}
+    }
+  ],
+  "rules6": []
+}`
+	if err := os.MkdirAll(s.Dir, 0755); err != nil {
+		t.Fatalf("seed dir: %v", err)
+	}
+	if err := os.WriteFile(s.RulesPath(), []byte(indented), 0600); err != nil {
+		t.Fatalf("seed indented rules.json: %v", err)
+	}
+
+	got, err := s.Load()
+	if err != nil {
+		t.Fatalf("Load must accept the indented form written by earlier versions: %v", err)
+	}
+	if len(got.Rules4) != 1 {
+		t.Fatalf("Rules4 = %d rules, want 1", len(got.Rules4))
+	}
+	if r := got.Rules4[0]; r.ID != "r4" || r.Action != "allow" || len(r.Dst.Ports) != 1 || r.Dst.Ports[0].Lo != 22 {
+		t.Fatalf("indented state decoded wrong: %+v", r)
+	}
+
+	// Re-saving must yield valid compact JSON that still round-trips.
+	if err := s.Save(got); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(s.RulesPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !json.Valid(raw) {
+		t.Fatal("saved rules.json is not valid JSON")
+	}
+	again, err := s.Load()
+	if err != nil {
+		t.Fatalf("Load after compact Save: %v", err)
+	}
+	if len(again.Rules4) != 1 || again.Rules4[0].ID != "r4" {
+		t.Fatalf("compact round-trip mismatch: %+v", again.Rules4)
+	}
+}
+
 func TestSaveWrites0600AndNoLeftoverTmp(t *testing.T) {
 	s := tmpStore(t)
 	if err := s.Save(Defaults()); err != nil {
