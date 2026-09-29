@@ -5,7 +5,7 @@
 # Usage:
 #   scripts/ci/check.sh            run every check below
 #   scripts/ci/check.sh NAME... run a subset: fmt modtidy vet staticcheck vuln
-#                                  actionlint shellcheck charts
+#                                  actionlint shellcheck charts ssh_guard
 # Tool versions are pinned by the CI workflow (.github/workflows/ci.yml).
 # For local runs install them yourself, e.g.:
 #   go install honnef.co/go/tools/cmd/staticcheck@2026.2.1
@@ -114,16 +114,23 @@ check_charts() {
     python3 scripts/charts/test_charts.py
 }
 
+check_ssh_guard() {
+    # Refuses to pass if it cannot read the ruleset, so a missing capability
+    # fails the build instead of silently skipping the check.
+    log "host firewall untouched (no better-firewall table, session intact)"
+    scripts/ci/ssh-guard.sh
+}
+
 main() {
     local checks=("$@")
     if [ "${#checks[@]}" -eq 0 ]; then
-        checks=(fmt modtidy vet staticcheck actionlint shellcheck charts vuln)
+        checks=(fmt modtidy vet staticcheck actionlint shellcheck charts ssh_guard vuln)
     fi
     local name
     for name in "${checks[@]}"; do
         case "$name" in
-            fmt|modtidy|vet|staticcheck|vuln|actionlint|shellcheck|charts) "check_$name" ;;
-            *) die "unknown check '$name' (valid: fmt modtidy vet staticcheck vuln actionlint shellcheck charts)" ;;
+            fmt|modtidy|vet|staticcheck|vuln|actionlint|shellcheck|charts|ssh_guard) "check_$name" ;;
+            *) die "unknown check '$name' (valid: fmt modtidy vet staticcheck vuln actionlint shellcheck charts ssh_guard)" ;;
         esac
     done
     log "all requested checks passed"

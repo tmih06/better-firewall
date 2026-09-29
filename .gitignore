@@ -4,3 +4,6 @@
 /artifacts/performance/
 __pycache__/
 *.py[cod]
+
+# host firewall baseline is machine-specific; regenerate per host with --record
+scripts/ci/ssh-guard-baseline.txt
