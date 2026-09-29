@@ -170,6 +170,69 @@ func TestLoadAcceptsIndentedRulesJSON(t *testing.T) {
 	}
 }
 
+// TestCountJSONObjects pins the pre-sizing heuristic that Load uses to avoid
+// encoding/json's repeated slice doubling. Getting this wrong must not change
+// what Load returns: a wrong count is only a capacity hint.
+func TestCountJSONObjects(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		key  string
+		want int
+	}{
+		{"absent key", `{"rules6":[{"id":"a"}]}`, `"rules4"`, 0},
+		{"empty array", `{"rules4":[]}`, `"rules4"`, 0},
+		{"one object", `{"rules4":[{"id":"a"}]}`, `"rules4"`, 1},
+		{"three objects", `{"rules4":[{"id":"a"},{"id":"b"},{"id":"c"}]}`, `"rules4"`, 3},
+		{
+			"nested object does not inflate the count",
+			`{"rules4":[{"id":"a","src":{"ip":"10.0.0.0/8","ports":[{"lo":1,"hi":2}]}}]}`,
+			`"rules4"`, 1,
+		},
+		{
+			"both families counted independently",
+			`{"rules4":[{"id":"a"},{"id":"b"}],"rules6":[{"id":"c"}]}`,
+			`"rules6"`, 1,
+		},
+		{"truncated array still counts what it saw", `{"rules4":[{"id":"a"},{`, `"rules4"`, 2},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := countJSONObjects([]byte(tc.data), tc.key); got != tc.want {
+				t.Fatalf("countJSONObjects(%s) = %d, want %d", tc.data, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPreallocSizingIsOnlyAHint: a hand-edited file whose object count does not
+// match the prealloc guess must still load every rule, in order. The guess
+// affects capacity, never contents.
+func TestPreallocSizingIsOnlyAHint(t *testing.T) {
+	s := tmpStore(t)
+	if err := os.MkdirAll(s.Dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Three objects, but the array also contains a nested object, so a naive
+	// counter would over-count. Load must return exactly the three rules.
+	body := `{"rules4":[{"id":"a","src":{"ip":"10.0.0.0/8"}},{"id":"b"},{"id":"c"}],"rules6":[]}`
+	if err := os.WriteFile(s.RulesPath(), []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := s.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(st.Rules4) != 3 {
+		t.Fatalf("Rules4 = %d, want 3", len(st.Rules4))
+	}
+	for i, want := range []string{"a", "b", "c"} {
+		if st.Rules4[i].ID != want {
+			t.Errorf("Rules4[%d].ID = %q, want %q", i, st.Rules4[i].ID, want)
+		}
+	}
+}
+
 func TestSaveWrites0600AndNoLeftoverTmp(t *testing.T) {
 	s := tmpStore(t)
 	if err := s.Save(Defaults()); err != nil {
