@@ -114,7 +114,7 @@ UFW_LAUNCHER_PATH="$(server_exec sh -c 'command -v ufw')"
 UFW_LAUNCHER_SIZE_BYTES="$(server_exec stat -c '%s' "$UFW_LAUNCHER_PATH")"
 UFW_PACKAGE_INSTALLED_KIB="$(server_exec dpkg-query -W -f="\${Installed-Size}" ufw)"
 echo "[perf] bfw executable: ${BFW_BINARY_SIZE_BYTES} bytes; ufw launcher: ${UFW_LAUNCHER_SIZE_BYTES} bytes; ufw package: ${UFW_PACKAGE_INSTALLED_KIB} KiB."
-K6_VER="$(attacker_exec k6 version | head -n 1)"
+K6_VER="$(attacker_exec k6 version 2>&1 || true)"; K6_VER="${K6_VER%%$'\n'*}"
 echo "[perf] Using ${K6_VER}; k6 attacker and firewall server are on the private Docker network."
 
 # ==============================================================================
@@ -307,8 +307,12 @@ reset_firewalls
 # =============================================================================
 # Metadata and report generation
 # =============================================================================
-BFW_VER="$(server_exec bfw --version 2>&1 | head -n 1 || echo 'bfw version unavailable')"
-UFW_VER="$(server_exec ufw --version 2>&1 | head -n 1 || echo 'ufw version unavailable')"
+# pipefail + `| head -n1` can SIGPIPE a multi-line producer and append the
+# fallback after real output ("bfw 0.1.0\nbfw version unavailable"), which
+# then mismatches shard metadata in merge_shards.py. Capture then take
+# the first line.
+BFW_VER="$(server_exec bfw --version 2>&1 || true)"; BFW_VER="${BFW_VER%%$'\n'*}"; : "${BFW_VER:=bfw version unavailable}"
+UFW_VER="$(server_exec ufw --version 2>&1 || true)"; UFW_VER="${UFW_VER%%$'\n'*}"; : "${UFW_VER:=ufw version unavailable}"
 python3 - "$METADATA_FILE" \
     "$(uname -srm)" "$(uname -m)" "$BFW_VER" "$UFW_VER" "$K6_VER" \
     "$BFW_BINARY_SIZE_BYTES" "$UFW_LAUNCHER_SIZE_BYTES" "$UFW_LAUNCHER_PATH" \
