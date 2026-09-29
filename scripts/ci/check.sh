@@ -5,7 +5,7 @@
 # Usage:
 #   scripts/ci/check.sh            run every check below
 #   scripts/ci/check.sh NAME... run a subset: fmt modtidy vet staticcheck vuln
-#                                  actionlint shellcheck
+#                                  actionlint shellcheck charts
 # Tool versions are pinned by the CI workflow (.github/workflows/ci.yml).
 # For local runs install them yourself, e.g.:
 #   go install honnef.co/go/tools/cmd/staticcheck@2026.2.1
@@ -108,16 +108,22 @@ check_shellcheck() {
     shellcheck "${scripts[@]}"
 }
 
+check_charts() {
+    need python3
+    log "charts are current and README figures trace to the snapshot"
+    python3 scripts/charts/test_charts.py
+}
+
 main() {
     local checks=("$@")
     if [ "${#checks[@]}" -eq 0 ]; then
-        checks=(fmt modtidy vet staticcheck actionlint shellcheck vuln)
+        checks=(fmt modtidy vet staticcheck actionlint shellcheck charts vuln)
     fi
     local name
     for name in "${checks[@]}"; do
         case "$name" in
-            fmt|modtidy|vet|staticcheck|vuln|actionlint|shellcheck) "check_$name" ;;
-            *) die "unknown check '$name' (valid: fmt modtidy vet staticcheck vuln actionlint shellcheck)" ;;
+            fmt|modtidy|vet|staticcheck|vuln|actionlint|shellcheck|charts) "check_$name" ;;
+            *) die "unknown check '$name' (valid: fmt modtidy vet staticcheck vuln actionlint shellcheck charts)" ;;
         esac
     done
     log "all requested checks passed"

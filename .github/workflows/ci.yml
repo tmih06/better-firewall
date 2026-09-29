@@ -53,8 +53,8 @@ jobs:
           go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}"
           go install "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}"
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-      - name: gofmt + module tidy + vet + staticcheck + actionlint + shellcheck
-        run: scripts/ci/check.sh fmt modtidy vet staticcheck actionlint shellcheck
+      - name: gofmt + module tidy + vet + staticcheck + actionlint + shellcheck + charts
+        run: scripts/ci/check.sh fmt modtidy vet staticcheck actionlint shellcheck charts
 
   # ----------------------------------------------------------------- build
   # Supported Go toolchain matrix (oldest supported per go.mod through the two
