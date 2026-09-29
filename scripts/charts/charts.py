@@ -5,6 +5,7 @@ Outputs
 -------
 docs/firewall-setup-time.svg   rule add + enable wall clock, four small multiples
 docs/firewall-reliability.svg correctness counters and p95 deviation vs no firewall
+docs/firewall-resources.svg    defender memory and CPU against UFW, by rule count
 docs/attack-lab.svg           real-attack comparison (only when attack data is present)
 docs/benchmarks.md            internal Go microbenchmarks, parsed from the CI bench text
 
@@ -396,6 +397,129 @@ def attack_svg():
     s += "</svg>\n"
     return s
 
+# ----------------------------------------------------------------- resources
+
+def resources_svg():
+    """Defender memory and CPU against UFW, plotted against rule count.
+
+    Memory is the panel with a real effect, and it is not a flat discount: at 10
+    rules the two engines are within a few percent of each other and the gap
+    opens as the ruleset grows, reaching about 14% at 1,000 rules in every
+    profile. Plotting against rule count is what shows that, and it is why the
+    claim is scoped to large rulesets rather than stated as a blanket saving.
+
+    CPU is drawn as overhead above the no-firewall container rather than as
+    absolute percent. Absolute CPU is dominated by the traffic profile -- churn
+    runs at 10.9% and mixed at 76.9% for the same ruleset -- so one absolute
+    axis would render the churn cells invisible. Subtracting the baseline puts
+    both engines on a common scale and makes the actual result legible: bfw and
+    UFW both sit within about two percentage points of doing nothing at all, and
+    bfw's figure changes sign between rule counts. That is a tie, and the panel
+    is drawn to show a tie rather than to imply a difference.
+    """
+    W, H = 1120, 726
+    scen = SUM["scenarios"]
+
+    def res(engine, k, p, field):
+        return scen[f"{engine}_{k}_{p}"]["resource_usage"]["server"][field]
+
+    PROFILE_KEYS = [p for p, _ in PROFILES]
+
+    def mem_mean(engine, k):
+        return sum(res(engine, k, p, "memory_avg_mib") for p in PROFILE_KEYS) / len(PROFILE_KEYS)
+
+    def cpu_over(engine, k):
+        """Mean percentage points of CPU above the no-firewall container."""
+        return sum(res(engine, k, p, "cpu_avg_pct") - res("baseline", k, p, "cpu_avg_pct")
+                   for p in PROFILE_KEYS) / len(PROFILE_KEYS)
+
+    # Group centres are spaced so the last group plus its three bars stays inside
+    # the card: centre + 78 + 48 must not exceed the panel's right edge.
+    GC0, GSTEP = 292, 244
+
+    s = head(W, H, "Less memory as the ruleset grows, same CPU",
+             "Two panels of grouped bars against rule count. The upper panel shows mean "
+             "resident memory in mebibytes for the defended container under each engine. "
+             "bfw and UFW are level at 10 rules and bfw pulls about 14 percent ahead by "
+             "1,000 rules, consistently across all three traffic profiles. The lower panel "
+             "shows mean CPU overhead above the no-firewall container, in percentage "
+             "points, because absolute CPU is dominated by the traffic profile. Both "
+             "engines sit within about two percentage points of the no-firewall baseline "
+             "and bfw's figure changes sign between rule counts, so CPU is a tie.",
+             f"Defender container &#183; mean over {SUM['metadata']['repeats']} repeats and 3 profiles &#183; {SUM['metadata']['kernel']}")
+
+    mem_vmax = 40.0
+    cpu_lo, cpu_hi = -4.0, 5.0
+
+    # ---- memory panel: grouped bars, absolute MiB ----
+    MPY, MPH = 92, 250
+    ytop, ybot = MPY + 44, MPY + MPH - 40
+    s += f'  <rect class="panel" x="24" y="{MPY}" width="1072" height="{MPH}" rx="12"/>\n'
+    s += f'  <text x="48" y="{MPY + 26}" font-size="13.5" font-weight="650">Mean resident memory (MiB, lower is better)</text>\n'
+    for i in range(5):
+        v = mem_vmax * i / 4
+        y = ybot - (ybot - ytop) * i / 4
+        s += f'  <line class="grid" x1="196" y1="{y:.1f}" x2="1072" y2="{y:.1f}"/>\n'
+        s += f'  <text x="186" y="{y + 4:.1f}" text-anchor="end" font-size="10" class="muted">{v:g}</text>\n'
+    s += f'  <line class="axis" x1="196" y1="{ybot}" x2="1072" y2="{ybot}"/>\n'
+    for gi, k in enumerate(CARDINALITIES):
+        cx = GC0 + gi * GSTEP
+        for bi, (engine, name, color, cls) in enumerate(ENGINES):
+            v = mem_mean(engine, k)
+            bh = (ybot - ytop) * v / mem_vmax
+            x = cx - 78 + bi * 54
+            s += (f'  <rect class="{cls}" x="{x:.1f}" y="{ybot - bh:.1f}" width="48" height="{bh:.1f}" rx="3">'
+                  f'<title>{esc(name)}, {k:,} rules: {v:.2f} MiB mean resident</title></rect>\n')
+            s += (f'  <text x="{x + 24:.1f}" y="{ybot - bh - 5:.1f}" text-anchor="middle" '
+                  f'font-size="9.5" font-weight="650" fill="{color}">{v:.1f}</text>\n')
+        s += f'  <text x="{cx:.1f}" y="{ybot + 16:.1f}" text-anchor="middle" font-size="11" class="muted">{k:,} rules</text>\n'
+    s += (f'  <text x="48" y="{MPY + MPH - 10}" font-size="10.5" class="muted">'
+          f'Lower is better.</text>\n')
+
+    # ---- CPU panel: diverging dots from a zero line ----
+    # Drawn as dots rather than bars: the values are tenths of a percentage point,
+    # so a bar would be a one-pixel hairline whose length implies a precision the
+    # measurement does not have. A dot encodes position, which is the honest form
+    # for a quantity this small, and the exact value is printed beside each one.
+    CPY, CPH = 366, 250
+    ctop, cbot = CPY + 46, CPY + CPH - 40
+    cspan = cpu_hi - cpu_lo
+
+    def CY(v):
+        return cbot - (cbot - ctop) * (v - cpu_lo) / cspan
+
+    s += f'  <rect class="panel" x="24" y="{CPY}" width="1072" height="{CPH}" rx="12"/>\n'
+    s += (f'  <text x="48" y="{CPY + 26}" font-size="13.5" font-weight="650">'
+          f'CPU overhead above the no-firewall container (percentage points)</text>\n')
+    for t in (cpu_lo, -2, 0, 2, cpu_hi):
+        y = CY(t)
+        s += f'  <line class="grid" x1="196" y1="{y:.1f}" x2="1072" y2="{y:.1f}"/>\n'
+        s += f'  <text x="186" y="{y + 4:.1f}" text-anchor="end" font-size="10" class="muted">{t:+g}</text>\n'
+    s += f'  <line class="axis" x1="196" y1="{CY(0):.1f}" x2="1072" y2="{CY(0):.1f}"/>\n'
+    for gi, k in enumerate(CARDINALITIES):
+        cx = GC0 + gi * GSTEP
+        for bi, engine in enumerate(("bfw", "ufw")):
+            v = cpu_over(engine, k)
+            color = "#0f9d8a" if engine == "bfw" else "#3b82f6"
+            x = cx - 12 + bi * 24
+            above = v >= 0
+            s += (f'  <circle cx="{x}" cy="{CY(v):.1f}" r="6" fill="{color}">'
+                  f'<title>{"bfw" if engine == "bfw" else "UFW"}, {k:,} rules: {v:+.2f} pp above no firewall</title></circle>\n')
+            ly = CY(v) - 12 if above else CY(v) + 20
+            s += (f'  <text x="{x}" y="{ly:.1f}" text-anchor="middle" font-size="9.5" '
+                  f'font-weight="650" fill="{color}">{v:+.1f}</text>\n')
+        s += f'  <text x="{cx:.1f}" y="{cbot + 20:.1f}" text-anchor="middle" font-size="11" class="muted">{k:,} rules</text>\n'
+    s += (f'  <text x="48" y="{CPY + CPH - 10}" font-size="10.5" class="muted">'
+          f'Zero means identical to running no firewall at all.</text>\n')
+
+    s += '  <text x="24" y="648" font-size="10.5" class="muted">Both panels are the defended container under load; the no-firewall bars are the same container with no ruleset loaded.</text>\n'
+    s += '  <text x="24" y="666" font-size="10.5" class="muted">Memory is a mean of the three traffic profiles. At 1,000 rules bfw is 14.0%, 13.9% and 14.6% below UFW in the keep-alive, churn and mixed profiles individually.</text>\n'
+    s += '  <text x="24" y="684" font-size="10.5" class="muted">CPU is the mean percentage points above the no-firewall container. Both engines stay within about two points of it and bfw changes sign between rule counts, so it supports no claim either way.</text>\n'
+    lg, lx = legend(24, 700)
+    s += lg
+    s += "</svg>\n"
+    return s
+
 # -------------------------------------------------- microbenchmark markdown doc
 
 BENCH_META = re.compile(r"^(goos|goarch|pkg|cpu):\s*(.*)$", re.M)
@@ -517,6 +641,7 @@ def benchmarks_md():
 out = {
     "docs/firewall-setup-time.svg": setup_svg(),
     "docs/firewall-reliability.svg": reliability_svg(),
+    "docs/firewall-resources.svg": resources_svg(),
     "docs/benchmarks.md": benchmarks_md(),
 }
 if ATTACK:

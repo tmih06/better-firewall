@@ -26,6 +26,7 @@ README = ROOT / "README.md"
 GENERATED = [
     "docs/firewall-setup-time.svg",
     "docs/firewall-reliability.svg",
+    "docs/firewall-resources.svg",
     "docs/attack-lab.svg",
     "docs/benchmarks.md",
 ]
@@ -115,6 +116,45 @@ def check_readme_figures(failures):
               + [c["p95_latency_ratio_bfw_vs_ufw"] for c in summary["comparisons"]])
     stated(f"ratio range min {min(ratios):.3f}", f"{min(ratios):.3f}" in readme)
     stated(f"ratio range max {max(ratios):.3f}", f"{max(ratios):.3f}" in readme)
+
+    # The resources panel plots mean memory and mean CPU-over-baseline per rule
+    # count, so the README's memory table and CPU tie figures are derived the same way.
+    profiles = ("keepalive", "churn", "mixed")
+
+    def mem(engine, k):
+        return sum(scen[f"{engine}_{k}_{p}"]["resource_usage"]["server"]["memory_avg_mib"]
+                   for p in profiles) / len(profiles)
+
+    def cpu_over(engine, k):
+        return sum(scen[f"{engine}_{k}_{p}"]["resource_usage"]["server"]["cpu_avg_pct"]
+                   - scen[f"baseline_{k}_{p}"]["resource_usage"]["server"]["cpu_avg_pct"]
+                   for p in profiles) / len(profiles)
+
+    for k in (10, 100, 500, 1000):
+        b, u = mem("bfw", k), mem("ufw", k)
+        stated(f"memory {k} rules bfw {b:.1f} MiB", f"{b:.1f} MiB" in readme)
+        stated(f"memory {k} rules UFW {u:.1f} MiB", f"{u:.1f} MiB" in readme)
+        # The table also carries a rounded per-row delta. Rows whose engines are
+        # level within half a percent are written as "level" rather than a number.
+        pct = 100 * (b - u) / u
+        if abs(pct) >= 0.5:
+            delta = f"{pct:+.0f}%".replace("+", "−")
+            stated(f"memory delta at {k} rules {delta}", delta in readme)
+        for engine in ("bfw", "ufw"):
+            v = cpu_over(engine, k)
+            stated(f"CPU overhead {engine} {k} rules {v:+.1f} pp", f"{v:+.1f}" in readme)
+
+    # The 14% memory saving is quoted three ways: as a headline, and per profile.
+    # Check all of them, and require each per-profile figure so a rewrite that
+    # keeps the numbers in one sentence cannot satisfy the check for another.
+    headline = abs(100 * (mem("bfw", 1000) - mem("ufw", 1000)) / mem("ufw", 1000))
+    stated(f"headline memory saving {headline:.0f}%", f"{headline:.0f}%" in readme)
+    for p in profiles:
+        k = 1000
+        b = scen[f"bfw_{k}_{p}"]["resource_usage"]["server"]["memory_avg_mib"]
+        u = scen[f"ufw_{k}_{p}"]["resource_usage"]["server"]["memory_avg_mib"]
+        pct = abs(100 * (b - u) / u)
+        stated(f"memory saving at 1,000 rules in {p}: {pct:.1f}%", f"{pct:.1f}%" in readme)
 
     for engine in ("none", "bfw", "ufw"):
         nmap = attack["engines"][engine]["nmap"]

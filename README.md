@@ -145,6 +145,38 @@ p99 is deliberately not charted. The churn profile issues about 2,000 requests
 per repeat, so its p99 is the 20th-worst sample and swings from −31.7% to +21.9%
 between neighbouring rule counts on identical engines.
 
+### Less memory as the ruleset grows, same CPU
+
+![Mean resident memory by rule count, and CPU overhead above the no-firewall container, for no firewall, bfw and UFW](docs/firewall-resources.svg)
+
+**Memory is the resource where bfw is measurably ahead, and the gap widens with
+rule count.** The two are level at 10 rules and separate as the ruleset grows:
+
+| Rules | bfw | UFW | bfw vs UFW |
+|---:|---:|---:|---:|
+| 10 | 18.5 MiB | 18.5 MiB | level |
+| 100 | 19.9 MiB | 20.3 MiB | −2% |
+| 500 | 23.5 MiB | 26.1 MiB | −10% |
+| 1,000 | 28.8 MiB | 33.6 MiB | **−14%** |
+
+At 1,000 rules the saving is 14.0%, 13.9% and 14.6% in the keep-alive, churn and
+mixed profiles measured separately. This is a real effect and it scales with
+ruleset size — it is not a fixed discount, and it is worth nothing on a small
+ruleset.
+
+**CPU is a tie, and it is stated as one.** Measured as overhead above the
+no-firewall container, bfw runs at +1.1, +1.7, −1.8 and −0.1 percentage points at
+10, 100, 500 and 1,000 rules; UFW at +2.7, +0.7, +3.8 and −1.3. Both sit within
+about two points of running no firewall at all, and bfw's figure changes sign
+between rule counts, so there is no consistent direction and CPU supports no
+claim in either way.
+
+Earlier revisions quoted bfw as 0.6% to 7.8% higher in absolute CPU terms, which
+reads as a regression. It is an artifact: absolute CPU is dominated by the
+traffic profile — churn runs at 10.9% and mixed at 76.9% for the same 1,000
+rules, because the load generator is the bottleneck in both cases and the
+firewall is not what is being measured.
+
 ### Real attacks
 
 A separate hosted job drives real attacks at the defended container — nmap
