@@ -66,7 +66,7 @@ trap cleanup EXIT
 
 wait_up() {
     for _ in $(seq 1 30); do
-        if ax python3 "$DRIVERS" probe server "$HTTP_PORT" 2>/dev/null | grep -q 1; then
+        if [ "$(ax python3 "$DRIVERS" probe server "$HTTP_PORT" 2>/dev/null)" = "1" ]; then
             return 0
         fi
         sleep 1
@@ -136,7 +136,8 @@ start_sshd() {
 
 # threat_bans <ip> -> 1 if ip is in the bfw threat-ban set.
 threat_bans() {
-    sx nft list set inet better-firewall bfw_threat_bans 2>/dev/null | grep -q "$1"
+    local out
+    out=$(sx nft list set inet better-firewall bfw_threat_bans 2>/dev/null) && grep -q "$1" <<<"$out"
 }
 
 # start_protect <lapi-url-or-empty>: write protect.json + key, launch the
@@ -285,6 +286,7 @@ for ENGINE in none bfw ufw; do
         legit 20 > "$RAW_DIR/legit_during_sshjail_bfw.json" &
         LAPI_PID=$!
         sleep 1
+        # shellcheck disable=SC2016 # $(seq) must expand inside the container
         ax sh -c 'for i in $(seq 1 12); do timeout 4 sshpass -p wrongpw ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@server true 2>/dev/null; done; true' \
             > "$RAW_DIR/attack_sshbrute_bfw.txt" 2>&1 || true
         BAN_S=$(wait_ban "$ATTACKER_IP" 15 || true)
@@ -312,6 +314,7 @@ for ENGINE in none bfw ufw; do
         start_sshd
         sleep 1
         SSH_PRE=$(ax python3 "$DRIVERS" probe server 22 | tail -1)
+        # shellcheck disable=SC2016 # $(seq) must expand inside the container
         ax sh -c 'for i in $(seq 1 12); do timeout 4 sshpass -p wrongpw ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@server true 2>/dev/null; done; true' \
             > "$RAW_DIR/attack_sshbrute_${ENGINE}.txt" 2>&1 || true
         SSH_POST=$(ax python3 "$DRIVERS" probe server 22 | tail -1)
