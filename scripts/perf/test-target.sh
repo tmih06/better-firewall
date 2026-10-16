@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Probe a remote bfw test server from this machine without changing its firewall.
+# Run the network-visible firewall showcase against a prepared bfw laptop.
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
@@ -33,10 +33,23 @@ else
 fi
 HTTP_PORT="${PERF_HTTP_PORT:-8080}"
 DENIED_PORT="${PERF_DENIED_PORT:-8081}"
+SOURCE_PORT="${PERF_SOURCE_PORT:-8082}"
+LOGGED_PORT="${PERF_LOGGED_PORT:-8083}"
+HTTP_MODE="${PERF_HTTP_MODE:-allowed}"
 
-printf '[probe] Checking allowed service at http://%s:%s/ (expects HTTP 200)\n' "$HOST" "$HTTP_PORT"
-k6 run --quiet -e "TARGET_URL=http://${HOST}:${HTTP_PORT}/" \
-    "$REPO_ROOT/scripts/perf/probe.js"
-printf '[probe] Checking denied service at http://%s:%s/ (expects blocked connection)\n' "$HOST" "$DENIED_PORT"
-k6 run --quiet -e "MODE=blocked" -e "TARGET_URL=http://${HOST}:${DENIED_PORT}/" \
-    "$REPO_ROOT/scripts/perf/probe.js"
+if [[ "$HTTP_MODE" != "allowed" && "$HTTP_MODE" != "blocked" ]]; then
+    echo "Error: PERF_HTTP_MODE must be 'allowed' or 'blocked'" >&2
+    exit 2
+fi
+
+probe() {
+    local mode="$1" port="$2"
+    printf '[showcase] %-7s http://%s:%s/\n' "$mode" "$HOST" "$port"
+    k6 run --quiet -e "MODE=$mode" -e "TARGET_URL=http://${HOST}:${port}/" \
+        "$REPO_ROOT/scripts/perf/probe.js"
+}
+
+probe "$HTTP_MODE" "$HTTP_PORT"
+probe blocked "$DENIED_PORT"
+probe allowed "$SOURCE_PORT"
+probe allowed "$LOGGED_PORT"
