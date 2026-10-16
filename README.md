@@ -243,6 +243,8 @@ publish a new run, download the `performance`, `protection-benchmarks` and
 
 CI runs build, race-test, package, security, and protection-benchmark jobs. Kernel integration tests, the UFW traffic benchmark, and the attack-lab comparison run only in isolated GitHub-hosted runners. **Do not run those privileged workloads on a workstation or production host.** See [CI](.github/workflows/ci.yml).
 
+For a manual two-machine reachability check, start `python3 -m http.server 8080 --bind 0.0.0.0` and `python3 -m http.server 8081 --bind 0.0.0.0` on the firewall laptop (separate terminals). Configure its firewall to permit 8080 and block 8081, then run `scripts/perf/test-target.sh <FIREWALL_LAPTOP_IP>` on the client laptop. Install `k6` on the client; override the defaults with `PERF_HTTP_PORT` and `PERF_DENIED_PORT` if needed. The script only sends probes and does not alter the remote firewall. On the firewall laptop, `sudo bfw --stream-logs` follows BFW kernel log entries; `sudo bfw logs` is equivalent. Only test a machine you control, and avoid changing firewall policy over a remote session.
+
 ## License
 
 No license file is present; treat the project as all-rights-reserved.

@@ -5,5 +5,8 @@
 __pycache__/
 *.py[cod]
 
+# Local development tools (k6, shellcheck, etc.); install per checkout.
+/.tools/
+
 # host firewall baseline is machine-specific; regenerate per host with --record
 scripts/ci/ssh-guard-baseline.txt

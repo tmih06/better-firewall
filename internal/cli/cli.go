@@ -94,6 +94,8 @@ func Run(prog, version string, args []string, stdin io.Reader, stdout, stderr io
 			env.Msg("%s %s", prog, version)
 			env.Msg("Copyright 2026 better-firewall authors")
 			return 0
+		case "--stream-logs":
+			return env.dispatch([]string{"logs"})
 		case "-h", "--help":
 			env.Msg("%s", HelpText(prog))
 			return 0
@@ -143,6 +145,9 @@ Commands:
   logs                            follow firewall logs (better-firewall)
   protect                         monitor journal failures and CrowdSec (better-firewall)
   version                         show version
+
+Global options:
+  --stream-logs                   follow firewall logs (same as logs)
 
 Report types: raw, builtins, before-rules, user-rules, after-rules,
               logging-rules, listening, added
