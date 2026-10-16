@@ -16,12 +16,12 @@ The listeners serve ports 8080–8083 on all interfaces. Keep this process runni
 
 ## 2. Configure bfw on the firewall laptop
 
-Find the client laptop's LAN address with `ip -br addr`, then substitute it below. If managing the firewall remotely, add an allow rule for your management connection before changing the default policy; retain console access. Run these from the repository checkout on the firewall laptop:
+Find the client laptop's LAN address with `ip -br addr`. Replace the sample address `192.168.1.50` below with that actual address; do not type placeholder angle brackets into the shell. If managing the firewall remotely, add an allow rule for your management connection before changing the default policy; retain console access. Run these from the repository checkout on the firewall laptop after `make build`:
 
 ```sh
 sudo ./bfw default deny incoming
 sudo ./bfw allow 8080/tcp
-sudo ./bfw allow from <CLIENT_IP> to any port 8082 proto tcp
+sudo ./bfw allow from 192.168.1.50 to any port 8082 proto tcp
 sudo ./bfw allow log 8083/tcp
 sudo ./bfw logging medium
 sudo ./bfw enable
@@ -34,10 +34,10 @@ Port 8081 has a running HTTP server but no allow rule, so the default incoming p
 
 ## 3. Run the client suite
 
-Install k6 or use the project's local copy in `.tools/bin`. From the client laptop's checkout:
+Install k6 on the client or add the project's local `.tools/bin` to your `PATH`. Replace the example server address `192.168.1.10` below with the firewall laptop's actual LAN address:
 
 ```sh
-PATH="$PWD/.tools/bin:$PATH" scripts/perf/test-target.sh <FIREWALL_LAPTOP_IP>
+scripts/perf/test-target.sh 192.168.1.10
 ```
 
 Expected: 8080 allowed, 8081 blocked, 8082 allowed from the configured source, and 8083 allowed. To use different ports, set `PERF_HTTP_PORT`, `PERF_DENIED_PORT`, `PERF_SOURCE_PORT`, and `PERF_LOGGED_PORT`; the same values must be set for the server listener script.
@@ -52,23 +52,23 @@ The request to port 8083 should produce a BFW log entry. Log output depends on k
 
 ## 4. Demonstrate a rule transition
 
-Get the 8080 rule number from `sudo ./bfw status numbered`, then disable it on the firewall laptop:
+Get the number of the 8080 allow rule from `sudo ./bfw status numbered`. In the examples below, replace `1` with the actual number printed for that rule:
 
 ```sh
-sudo ./bfw rule disable <RULE_NUMBER>
+sudo ./bfw rule disable 1
 ```
 
 From the client laptop, the whole suite should still pass with the primary 8080 probe expected to be blocked:
 
 ```sh
-PATH="$PWD/.tools/bin:$PATH" PERF_HTTP_MODE=blocked scripts/perf/test-target.sh <FIREWALL_LAPTOP_IP>
+env PERF_HTTP_MODE=blocked scripts/perf/test-target.sh 192.168.1.10
 ```
 
 Re-enable the rule and rerun the normal suite:
 
 ```sh
-sudo ./bfw rule enable <RULE_NUMBER>
-PATH="$PWD/.tools/bin:$PATH" scripts/perf/test-target.sh <FIREWALL_LAPTOP_IP>
+sudo ./bfw rule enable 1
+scripts/perf/test-target.sh 192.168.1.10
 ```
 
 ## 5. Stop and restore
