@@ -2,7 +2,7 @@
 
 This showcase checks externally observable firewall behavior and a few operator workflows: permitted and default-denied inbound TCP, a source-restricted allow rule, rule logging, status/check/diff, and rule disable/enable. It does not cover every bfw feature: NAT, migration, CrowdSec, login protection, IPv6 routing, and destructive panic behavior need separate setups and are not safe to exercise in this walkthrough.
 
-Use two Linux laptops on a private LAN that you control. The firewall laptop must have bfw installed and nftables available. Keep physical/console access while changing firewall rules; do not run this over the only SSH session. These commands change the firewall laptop's active policy. Use a dedicated lab machine or restore its prior configuration afterward.
+Use two Linux laptops on a private LAN that you control. On the firewall laptop, build bfw from the project checkout with `make build`; this creates `./bfw` locally and does not install it on PATH. The firewall laptop also needs nftables available. Keep physical/console access while changing firewall rules; do not run this over the only SSH session. These commands change the firewall laptop's active policy. Use a dedicated lab machine or restore its prior configuration afterward.
 
 ## 1. Start listeners on the firewall laptop
 
@@ -16,18 +16,18 @@ The listeners serve ports 8080–8083 on all interfaces. Keep this process runni
 
 ## 2. Configure bfw on the firewall laptop
 
-Find the client laptop's LAN address with `ip -br addr`, then substitute it below. If managing the firewall remotely, add an allow rule for your management connection before changing the default policy; retain console access.
+Find the client laptop's LAN address with `ip -br addr`, then substitute it below. If managing the firewall remotely, add an allow rule for your management connection before changing the default policy; retain console access. Run these from the repository checkout on the firewall laptop:
 
 ```sh
-sudo bfw default deny incoming
-sudo bfw allow 8080/tcp
-sudo bfw allow from <CLIENT_IP> to any port 8082 proto tcp
-sudo bfw allow log 8083/tcp
-sudo bfw logging medium
-sudo bfw enable
-sudo bfw status numbered
-sudo bfw check
-sudo bfw diff
+sudo ./bfw default deny incoming
+sudo ./bfw allow 8080/tcp
+sudo ./bfw allow from <CLIENT_IP> to any port 8082 proto tcp
+sudo ./bfw allow log 8083/tcp
+sudo ./bfw logging medium
+sudo ./bfw enable
+sudo ./bfw status numbered
+sudo ./bfw check
+sudo ./bfw diff
 ```
 
 Port 8081 has a running HTTP server but no allow rule, so the default incoming policy should block it. Port 8082 is allowed only from the configured client address. Port 8083 is allowed with per-rule logging.
@@ -45,17 +45,17 @@ Expected: 8080 allowed, 8081 blocked, 8082 allowed from the configured source, a
 On the firewall laptop, watch rule log output in another terminal:
 
 ```sh
-sudo bfw --stream-logs
+sudo ./bfw --stream-logs
 ```
 
 The request to port 8083 should produce a BFW log entry. Log output depends on kernel/journal configuration and is not itself a pass/fail gate in the client script.
 
 ## 4. Demonstrate a rule transition
 
-Get the 8080 rule number from `sudo bfw status numbered`, then disable it on the firewall laptop:
+Get the 8080 rule number from `sudo ./bfw status numbered`, then disable it on the firewall laptop:
 
 ```sh
-sudo bfw rule disable <RULE_NUMBER>
+sudo ./bfw rule disable <RULE_NUMBER>
 ```
 
 From the client laptop, the whole suite should still pass with the primary 8080 probe expected to be blocked:
@@ -67,12 +67,12 @@ PATH="$PWD/.tools/bin:$PATH" PERF_HTTP_MODE=blocked scripts/perf/test-target.sh 
 Re-enable the rule and rerun the normal suite:
 
 ```sh
-sudo bfw rule enable <RULE_NUMBER>
+sudo ./bfw rule enable <RULE_NUMBER>
 PATH="$PWD/.tools/bin:$PATH" scripts/perf/test-target.sh <FIREWALL_LAPTOP_IP>
 ```
 
 ## 5. Stop and restore
 
-Stop the listeners with Ctrl-C. Remove only the showcase rules you added, using their rule numbers from `sudo bfw status numbered`; avoid `bfw reset` on a machine with existing policy. Restore the prior default policy and logging setting if you changed them, then verify with `sudo bfw status` and `sudo bfw check`.
+Stop the listeners with Ctrl-C. Remove only the showcase rules you added, using their rule numbers from `sudo ./bfw status numbered`; avoid `bfw reset` on a machine with existing policy. Restore the prior default policy and logging setting if you changed them, then verify with `sudo ./bfw status` and `sudo ./bfw check`.
 
 The suite demonstrates network behavior plus basic operator interactions; it is not a complete integration test for every command or extension. CI's privileged integration and performance jobs remain restricted to disposable GitHub-hosted runners.
