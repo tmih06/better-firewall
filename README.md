@@ -95,7 +95,9 @@ Set `"jails": []` for CrowdSec only. Only IP and range bans are enforced. The cl
 ## Performance
 
 All numbers below come from hosted CI runs and are regenerated from the raw
-artifacts by `make charts`, so they cannot drift out of sync with the data.
+artifacts by `make charts`, so they cannot drift out of sync with the data. For
+the full decomposition, methodology, and limitations, see the
+[performance study](docs/bfirewall-performance-study.md).
 
 ### Rule setup is 8–32× faster than UFW
 
